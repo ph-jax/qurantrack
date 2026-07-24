@@ -19,6 +19,14 @@ Status: Complete.
 - Configured ESLint, Prettier, Vitest, Playwright, and PWA metadata.
 - Added a basic mobile-first frontend page.
 - Added README, CHANGELOG, `.gitignore`, `.dev.vars.example`, and MIT LICENSE.
+- Attempted `npm run test:e2e`; Playwright could not download browser binaries because the Codex environment returned HTTP 403 / Domain forbidden from the Playwright CDN.
+
+### Playwright E2E limitation
+
+- `npm run test:e2e` was attempted during Phase 0 validation.
+- Playwright could not download browser binaries because the Codex environment returned HTTP 403 / Domain forbidden.
+- E2E tests were not executed and must not be reported as passed.
+- The Playwright configuration and E2E test files remain in the repository for execution in an environment where browser binaries are available.
 
 ### Intentional Phase 0 exclusions
 

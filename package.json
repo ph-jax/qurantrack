@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "QuranTrack \u2014 Quran Learning & Progress Platform",
+  "description": "QuranTrack — Quran Learning & Progress Platform",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
