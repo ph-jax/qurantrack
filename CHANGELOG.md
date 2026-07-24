@@ -38,3 +38,7 @@ All notable changes to QuranTrack will be documented in this file.
 ### Not implemented yet
 
 - Authentication, database schema, email relay, students, teachers, guardians, and progress tracking are deferred until later phases.
+
+## Unreleased
+
+- Implemented Phase 2 authentication and authorization: magic links, Turnstile validation, Apps Script mail relay, hashed opaque sessions, role helpers, organization switching, logout, bootstrap documentation, and repository active-column regression coverage.

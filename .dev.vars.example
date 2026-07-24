@@ -7,3 +7,8 @@ TURNSTILE_SITE_KEY=1x00000000000000000000AA
 TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 APP_BASE_URL=http://localhost:5173
 ENVIRONMENT=local
+# Explicit local-only Turnstile bypass. Leave false unless running local auth tests.
+TURNSTILE_LOCAL_BYPASS=false
+# Explicit one-time bootstrap endpoint guard. Disable immediately after first system admin.
+ENABLE_BOOTSTRAP_ADMIN=false
+BOOTSTRAP_SECRET=replace-with-one-time-bootstrap-secret

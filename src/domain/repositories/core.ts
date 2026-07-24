@@ -1,4 +1,4 @@
-import { TenantRepository } from './base';
+import { TenantActiveRepository, TenantReadRepository } from './base';
 import type { D1DatabaseLike, TenantRecord } from './types';
 
 export type OrganizationRecord = TenantRecord & { slug: string; name: string };
@@ -18,32 +18,32 @@ export class OrganizationRepository {
       .first<OrganizationRecord>();
   }
 }
-export class TrackRepository extends TenantRepository<TrackRecord> {
+export class TrackRepository extends TenantActiveRepository<TrackRecord> {
   constructor(db: D1DatabaseLike) {
     super(db, 'program_tracks');
   }
 }
-export class LevelRepository extends TenantRepository<LevelRecord> {
+export class LevelRepository extends TenantActiveRepository<LevelRecord> {
   constructor(db: D1DatabaseLike) {
     super(db, 'levels');
   }
 }
-export class LessonRepository extends TenantRepository<LessonRecord> {
+export class LessonRepository extends TenantActiveRepository<LessonRecord> {
   constructor(db: D1DatabaseLike) {
     super(db, 'lessons');
   }
 }
-export class ClassRepository extends TenantRepository<ClassRecord> {
+export class ClassRepository extends TenantActiveRepository<ClassRecord> {
   constructor(db: D1DatabaseLike) {
     super(db, 'classes');
   }
 }
-export class StudentRepository extends TenantRepository<StudentRecord> {
+export class StudentRepository extends TenantActiveRepository<StudentRecord> {
   constructor(db: D1DatabaseLike) {
     super(db, 'students');
   }
 }
-export class GuardianRepository extends TenantRepository<GuardianRecord> {
+export class GuardianRepository extends TenantActiveRepository<GuardianRecord> {
   constructor(db: D1DatabaseLike) {
     super(db, 'guardians');
   }
@@ -61,21 +61,21 @@ export class MembershipRepository {
   }
 }
 
-export class EnrollmentRepository extends TenantRepository<
+export class EnrollmentRepository extends TenantActiveRepository<
   TenantRecord & { class_id: string; student_id: string }
 > {
   constructor(db: D1DatabaseLike) {
     super(db, 'class_enrollments');
   }
 }
-export class StudentGuardianRepository extends TenantRepository<
+export class StudentGuardianRepository extends TenantReadRepository<
   TenantRecord & { student_id: string; guardian_id: string }
 > {
   constructor(db: D1DatabaseLike) {
     super(db, 'student_guardians');
   }
 }
-export class StudentTrackLevelRepository extends TenantRepository<
+export class StudentTrackLevelRepository extends TenantReadRepository<
   TenantRecord & { student_id: string; track_id: string; current_level_id: string }
 > {
   constructor(db: D1DatabaseLike) {
