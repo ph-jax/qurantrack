@@ -17,8 +17,8 @@ CREATE TABLE organizations (
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  CHECK (slug GLOB '[a-z0-9][a-z0-9-]*'),
-  CHECK (primary_color GLOB '#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]')
+  CHECK (length(slug) BETWEEN 2 AND 64 AND slug = lower(slug) AND instr(slug, ' ') = 0 AND substr(slug, 1, 1) != '-' AND substr(slug, -1, 1) != '-'),
+  CHECK (length(primary_color) = 7 AND substr(primary_color, 1, 1) = '#')
 );
 
 CREATE TABLE organization_settings (

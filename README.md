@@ -25,24 +25,24 @@ Phase 1 intentionally does **not** implement authentication flows, email deliver
 
 ## NPM scripts
 
-| Command                     | Purpose                                                |
-| --------------------------- | ------------------------------------------------------ |
-| `npm run dev`               | Start local Vite and Cloudflare Worker development.    |
-| `npm run build`             | Type-check and create a production build.              |
-| `npm run preview`           | Preview the production build locally.                  |
-| `npm run lint`              | Run ESLint.                                            |
-| `npm run format`            | Format all supported files with Prettier.              |
-| `npm run format:check`      | Check formatting without changing files.               |
-| `npm run typecheck`         | Run TypeScript type checking without emitting files.   |
-| `npm run test`              | Run Vitest unit tests once.                            |
-| `npm run test:watch`        | Run Vitest in watch mode.                              |
-| `npm run test:e2e`          | Run Playwright browser tests.                          |
-| `npm run db:migrate:local`  | Apply D1 migrations to the local preview database.     |
-| `npm run db:migrate:remote` | Apply D1 migrations to the remote production database. |
-| `npm run db:seed:local`     | Load safe fictional demo data into local D1.           |
-| `npm run db:reset:local`    | Remove local D1 state and reapply migrations.          |
-| `npm run db:inspect:local`  | List local D1 schema tables and indexes.               |
-| `npm run deploy`            | Build and deploy with Wrangler.                        |
+| Command                     | Purpose                                                         |
+| --------------------------- | --------------------------------------------------------------- |
+| `npm run dev`               | Start local Vite and Cloudflare Worker development.             |
+| `npm run build`             | Type-check and create a production build.                       |
+| `npm run preview`           | Preview the production build locally.                           |
+| `npm run lint`              | Run ESLint.                                                     |
+| `npm run format`            | Format all supported files with Prettier.                       |
+| `npm run format:check`      | Check formatting without changing files.                        |
+| `npm run typecheck`         | Run TypeScript type checking without emitting files.            |
+| `npm run test`              | Run Vitest unit tests once.                                     |
+| `npm run test:watch`        | Run Vitest in watch mode.                                       |
+| `npm run test:e2e`          | Run Playwright browser tests.                                   |
+| `npm run db:migrate:local`  | Apply D1 migrations to the local preview database.              |
+| `npm run db:migrate:remote` | Apply D1 migrations with Wrangler `--env production --remote`.  |
+| `npm run db:seed:local`     | Intentionally load safe fictional demo data into local D1 only. |
+| `npm run db:reset:local`    | Remove local D1 state and reapply migrations.                   |
+| `npm run db:inspect:local`  | List local D1 schema tables and indexes.                        |
+| `npm run deploy`            | Build and deploy with Wrangler.                                 |
 
 ## Local setup
 
@@ -52,7 +52,7 @@ cp .dev.vars.example .dev.vars
 npm run dev
 ```
 
-Visit `/api/v1/health` to verify the Worker API. Apply the local database schema with `npm run db:migrate:local`; then optionally load fictional demo data with `npm run db:seed:local`.
+Visit `/api/v1/health` to verify the Worker API. Apply the local database schema with `npm run db:migrate:local`; this applies schema only and does not insert demo rows. Optionally load fictional local-only demo data with `npm run db:seed:local`.
 
 ## Cloudflare configuration
 
@@ -85,3 +85,7 @@ MIT
 ## Database documentation
 
 See [`docs/DATABASE.md`](docs/DATABASE.md) for migration, seed, reset, inspect, and data-safety notes.
+
+### Demo seed safety
+
+Demo data is stored in `seeds/demo_seed.sql`, outside Wrangler’s migrations directory. Local and production migration commands apply schema only; production migrations do not seed fictional/demo records.

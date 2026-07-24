@@ -58,13 +58,13 @@ Status: Complete.
 
 ### Completed tasks
 
-- Created versioned Cloudflare D1 migrations for the core QuranTrack schema.
+- Created the versioned Cloudflare D1 migration for the core QuranTrack schema.
 - Added foreign keys, indexes, unique constraints, activation flags, organization ownership fields, UTC timestamp columns, and foreign-key enforcement in migrations.
 - Added typed tenant-scoped repositories that require explicit trusted `organizationId` arguments for tenant-owned lookups.
 - Added Zod schemas for IDs, emails, organizations, memberships, tracks, levels, lessons, classes, students, guardians, enrollments, progress update drafts, and progress update items.
 - Added domain validation services for track/level/lesson relationships, class/teacher organization membership, student/class ownership, guardian/student ownership, student track-level assignment, and historical deactivation policy.
-- Added safe fictional demo seed data for one organization, two tracks, multiple levels and lessons, two teachers, two classes, students, guardians, enrollments, guardian links, and student track-level assignments.
-- Added local D1 migrate, remote D1 migrate, seed, reset, and inspect commands.
+- Added safe fictional demo seed data outside the migrations path for one organization, two tracks, multiple levels and lessons, two teachers, two classes, students, guardians, enrollments, guardian links, and student track-level assignments.
+- Added local D1 migrate, production-explicit remote D1 migrate, local-only seed, reset, and inspect commands.
 - Added unit/integration tests for schema constraints, tenant scoping, cross-organization prevention, relationships, duplicate constraints, deactivation policy, and Zod validation.
 
 ### Intentional Phase 1 exclusions

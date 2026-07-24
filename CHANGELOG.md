@@ -6,11 +6,11 @@ All notable changes to QuranTrack will be documented in this file.
 
 ### Added
 
-- Phase 1 Cloudflare D1 core schema migrations and fictional local demo seed data.
+- Phase 1 Cloudflare D1 core schema migration and fictional local demo seed data kept outside the migrations path.
 - Typed tenant-scoped repository layer for core domain records.
 - Zod validation schemas for core identifiers and entity payloads.
 - Domain validation services for tenant ownership and program relationship invariants.
-- Local database commands for migrating, seeding, resetting, and inspecting D1.
+- Local database commands for migrating, intentionally seeding local demo data, resetting, and inspecting D1, plus a production-explicit remote migration command.
 - Unit and integration tests for schema constraints, tenant scoping, relationship validation, deactivation policy, duplicate constraints, and Zod validation.
 
 ### Not implemented yet
