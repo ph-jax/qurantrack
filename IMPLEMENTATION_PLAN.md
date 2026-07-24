@@ -77,6 +77,12 @@ Status: Complete.
 
 ### Phase 2 — Authentication and authorization
 
-- Implement magic-link auth, Turnstile verification, session cookies, memberships, roles, tenant middleware, logout, bootstrap admin, and Apps Script email relay.
+Status: Complete.
+
+- Implemented magic-link request and consumption APIs with generic login responses, Turnstile validation, hashed single-use login tokens, secure session cookies, authenticated middleware, membership revalidation, roles, organization listing/switching, logout, one-time guarded system-admin bootstrap, and Google Apps Script email relay HMAC signing.
+- Fixed the Phase 1 repository cleanup issue by separating active-entity repositories from link/current-state repositories that do not have an `active` column.
+- Added focused tests for token hashing, relay signing, session cookies, role checks, and the active-column repository regression.
+- Updated PR #3 fixes changed the Apps Script protocol to query-parameter authentication, added JSON response verification, rendered real Turnstile in the React login page, made magic-link consumption atomic, and strengthened focused auth tests.
+- Live Apps Script deployment and browser E2E execution remain unverified in this environment.
 
 Further phases continue exactly as defined in `docs/PRODUCT_SPEC.md`.

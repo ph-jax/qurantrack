@@ -121,3 +121,18 @@ describe('zod validation', () => {
     ).toBe(false);
   });
 });
+import {
+  StudentGuardianRepository,
+  StudentTrackLevelRepository,
+} from '../../../src/domain/repositories/core';
+
+describe('link and current-state repository regression', () => {
+  it('does not expose active-column helpers for tables without active columns', async () => {
+    const guardianLinks = new StudentGuardianRepository(new MockDb({}));
+    const currentLevels = new StudentTrackLevelRepository(new MockDb({}));
+    expect('listActive' in guardianLinks).toBe(false);
+    expect('deactivate' in guardianLinks).toBe(false);
+    expect('listActive' in currentLevels).toBe(false);
+    expect('deactivate' in currentLevels).toBe(false);
+  });
+});

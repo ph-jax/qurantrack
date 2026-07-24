@@ -89,3 +89,7 @@ See [`docs/DATABASE.md`](docs/DATABASE.md) for migration, seed, reset, inspect, 
 ### Demo seed safety
 
 Demo data is stored in `seeds/demo_seed.sql`, outside Wrangler’s migrations directory. Local and production migration commands apply schema only; production migrations do not seed fictional/demo records.
+
+## Phase 2 authentication
+
+Phase 2 adds staff magic-link authentication, Turnstile verification, the Google Apps Script mail relay, secure session cookies, organization switching, role checks, and one-time system-admin bootstrap. See `docs/AUTHENTICATION.md`, `docs/EMAIL_RELAY.md`, and `docs/BOOTSTRAP.md`.

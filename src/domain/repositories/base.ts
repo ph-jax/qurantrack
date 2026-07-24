@@ -1,9 +1,9 @@
 import type { D1DatabaseLike, TenantRecord } from './types';
 
-export class TenantRepository<T extends TenantRecord> {
+export class TenantReadRepository<T extends TenantRecord> {
   constructor(
     protected readonly db: D1DatabaseLike,
-    private readonly table: string,
+    protected readonly table: string,
   ) {}
 
   async findById(organizationId: string, id: string): Promise<T | null> {
@@ -12,7 +12,9 @@ export class TenantRepository<T extends TenantRecord> {
       .bind(organizationId, id)
       .first<T>();
   }
+}
 
+export class TenantActiveRepository<T extends TenantRecord> extends TenantReadRepository<T> {
   async listActive(organizationId: string): Promise<T[]> {
     const result = await this.db
       .prepare(

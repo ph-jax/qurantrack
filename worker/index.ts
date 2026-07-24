@@ -1,6 +1,9 @@
 import { Hono } from 'hono';
 
 import { healthHandler } from './api/v1/health';
+import { consumeLogin, logout, me, organizations, requestLogin, switchOrg } from './api/v1/auth';
+import { bootstrapAdmin } from './api/v1/bootstrap';
+import { noStore, requireAuth } from './middleware/auth';
 import type { Env, Variables } from './types/env';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -14,7 +17,15 @@ app.use('*', async (c, next) => {
   c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
 });
 
+app.use('/api/v1/*', noStore);
 app.get('/api/v1/health', healthHandler);
+app.post('/api/v1/auth/magic-link/request', requestLogin);
+app.post('/api/v1/auth/magic-link/consume', consumeLogin);
+app.post('/api/v1/auth/bootstrap/system-admin', bootstrapAdmin);
+app.post('/api/v1/auth/logout', requireAuth(), logout);
+app.get('/api/v1/me', requireAuth(), me);
+app.get('/api/v1/me/organizations', requireAuth(), organizations);
+app.post('/api/v1/me/organizations/switch', requireAuth(), switchOrg);
 
 app.notFound((c) =>
   c.json(
