@@ -2,6 +2,21 @@
 
 All notable changes to QuranTrack will be documented in this file.
 
+## [0.2.0] - 2026-07-24
+
+### Added
+
+- Phase 1 Cloudflare D1 core schema migrations and fictional local demo seed data.
+- Typed tenant-scoped repository layer for core domain records.
+- Zod validation schemas for core identifiers and entity payloads.
+- Domain validation services for tenant ownership and program relationship invariants.
+- Local database commands for migrating, seeding, resetting, and inspecting D1.
+- Unit and integration tests for schema constraints, tenant scoping, relationship validation, deactivation policy, duplicate constraints, and Zod validation.
+
+### Not implemented yet
+
+- Authentication, email delivery, frontend administration screens, teacher workflows, and the parent portal remain deferred to later phases.
+
 ## [0.1.0] - 2026-07-23
 
 ### Added

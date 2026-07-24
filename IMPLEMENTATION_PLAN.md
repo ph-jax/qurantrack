@@ -54,9 +54,26 @@ The following items are explicitly deferred and must not be considered implement
 
 ### Phase 1 — Database and core domain
 
-- Create D1 migrations.
-- Add foreign keys and indexes.
-- Create repositories, domain services, validation schemas, seed data, and tenant-scoping tests.
+Status: Complete.
+
+### Completed tasks
+
+- Created versioned Cloudflare D1 migrations for the core QuranTrack schema.
+- Added foreign keys, indexes, unique constraints, activation flags, organization ownership fields, UTC timestamp columns, and foreign-key enforcement in migrations.
+- Added typed tenant-scoped repositories that require explicit trusted `organizationId` arguments for tenant-owned lookups.
+- Added Zod schemas for IDs, emails, organizations, memberships, tracks, levels, lessons, classes, students, guardians, enrollments, progress update drafts, and progress update items.
+- Added domain validation services for track/level/lesson relationships, class/teacher organization membership, student/class ownership, guardian/student ownership, student track-level assignment, and historical deactivation policy.
+- Added safe fictional demo seed data for one organization, two tracks, multiple levels and lessons, two teachers, two classes, students, guardians, enrollments, guardian links, and student track-level assignments.
+- Added local D1 migrate, remote D1 migrate, seed, reset, and inspect commands.
+- Added unit/integration tests for schema constraints, tenant scoping, cross-organization prevention, relationships, duplicate constraints, deactivation policy, and Zod validation.
+
+### Intentional Phase 1 exclusions
+
+- Authentication and authorization flows.
+- Email delivery.
+- Frontend administration screens.
+- Teacher workflows.
+- Parent portal.
 
 ### Phase 2 — Authentication and authorization
 
