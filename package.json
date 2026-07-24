@@ -16,15 +16,18 @@
     "test:watch": "vitest --config vitest.config.ts",
     "test:e2e": "playwright test",
     "db:migrate:local": "wrangler d1 migrations apply qurantrack-preview --local",
-    "db:migrate:remote": "wrangler d1 migrations apply qurantrack-production --remote",
-    "db:seed:local": "echo \"Phase 0 has no database seed data yet.\"",
-    "deploy": "npm run build && wrangler deploy"
+    "db:migrate:remote": "wrangler d1 migrations apply qurantrack-production --env production --remote",
+    "db:seed:local": "wrangler d1 execute qurantrack-preview --local --file seeds/demo_seed.sql",
+    "deploy": "npm run build && wrangler deploy",
+    "db:reset:local": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate:local",
+    "db:inspect:local": "wrangler d1 execute qurantrack-preview --local --command \"SELECT name, type FROM sqlite_master WHERE type IN ('table', 'index') ORDER BY type, name;\""
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
     "hono": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "latest",
