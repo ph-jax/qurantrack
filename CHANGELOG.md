@@ -39,8 +39,23 @@ All notable changes to QuranTrack will be documented in this file.
 
 - Authentication, database schema, email relay, students, teachers, guardians, and progress tracking are deferred until later phases.
 
+## [0.3.0] - 2026-07-24
+
+### Added
+
+- Phase 2 authentication and authorization: magic links, Turnstile validation, Apps Script mail relay, hashed opaque sessions, role helpers, organization switching, logout, bootstrap documentation, and focused security coverage.
+- Phase 2.5 proposed QuranTrack UI foundation with custom tokens, responsive application shell, accessible Radix interactions, shared components, English/Turkish internationalization, organization branding states, and a development-only fictional UI showcase.
+- React Router route organization and explicit protected-route session states without protected-content flash.
+- UI design-system documentation and behavior-focused UI tests.
+
+### Security and compatibility fixes
+
+- Corrected the Apps Script relay query-parameter protocol, verified relay JSON success responses, preserved real Turnstile integration, made magic-link consumption atomic, and added focused rejection/regression tests.
+
+### Deferred
+
+- Phase 3 production CRUD, organization branding upload/settings APIs, and data mutations remain intentionally unimplemented.
+
 ## Unreleased
 
-- Implemented Phase 2 authentication and authorization: magic links, Turnstile validation, Apps Script mail relay, hashed opaque sessions, role helpers, organization switching, logout, bootstrap documentation, and repository active-column regression coverage.
-
-- Fixed merge-blocking Phase 2 auth defects: Apps Script relay query-parameter protocol, relay JSON success checks, real Turnstile frontend integration, atomic magic-link consumption, and added focused rejection/regression tests.
+- No unreleased changes.

@@ -85,4 +85,16 @@ Status: Complete.
 - Updated PR #3 fixes changed the Apps Script protocol to query-parameter authentication, added JSON response verification, rendered real Turnstile in the React login page, made magic-link consumption atomic, and strengthened focused auth tests.
 - Live Apps Script deployment and browser E2E execution remain unverified in this environment.
 
+### Phase 2.5 — UI/UX foundation and design system
+
+Status: Complete; proposed visual direction awaits product-owner review.
+
+- Added project-owned light-theme design tokens, focused repository-owned shadcn-style components using Radix primitives, Lucide icons, and responsive QuranTrack layouts.
+- Reorganized the frontend around React Router, protected routes, session state, role-aware navigation, page components, shared components, organization identity, and feature-separated fictional showcase data.
+- Added polished login/session states while preserving Phase 2 Turnstile, generic response, cookie session, and server-authoritative organization security behavior.
+- Added English and Turkish resources, persisted language selection, document language/direction updates, logical properties, Arabic content presentation, and RTL readiness.
+- Added a development-only `/ui-preview` route containing fictional non-mutating UI examples; the route is compile-time excluded in production.
+- Added focused behavior and accessibility tests and `docs/UI_DESIGN_SYSTEM.md`.
+- No Phase 3 CRUD, database migration, upload flow, or production mutation API was added.
+
 Further phases continue exactly as defined in `docs/PRODUCT_SPEC.md`.

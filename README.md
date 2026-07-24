@@ -4,18 +4,17 @@ QuranTrack — Quran Learning & Progress Platform
 
 Kur'an Öğrenme ve Gelişim Platformu
 
-## Phase 1 status
+## Current status — Phase 2.5 UI foundation
 
-This repository is a Phase 1 full-stack Cloudflare Worker application with:
+QuranTrack is a full-stack Cloudflare Worker application. Phase 1 established its tenant-scoped D1 domain model, and Phase 2 completed secure staff magic-link authentication, Turnstile verification, server-controlled organization context, role authorization, session restoration, logout, and the Apps Script email relay.
 
-- React, TypeScript, Vite, and Tailwind CSS for the frontend.
-- Cloudflare Workers Static Assets and the Cloudflare Vite plugin.
-- Hono for JSON API routing under `/api/v1/`.
-- Cloudflare D1 core schema migrations for organizations, users, program structure, classes, students, guardians, progress history, notifications, audit logs, and legacy imports.
-- Typed tenant-scoped repositories, Zod validation schemas, and core domain validation services.
-- ESLint, Prettier, Vitest, Playwright, and PWA manifest configuration.
+Phase 2.5 adds the proposed, light-theme QuranTrack design system: Tailwind design tokens, repository-owned shadcn-style components backed by Radix primitives, Lucide icons, React Router, English/Turkish internationalization, a responsive authenticated shell, and polished authentication states. The production routes for students, teachers, classes, program, reports, families, notifications, and settings remain honest placeholders; Phase 3 CRUD has not begun.
 
-Phase 1 intentionally does **not** implement authentication flows, email delivery, frontend administration screens, teacher workflows, or the parent portal.
+### Development UI showcase
+
+Run `npm run dev`, then open `http://localhost:5173/ui-preview`. The showcase uses only fictional in-memory data and calls no mutation APIs. Vite's compile-time `import.meta.env.DEV` gate omits this route from the production route configuration; `/ui-preview` safely resolves to the not-found page in production. It cannot be enabled with a query parameter.
+
+The visual identity and QT code-native monogram are proposals for product-owner review, not an approved final logo. See [`docs/UI_DESIGN_SYSTEM.md`](docs/UI_DESIGN_SYSTEM.md).
 
 ## Requirements
 
