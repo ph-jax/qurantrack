@@ -1,0 +1,9 @@
+# Copy to .dev.vars for local Worker development. Never commit real secrets.
+SESSION_SIGNING_SECRET=replace-with-at-least-32-random-bytes
+TOKEN_HASH_PEPPER=replace-with-at-least-32-random-bytes
+MAIL_RELAY_URL=https://script.google.com/macros/s/example/exec
+MAIL_RELAY_SECRET=replace-with-relay-shared-secret
+TURNSTILE_SITE_KEY=1x00000000000000000000AA
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+APP_BASE_URL=http://localhost:5173
+ENVIRONMENT=local
