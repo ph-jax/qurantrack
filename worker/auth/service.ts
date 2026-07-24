@@ -91,9 +91,12 @@ export async function consumeMagicLink(env: Env, token: string, request: Request
   if (!user) return null;
   const memberships = await activeMemberships(env, user.id);
   if (memberships.length === 0) return null;
-  await env.DB.prepare('UPDATE login_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL')
-    .bind(now.toISOString(), login.id)
+  const consumeResult = await env.DB.prepare(
+    'UPDATE login_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ?',
+  )
+    .bind(now.toISOString(), login.id, now.toISOString())
     .run();
+  if (affectedRows(consumeResult) !== 1) return null;
   const sessionToken = randomToken(32);
   const sessionHash = await hashSecret(
     sessionToken,
@@ -197,4 +200,9 @@ export async function switchOrganization(
 }
 export function can(role: Role, allowed: Role[]) {
   return allowed.includes(role);
+}
+
+function affectedRows(result: { meta?: unknown }): number {
+  const meta = result.meta as { changes?: number; rows_written?: number } | undefined;
+  return meta?.changes ?? meta?.rows_written ?? 0;
 }

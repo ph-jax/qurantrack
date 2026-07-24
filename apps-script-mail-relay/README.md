@@ -8,4 +8,11 @@ Deploy this Apps Script as a Web App owned by the Gmail or Google Workspace acco
 4. Copy the Web App URL into the Worker secret/config `MAIL_RELAY_URL`.
 5. Rotate `MAIL_RELAY_SECRET` by setting both Apps Script and Worker secrets before enabling production traffic.
 
-The relay rejects stale timestamps, replayed nonces, invalid HMAC signatures, and unapproved sender aliases. Do not log request bodies because they include email addresses and sign-in links.
+Protocol details:
+
+- The Worker posts the exact JSON email message body.
+- The Worker adds `timestamp`, `nonce`, and `signature` as URL query parameters because Apps Script web apps cannot reliably read custom request headers.
+- The signature is HMAC-SHA-256 over `timestamp.nonce.body`.
+- The relay returns JSON only. The Worker accepts only `{ "ok": true }` as success.
+
+The relay rejects missing authentication fields, stale timestamps, replayed nonces, invalid HMAC signatures, and unapproved sender aliases. Do not log request bodies because they include email addresses and sign-in links.

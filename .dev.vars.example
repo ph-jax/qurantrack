@@ -12,3 +12,5 @@ TURNSTILE_LOCAL_BYPASS=false
 # Explicit one-time bootstrap endpoint guard. Disable immediately after first system admin.
 ENABLE_BOOTSTRAP_ADMIN=false
 BOOTSTRAP_SECRET=replace-with-one-time-bootstrap-secret
+# Frontend build variable for the Turnstile widget, usually set in .env.local or deployment build env.
+VITE_TURNSTILE_SITE_KEY=1x00000000000000000000AA

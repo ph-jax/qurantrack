@@ -1,11 +1,39 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 type View = 'login' | 'requested' | 'invalid' | 'app';
+type TurnstileStatus = 'missing-key' | 'loading' | 'ready' | 'verified' | 'failed';
+
+type TurnstileApi = {
+  render: (
+    element: HTMLElement,
+    options: {
+      sitekey: string;
+      callback: (token: string) => void;
+      'error-callback': () => void;
+      'expired-callback': () => void;
+    },
+  ) => string;
+};
+
+declare global {
+  interface Window {
+    turnstile?: TurnstileApi;
+  }
+}
+
+const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+const isProduction = import.meta.env.PROD;
 
 export function App() {
   const [email, setEmail] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileStatus, setTurnstileStatus] = useState<TurnstileStatus>(
+    turnstileSiteKey ? 'loading' : 'missing-key',
+  );
   const [view, setView] = useState<View>('login');
   const [message, setMessage] = useState('');
+  const turnstileRef = useRef<HTMLDivElement | null>(null);
+  const renderedTurnstileRef = useRef(false);
   const orgSlug = useMemo(() => window.location.pathname.match(/^\/o\/([^/]+)\/login/)?.[1], []);
 
   useEffect(() => {
@@ -20,16 +48,55 @@ export function App() {
       .catch(() => setView('invalid'));
   }, []);
 
+  useEffect(() => {
+    if (!turnstileSiteKey || renderedTurnstileRef.current) return;
+    const renderWidget = () => {
+      if (!turnstileRef.current || !window.turnstile || renderedTurnstileRef.current) return;
+      renderedTurnstileRef.current = true;
+      window.turnstile.render(turnstileRef.current, {
+        sitekey: turnstileSiteKey,
+        callback: (token) => {
+          setTurnstileToken(token);
+          setTurnstileStatus('verified');
+        },
+        'error-callback': () => {
+          setTurnstileToken('');
+          setTurnstileStatus('failed');
+        },
+        'expired-callback': () => {
+          setTurnstileToken('');
+          setTurnstileStatus('ready');
+        },
+      });
+      setTurnstileStatus('ready');
+    };
+    if (window.turnstile) {
+      renderWidget();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    script.async = true;
+    script.defer = true;
+    script.onload = renderWidget;
+    script.onerror = () => setTurnstileStatus('failed');
+    document.head.append(script);
+  }, []);
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (!turnstileToken) {
+      setTurnstileStatus(turnstileSiteKey ? 'failed' : 'missing-key');
+      return;
+    }
+    if (isProduction && turnstileToken === 'local-dev-bypass-token') {
+      setTurnstileStatus('failed');
+      return;
+    }
     await fetch('/api/v1/auth/magic-link/request', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        email,
-        organizationSlug: orgSlug,
-        turnstileToken: 'local-dev-bypass-token',
-      }),
+      body: JSON.stringify({ email, organizationSlug: orgSlug, turnstileToken }),
     });
     setMessage('If this email is eligible, a QuranTrack sign-in link will be sent.');
     setView('requested');
@@ -82,11 +149,26 @@ export function App() {
                 className="mt-2 w-full rounded-xl border border-stone-300 px-4 py-3"
               />
             </label>
-            <div className="rounded-xl border border-dashed border-stone-300 p-3 text-sm text-slate-600">
-              Cloudflare Turnstile widget loads here in production. Local bypass is disabled unless
-              explicitly configured.
+            <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
+              <div ref={turnstileRef} />
+              {turnstileStatus === 'missing-key' && (
+                <p className="text-sm text-amber-700">
+                  Turnstile is not configured. Set VITE_TURNSTILE_SITE_KEY for staff sign-in.
+                </p>
+              )}
+              {turnstileStatus === 'loading' && (
+                <p className="text-sm text-slate-600">Loading anti-abuse check…</p>
+              )}
+              {turnstileStatus === 'failed' && (
+                <p className="text-sm text-red-700">
+                  Turnstile could not verify this request. Refresh and try again.
+                </p>
+              )}
             </div>
-            <button className="w-full rounded-xl bg-teal-700 px-4 py-3 font-semibold text-white">
+            <button
+              disabled={!turnstileToken}
+              className="w-full rounded-xl bg-teal-700 px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+            >
               Send secure sign-in link
             </button>
           </form>
