@@ -20,6 +20,22 @@
     },
   ],
   "env": {
+    "staging": {
+      "name": "qurantrack-staging",
+      "workers_dev": true,
+      "vars": {
+        "APP_VERSION": "0.1.0",
+        "ENVIRONMENT": "staging",
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "qurantrack-staging",
+          "database_id": "bf824e5e-a67b-4592-950b-16d01cbd5689",
+          "migrations_dir": "migrations",
+        },
+      ],
+    },
     "production": {
       "vars": {
         "APP_VERSION": "0.1.0",

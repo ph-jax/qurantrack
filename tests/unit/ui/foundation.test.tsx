@@ -8,7 +8,7 @@ import { ProtectedRoute } from '../../../src/features/auth/ProtectedRoute';
 import { visibleNavigation } from '../../../src/app/navigation';
 import { i18n, LANGUAGE_KEY } from '../../../src/i18n';
 import { Dialog, Button, FormField, Input } from '../../../src/components/ui';
-import { showcasePaths } from '../../../src/app/showcaseGate';
+import { isUiPreviewEnabled, showcasePaths } from '../../../src/app/showcaseGate';
 
 function Probe() {
   const { status, session } = useSession();
@@ -122,6 +122,15 @@ describe('navigation, language and shared accessibility', () => {
   it('does not configure development showcase routes in production', () => {
     expect(showcasePaths(false)).toEqual([]);
     expect(showcasePaths(true)).toContain('/ui-preview');
+  });
+  it.each([
+    ['development', true, undefined, true],
+    ['explicitly enabled', false, 'true', true],
+    ['missing', false, undefined, false],
+    ['disabled', false, 'false', false],
+    ['invalid', false, 'TRUE', false],
+  ])('handles the %s preview flag', (_case, development, flag, expected) => {
+    expect(isUiPreviewEnabled(development, flag)).toBe(expected);
   });
   it('persists language choice and renders Turkish shared UI', async () => {
     await i18n.changeLanguage('tr');

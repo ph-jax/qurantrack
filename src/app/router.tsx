@@ -7,6 +7,7 @@ import { DashboardPage } from '../pages/DashboardPage';
 import { PlaceholderPage } from '../pages/PlaceholderPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { showcasePaths } from './showcaseGate';
+const uiPreviewEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_UI_PREVIEW === 'true';
 const appChildren = [
   { index: true, element: <DashboardPage /> },
   ...[
@@ -35,7 +36,7 @@ export const router = createBrowserRouter([
     ),
     children: appChildren,
   },
-  ...(import.meta.env.DEV && showcasePaths(true).length
+  ...(uiPreviewEnabled && showcasePaths(true).length
     ? [
         {
           path: '/ui-preview',

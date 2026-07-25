@@ -58,6 +58,7 @@ All notable changes to QuranTrack will be documented in this file.
 
 ## Unreleased
 
+- Added an isolated Cloudflare staging environment and explicit build-time UI-preview flag without exposing staging D1 configuration to production.
 - Revalidated the unchanged Phase 2.5 implementation: lint, formatting, type checking, all 45 Vitest tests, and the production build pass; Playwright browser execution and screenshots remain unavailable in this environment.
 - Corrected the Phase 2.5 frontend authentication contract to use the existing `/api/v1/me/organizations` routes, surface switch/logout failures, and expire stale sessions when organization loading is unauthorized.
 - Prevented React StrictMode from consuming a single-use magic link more than once per token and added success, invalid, missing-token, and network regression coverage.
