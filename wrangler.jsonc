@@ -8,7 +8,7 @@
     "not_found_handling": "single-page-application",
   },
   "vars": {
-    "APP_VERSION": "0.1.0",
+    "APP_VERSION": "0.3.0",
     "ENVIRONMENT": "local",
   },
   "d1_databases": [
@@ -24,7 +24,7 @@
       "name": "qurantrack-staging",
       "workers_dev": true,
       "vars": {
-        "APP_VERSION": "0.1.0",
+        "APP_VERSION": "0.3.0",
         "ENVIRONMENT": "staging",
       },
       "d1_databases": [
@@ -38,7 +38,7 @@
     },
     "production": {
       "vars": {
-        "APP_VERSION": "0.1.0",
+        "APP_VERSION": "0.3.0",
         "ENVIRONMENT": "production",
       },
       "d1_databases": [

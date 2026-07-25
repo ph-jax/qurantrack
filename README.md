@@ -8,13 +8,13 @@ Kur'an Öğrenme ve Gelişim Platformu
 
 QuranTrack is a full-stack Cloudflare Worker application. Phase 1 established its tenant-scoped D1 domain model, and Phase 2 completed secure staff magic-link authentication, Turnstile verification, server-controlled organization context, role authorization, session restoration, logout, and the Apps Script email relay.
 
-Phase 2.5 adds the proposed, light-theme QuranTrack design system: Tailwind design tokens, repository-owned shadcn-style components backed by Radix primitives, Lucide icons, React Router, English/Turkish internationalization, a responsive authenticated shell, and polished authentication states. The production routes for students, teachers, classes, program, reports, families, notifications, and settings remain honest placeholders; Phase 3 CRUD has not begun.
+Phase 2.5 completes the product-owner-approved, light-theme QuranTrack design system: Tailwind design tokens, repository-owned shadcn-style components backed by Radix primitives, Lucide icons, React Router, English/Turkish internationalization, a responsive authenticated shell, and polished authentication states. The production routes for students, teachers, classes, program, reports, families, notifications, and settings remain honest placeholders; Phase 3 CRUD has not begun.
 
 ### Development UI showcase
 
-Run `npm run dev`, then open `http://localhost:5173/ui-preview`. The showcase uses only fictional in-memory data and calls no mutation APIs. Vite's compile-time `import.meta.env.DEV` gate omits this route from the production route configuration; `/ui-preview` safely resolves to the not-found page in production. It cannot be enabled with a query parameter.
+Run `npm run dev`, then open `http://localhost:5173/ui-preview`. The showcase uses only fictional in-memory data and calls no mutation APIs. It is enabled only in Vite development mode or in an explicit staging build where `VITE_ENABLE_UI_PREVIEW=true`. A normal production build omits the preview route configuration and safely resolves `/ui-preview` to the not-found page. A query parameter cannot enable it.
 
-The visual identity and QT code-native monogram are proposals for product-owner review, not an approved final logo. See [`docs/UI_DESIGN_SYSTEM.md`](docs/UI_DESIGN_SYSTEM.md).
+The Phase 2.5 visual direction is approved. The code-native QT monogram remains a temporary placeholder and is not an approved final logo. See [`docs/UI_DESIGN_SYSTEM.md`](docs/UI_DESIGN_SYSTEM.md).
 
 ## Requirements
 
@@ -24,24 +24,27 @@ The visual identity and QT code-native monogram are proposals for product-owner 
 
 ## NPM scripts
 
-| Command                     | Purpose                                                         |
-| --------------------------- | --------------------------------------------------------------- |
-| `npm run dev`               | Start local Vite and Cloudflare Worker development.             |
-| `npm run build`             | Type-check and create a production build.                       |
-| `npm run preview`           | Preview the production build locally.                           |
-| `npm run lint`              | Run ESLint.                                                     |
-| `npm run format`            | Format all supported files with Prettier.                       |
-| `npm run format:check`      | Check formatting without changing files.                        |
-| `npm run typecheck`         | Run TypeScript type checking without emitting files.            |
-| `npm run test`              | Run Vitest unit tests once.                                     |
-| `npm run test:watch`        | Run Vitest in watch mode.                                       |
-| `npm run test:e2e`          | Run Playwright browser tests.                                   |
-| `npm run db:migrate:local`  | Apply D1 migrations to the local preview database.              |
-| `npm run db:migrate:remote` | Apply D1 migrations with Wrangler `--env production --remote`.  |
-| `npm run db:seed:local`     | Intentionally load safe fictional demo data into local D1 only. |
-| `npm run db:reset:local`    | Remove local D1 state and reapply migrations.                   |
-| `npm run db:inspect:local`  | List local D1 schema tables and indexes.                        |
-| `npm run deploy`            | Build and deploy with Wrangler.                                 |
+| Command                      | Purpose                                                         |
+| ---------------------------- | --------------------------------------------------------------- |
+| `npm run dev`                | Start local Vite and Cloudflare Worker development.             |
+| `npm run build`              | Type-check and create a production build.                       |
+| `npm run build:staging`      | Build staging with its Wrangler env and fictional UI preview.   |
+| `npm run preview`            | Preview the production build locally.                           |
+| `npm run lint`               | Run ESLint.                                                     |
+| `npm run format`             | Format all supported files with Prettier.                       |
+| `npm run format:check`       | Check formatting without changing files.                        |
+| `npm run typecheck`          | Run TypeScript type checking without emitting files.            |
+| `npm run test`               | Run Vitest unit tests once.                                     |
+| `npm run test:watch`         | Run Vitest in watch mode.                                       |
+| `npm run test:e2e`           | Run Playwright browser tests.                                   |
+| `npm run db:migrate:local`   | Apply D1 migrations to the local preview database.              |
+| `npm run db:migrate:remote`  | Apply D1 migrations with Wrangler `--env production --remote`.  |
+| `npm run db:migrate:staging` | Apply migrations to the remote staging D1 database explicitly.  |
+| `npm run db:seed:local`      | Intentionally load safe fictional demo data into local D1 only. |
+| `npm run db:reset:local`     | Remove local D1 state and reapply migrations.                   |
+| `npm run db:inspect:local`   | List local D1 schema tables and indexes.                        |
+| `npm run deploy`             | Build and deploy with Wrangler.                                 |
+| `npm run deploy:staging`     | Build and deploy staging via Vite's redirected Wrangler config. |
 
 ## Local setup
 

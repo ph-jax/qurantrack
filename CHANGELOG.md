@@ -44,7 +44,7 @@ All notable changes to QuranTrack will be documented in this file.
 ### Added
 
 - Phase 2 authentication and authorization: magic links, Turnstile validation, Apps Script mail relay, hashed opaque sessions, role helpers, organization switching, logout, bootstrap documentation, and focused security coverage.
-- Phase 2.5 proposed QuranTrack UI foundation with custom tokens, responsive application shell, accessible Radix interactions, shared components, English/Turkish internationalization, organization branding states, and a development-only fictional UI showcase.
+- Phase 2.5 product-owner-approved QuranTrack UI foundation with custom tokens, responsive application shell, accessible Radix interactions, shared components, English/Turkish internationalization, organization branding states, and a gated fictional UI showcase.
 - React Router route organization and explicit protected-route session states without protected-content flash.
 - UI design-system documentation and behavior-focused UI tests.
 
@@ -58,10 +58,12 @@ All notable changes to QuranTrack will be documented in this file.
 
 ## Unreleased
 
+- Marked the Phase 2.5 visual foundation approved and complete after product-owner staging review; the mobile containment and account-menu stability repairs were manually verified in the deployed staging preview, while Playwright remains unexecuted because browser binaries are unavailable.
+- Confirmed Phase 3 has not started and synchronized base, staging, and production Worker `APP_VERSION` values to `0.3.0` without changing D1 bindings or IDs.
 - Configured account dropdowns as non-modal Radix menus to prevent mobile scroll-lock from shifting the preview page horizontally.
 - Fixed intrinsic mobile sizing in the preview student, organization-branding, and loading cards at 320px and 412px without masking overflow globally.
 - Added an isolated Cloudflare staging environment and explicit build-time UI-preview flag without exposing staging D1 configuration to production.
-- Revalidated the unchanged Phase 2.5 implementation: lint, formatting, type checking, all 45 Vitest tests, and the production build pass; Playwright browser execution and screenshots remain unavailable in this environment.
+- Revalidated the unchanged Phase 2.5 implementation: lint, formatting, type checking, the complete Vitest suite, and the production build pass; Playwright browser execution and screenshots remain unavailable in this environment.
 - Corrected the Phase 2.5 frontend authentication contract to use the existing `/api/v1/me/organizations` routes, surface switch/logout failures, and expire stale sessions when organization loading is unauthorized.
 - Prevented React StrictMode from consuming a single-use magic link more than once per token and added success, invalid, missing-token, and network regression coverage.
 - Added unique development-preview destinations, completed Turkish interface translations, and prevented the login form from flashing during initial session validation.

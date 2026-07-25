@@ -1,6 +1,6 @@
-# QuranTrack proposed UI design system
+# QuranTrack UI design system
 
-> **Review status:** Phase 2.5 is a proposed foundation awaiting product-owner approval. The wordmark treatment, QT code-native monogram, palette, density, and navigation behavior are not a final or approved identity.
+> **Review status:** The product owner approved the Phase 2.5 visual foundation, including its palette, density, responsive layouts, and navigation behavior. The text wordmark is current product presentation, while the code-native QT monogram remains temporary and is not an approved final logo.
 
 ## Visual principles
 
@@ -53,12 +53,10 @@ QuranTrack identity remains visible. Organization presentation supports name-onl
 3. Open `http://localhost:5173/ui-preview/login` for the non-submitting login preview.
 4. Change viewport and language, open the drawer/menu/dialog, and inspect the table-to-card transition.
 
-The route uses fictional in-memory examples and no production mutation client. Preview mode always ignores any restored real-session identity; organization selection is local state and the account menu offers no logout or session action. It is included only when Vite compiles with `import.meta.env.DEV`; a production build routes `/ui-preview` to safe not-found and a query parameter cannot enable it.
+The route uses fictional in-memory examples and no production mutation client. Preview mode always ignores any restored real-session identity; organization selection is local state and the account menu offers no logout or session action. It is included only when Vite compiles in development mode or when an explicit staging build sets `VITE_ENABLE_UI_PREVIEW=true`. A normal production build excludes the preview routes, resolves `/ui-preview` to safe not-found, and cannot be enabled by a query parameter.
 
-## Product-owner decisions still needed
+## Approved direction and future branding
 
-- Approve or revise warm-ivory/deep-teal palette and restrained gold usage.
-- Approve information density, radii, shadows, sidebar width, and mobile drawer model.
-- Approve the temporary text wordmark and whether the neutral QT monogram should remain; it is not presented as a final logo.
-- Approve statistic, status, program hierarchy, responsive student card, form, and empty-state treatments.
-- Decide whether organization accents should affect only identity elements or selected actions in a later phase.
+- The warm-ivory/deep-teal palette, restrained gold usage, information density, radii, shadows, sidebar, mobile drawer, statistics, statuses, hierarchy, responsive cards, forms, and empty states are approved for the Phase 2.5 foundation.
+- The QT monogram remains temporary until a final logo is separately designed and approved.
+- The scope of organization accents beyond identity elements remains a future product decision.
