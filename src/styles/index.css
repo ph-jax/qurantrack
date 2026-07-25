@@ -167,6 +167,8 @@ textarea {
 }
 .org-identity {
   display: flex;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
   align-items: center;
   gap: 0.65rem;
@@ -370,15 +372,32 @@ textarea {
   display: none;
 }
 .mobile-cards article {
+  width: 100%;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.75rem;
   border-bottom: 1px solid var(--border);
   padding: 1rem 0;
 }
 .mobile-cards p {
+  overflow-wrap: anywhere;
   font-size: 0.8rem;
   color: var(--text-secondary);
+}
+.student-card-details {
+  min-width: 0;
+  flex: 1 1 10rem;
+}
+.mobile-cards .badge {
+  max-width: 100%;
+  flex-shrink: 1;
+  white-space: normal;
+}
+.branding-loading-grid,
+.branding-loading-grid > * {
+  min-width: 0;
 }
 @media (max-width: 1023px) {
   .app-frame {
@@ -404,7 +423,11 @@ textarea {
   .responsive-table table {
     display: none;
   }
-  .mobile-cards,
+  .mobile-cards {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+  }
   .mobile-cards article {
     display: flex;
   }

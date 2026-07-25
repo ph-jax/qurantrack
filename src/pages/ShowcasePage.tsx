@@ -112,7 +112,7 @@ export function ShowcasePage() {
           </form>
         </Card>
       </div>
-      <Card className="mt-6">
+      <Card className="student-preview-card mt-6 min-w-0">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <h3 className="text-lg font-bold">{t('showcase.studentList')}</h3>
           <SearchInput
@@ -149,7 +149,7 @@ export function ShowcasePage() {
           <div className="mobile-cards">
             {learners.map((x) => (
               <article key={x.name}>
-                <div>
+                <div className="student-card-details">
                   <strong>{x.name}</strong>
                   <p>
                     {x.class} · {x.track}
@@ -173,8 +173,8 @@ export function ShowcasePage() {
           <Button variant="secondary">{t('common.next')}</Button>
         </nav>
       </Card>
-      <div className="mt-6 grid gap-6 md:grid-cols-2">
-        <Card>
+      <div className="branding-loading-grid mt-6 grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-2">
+        <Card className="organization-preview-card min-w-0">
           <h3 className="font-bold">{t('showcase.logo')}</h3>
           <OrganizationIdentity
             name={t('showcase.organizationName')}
@@ -184,7 +184,7 @@ export function ShowcasePage() {
           <h3 className="mt-5 font-bold">{t('showcase.noLogo')}</h3>
           <OrganizationIdentity name={t('showcase.organizationName')} accent="not-css" />
         </Card>
-        <Card>
+        <Card className="loading-preview-card min-w-0">
           <h3 className="font-bold">{t('common.loading')}</h3>
           <div className="mt-4 space-y-3">
             <Skeleton className="h-5 w-2/3" />
