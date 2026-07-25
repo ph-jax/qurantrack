@@ -58,6 +58,7 @@ All notable changes to QuranTrack will be documented in this file.
 
 ## Unreleased
 
+- Configured account dropdowns as non-modal Radix menus to prevent mobile scroll-lock from shifting the preview page horizontally.
 - Fixed intrinsic mobile sizing in the preview student, organization-branding, and loading cards at 320px and 412px without masking overflow globally.
 - Added an isolated Cloudflare staging environment and explicit build-time UI-preview flag without exposing staging D1 configuration to production.
 - Revalidated the unchanged Phase 2.5 implementation: lint, formatting, type checking, all 45 Vitest tests, and the production build pass; Playwright browser execution and screenshots remain unavailable in this environment.

@@ -73,4 +73,42 @@ for (const viewport of [
       organizationTruncated: true,
     });
   });
+
+  test(`account menu does not shift the ${viewport.width}px preview`, async ({ page }) => {
+    await page.route('**/api/v1/me', (route) =>
+      route.fulfill({ status: 401, contentType: 'application/json', body: '{}' }),
+    );
+    await page.setViewportSize(viewport);
+    await page.goto('/ui-preview/dashboard');
+    await expect(page.getByRole('heading', { name: /UI showcase/i })).toBeVisible();
+
+    const layout = () =>
+      page.evaluate(() => {
+        const app = document.querySelector('.app-frame')!.getBoundingClientRect();
+        const header = document.querySelector('.topbar')!.getBoundingClientRect();
+        return {
+          documentWidth: document.documentElement.scrollWidth,
+          viewportWidth: innerWidth,
+          app: { left: app.left, right: app.right, width: app.width },
+          header: { left: header.left, right: header.right, width: header.width },
+        };
+      });
+
+    const before = await layout();
+    expect(before.documentWidth).toBe(before.viewportWidth);
+
+    await page.getByRole('button', { name: /Account menu/i }).click();
+    const menu = page.getByRole('menu');
+    await expect(menu).toBeVisible();
+    const open = await layout();
+    expect(open).toEqual(before);
+    const menuBox = await menu.boundingBox();
+    expect(menuBox).not.toBeNull();
+    expect(menuBox!.x).toBeGreaterThanOrEqual(0);
+    expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(viewport.width);
+
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    expect(await layout()).toEqual(before);
+  });
 }

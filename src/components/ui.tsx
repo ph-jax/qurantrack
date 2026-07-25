@@ -277,7 +277,7 @@ export const Menu = ({
   trigger: ReactNode;
   children: ReactNode;
 }) => (
-  <Dropdown.Root>
+  <Dropdown.Root modal={false}>
     <Dropdown.Trigger asChild>{trigger}</Dropdown.Trigger>
     <Dropdown.Portal>
       <Dropdown.Content
