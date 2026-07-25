@@ -2,28 +2,30 @@ import { useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Menu as MenuIcon, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button, Menu, MenuItem, Select, Sheet } from '../components/ui';
+import { Alert, Button, Menu, MenuItem, Select, Sheet } from '../components/ui';
 import { OrganizationIdentity } from '../components/OrganizationIdentity';
 import { useSession, type Role } from '../features/auth/SessionProvider';
-import { visibleNavigation } from './navigation';
+import { previewDestination, visibleNavigation } from './navigation';
 
 function Nav({
   close,
   role,
   prefix = '/app',
+  label,
 }: {
   close?: () => void;
   role: Role;
   prefix?: string;
+  label: string;
 }) {
   const { t } = useTranslation();
   return (
-    <nav aria-label="Primary navigation" className="mt-5 space-y-1">
+    <nav aria-label={label} className="mt-5 space-y-1">
       {visibleNavigation(role).map(({ key, to, icon: Icon }) => (
         <NavLink
           end
           key={key}
-          to={prefix === '/ui-preview' ? prefix : to}
+          to={prefix === '/ui-preview' ? previewDestination(key) : to}
           onClick={close}
           className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`}
         >
@@ -38,6 +40,7 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
   const { session, logout, switchOrganization } = useSession();
   const { t, i18n } = useTranslation();
   const [mobile, setMobile] = useState(false);
+  const [actionError, setActionError] = useState(false);
   const location = useLocation();
   if (!session && !preview) return null;
   const fake = session ?? {
@@ -53,7 +56,7 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
       },
       {
         id: 'fictional-2',
-        name: 'Second Fictional Learning Center',
+        name: t('showcase.secondOrganization'),
         slug: 'second',
         role: 'organization_admin' as const,
       },
@@ -78,12 +81,19 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
             <Select
               label={t('shell.switchOrg')}
               value={current.id}
-              onValueChange={(id) => void switchOrganization(id)}
+              onValueChange={(id) => {
+                setActionError(false);
+                void switchOrganization(id).catch(() => setActionError(true));
+              }}
               items={fake.organizations.map((o) => ({ value: o.id, label: o.name }))}
             />
           )}
         </div>
-        <Nav role={fake.role} prefix={preview ? '/ui-preview' : '/app'} />
+        <Nav
+          label={t('nav.primaryLabel')}
+          role={fake.role}
+          prefix={preview ? '/ui-preview' : '/app'}
+        />
         <p className="sidebar-note">{t('shell.phase')}</p>
       </aside>
       <div className="min-w-0">
@@ -121,16 +131,25 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
             }
           >
             <MenuItem>{fake.user.email}</MenuItem>
-            <MenuItem onSelect={() => void logout()}>{t('shell.logout')}</MenuItem>
+            <MenuItem
+              onSelect={() => {
+                setActionError(false);
+                void logout().catch(() => setActionError(true));
+              }}
+            >
+              {t('shell.logout')}
+            </MenuItem>
           </Menu>
         </header>
         <main className="content">
+          {actionError && <Alert tone="error" title={t('shell.actionError')} />}
           <Outlet />
         </main>
       </div>
-      <Sheet open={mobile} onOpenChange={setMobile} title="QuranTrack">
+      <Sheet open={mobile} onOpenChange={setMobile} title="QuranTrack" closeLabel={t('nav.close')}>
         <OrganizationIdentity name={current.name} />
         <Nav
+          label={t('nav.primaryLabel')}
           role={fake.role}
           prefix={preview ? '/ui-preview' : '/app'}
           close={() => setMobile(false)}

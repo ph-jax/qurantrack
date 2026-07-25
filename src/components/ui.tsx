@@ -97,6 +97,7 @@ export function FormField({
   description,
   error,
   required,
+  requiredLabel,
   children,
 }: {
   id: string;
@@ -104,6 +105,7 @@ export function FormField({
   description?: string;
   error?: string;
   required?: boolean;
+  requiredLabel?: string;
   children: ReactNode;
 }) {
   return (
@@ -115,7 +117,7 @@ export function FormField({
             *
           </span>
         )}{' '}
-        {required && <span className="sr-only">required</span>}
+        {required && requiredLabel && <span className="sr-only">{requiredLabel}</span>}
       </label>
       {children}
       {description && (
@@ -303,7 +305,15 @@ export const MenuItem = ({
   </Dropdown.Item>
 );
 
-function Overlay({ children, sheet = false }: { children: ReactNode; sheet?: boolean }) {
+function Overlay({
+  children,
+  sheet = false,
+  closeLabel,
+}: {
+  children: ReactNode;
+  sheet?: boolean;
+  closeLabel: string;
+}) {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-slate-950/45 data-[state=open]:animate-in motion-reduce:animate-none" />
@@ -317,7 +327,7 @@ function Overlay({ children, sheet = false }: { children: ReactNode; sheet?: boo
       >
         {children}
         <DialogPrimitive.Close
-          aria-label="Close"
+          aria-label={closeLabel}
           className="absolute end-3 top-3 grid size-11 place-items-center rounded-md hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"
         >
           <X className="size-5" />
@@ -331,16 +341,18 @@ export function Dialog({
   title,
   description,
   children,
+  closeLabel,
 }: {
   trigger: ReactNode;
   title: string;
   description: string;
   children?: ReactNode;
+  closeLabel: string;
 }) {
   return (
     <DialogPrimitive.Root>
       <DialogPrimitive.Trigger asChild>{trigger}</DialogPrimitive.Trigger>
-      <Overlay>
+      <Overlay closeLabel={closeLabel}>
         <DialogPrimitive.Title className="pe-10 text-xl font-bold">{title}</DialogPrimitive.Title>
         <DialogPrimitive.Description className="mt-2 text-sm text-text-secondary">
           {description}
@@ -355,15 +367,17 @@ export function Sheet({
   onOpenChange,
   title,
   children,
+  closeLabel,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   title: string;
   children: ReactNode;
+  closeLabel: string;
 }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <Overlay sheet>
+      <Overlay sheet closeLabel={closeLabel}>
         <DialogPrimitive.Title className="pe-10 text-lg font-bold">{title}</DialogPrimitive.Title>
         <DialogPrimitive.Description className="sr-only">{title}</DialogPrimitive.Description>
         {children}
@@ -376,11 +390,13 @@ export function ConfirmDialog({
   title,
   description,
   action,
+  cancelLabel,
 }: {
   trigger: ReactNode;
   title: string;
   description: string;
   action: string;
+  cancelLabel: string;
 }) {
   return (
     <AlertDialogPrimitive.Root>
@@ -396,7 +412,7 @@ export function ConfirmDialog({
           </AlertDialogPrimitive.Description>
           <div className="mt-5 flex justify-end gap-2">
             <AlertDialogPrimitive.Cancel asChild>
-              <Button variant="secondary">Cancel</Button>
+              <Button variant="secondary">{cancelLabel}</Button>
             </AlertDialogPrimitive.Cancel>
             <AlertDialogPrimitive.Action asChild>
               <Button>{action}</Button>

@@ -49,7 +49,7 @@ QuranTrack identity remains visible. Organization presentation supports name-onl
 ## Development-only showcase
 
 1. Run `npm install` and `npm run dev`.
-2. Open `http://localhost:5173/ui-preview`.
+2. Open `http://localhost:5173/ui-preview`; each sidebar item uses its own `/ui-preview/:section` destination and remains inside fictional preview content.
 3. Open `http://localhost:5173/ui-preview/login` for the non-submitting login preview.
 4. Change viewport and language, open the drawer/menu/dialog, and inspect the table-to-card transition.
 

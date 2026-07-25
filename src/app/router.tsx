@@ -41,8 +41,9 @@ export const router = createBrowserRouter([
           path: '/ui-preview',
           element: <AppLayout preview />,
           children: [
+            { index: true, element: <Navigate to="dashboard" replace /> },
             {
-              index: true,
+              path: ':section',
               lazy: async () => ({
                 Component: (await import('../pages/ShowcasePage')).ShowcasePage,
               }),

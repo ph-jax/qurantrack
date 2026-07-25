@@ -27,3 +27,4 @@ export const navigation: NavigationItem[] = [
 ];
 export const visibleNavigation = (role: Role) =>
   navigation.filter((item) => item.roles.includes(role));
+export const previewDestination = (key: string) => `/ui-preview/${key}`;

@@ -9,6 +9,7 @@ export default {
     generic: 'If this email is eligible, a QuranTrack sign-in link will be sent.',
     invalid: 'This sign-in link is invalid or expired. Request a new link.',
     loading: 'Checking your secure session…',
+    consumeLoading: 'Validating secure sign-in link…',
     expired: 'Your session expired or was revoked. Please sign in again.',
     service: 'We could not verify your session. Check your connection and try again.',
     retry: 'Try again',
@@ -31,6 +32,7 @@ export default {
     settings: 'Settings',
     more: 'More navigation',
     close: 'Close navigation',
+    primaryLabel: 'Primary navigation',
   },
   shell: {
     preview: 'UI preview',
@@ -38,6 +40,7 @@ export default {
     switchOrg: 'Switch organization',
     account: 'Account menu',
     logout: 'Log out',
+    actionError: 'That account action could not be completed. Please try again.',
     phase: 'Proposed UI foundation — no production records or mutations',
     next: 'Coming in the next phase',
     nextBody:
@@ -52,6 +55,14 @@ export default {
     completion: 'Lesson completion',
     recent: 'Recent learning activity',
     arabic: 'Sample Quran text',
+    fictional: 'Fictional preview',
+    weeklyChange: '12 more than last week',
+    reviewSuggested: 'Review suggested',
+    acrossTracks: 'Across active tracks',
+    connectedLetters: 'Connected letters',
+    surahReview: 'Surah review',
+    arabicHelp:
+      'Arabic content uses a readable local system font stack and an explicit direction boundary.',
   },
   common: {
     language: 'Language',
@@ -77,6 +88,9 @@ export default {
     confirm: 'Confirm preview action',
     confirmBody: 'This demonstration does not call a production mutation API.',
     confirmAction: 'Confirm',
+    pagination: 'Pagination',
+    notFound: 'Page not found',
+    returnHome: 'Return to QuranTrack',
   },
   showcase: {
     title: 'Phase 2.5 UI showcase',
@@ -97,5 +111,11 @@ export default {
     openDialog: 'Open confirmation dialog',
     noLogo: 'Organization name only',
     logo: 'Sample organization monogram',
+    memorization: 'Memorization',
+    visibleTeachers: 'Visible to teachers',
+    studentName: 'Name',
+    class: 'Class',
+    trackColumn: 'Track',
+    secondOrganization: 'Second Fictional Learning Center',
   },
 };

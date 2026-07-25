@@ -132,7 +132,12 @@ describe('navigation, language and shared accessibility', () => {
   it('traps focus in an accessible Radix dialog and restores it', async () => {
     const user = userEvent.setup();
     render(
-      <Dialog trigger={<Button>Open</Button>} title="Confirm" description="Fictional action">
+      <Dialog
+        trigger={<Button>Open</Button>}
+        title="Confirm"
+        description="Fictional action"
+        closeLabel="Close"
+      >
         <Button>Inside</Button>
       </Dialog>,
     );

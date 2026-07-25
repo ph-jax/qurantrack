@@ -34,7 +34,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
       if (!response.ok) throw new Error('session service');
       const me = (await response.json()) as Omit<Session, 'organizations'>;
-      const orgResponse = await fetch('/api/v1/auth/organizations', { cache: 'no-store' });
+      const orgResponse = await fetch('/api/v1/me/organizations', { cache: 'no-store' });
+      if (orgResponse.status === 401) {
+        setSession(null);
+        setStatus('expired');
+        localStorage.removeItem(HINT);
+        return;
+      }
       if (!orgResponse.ok) throw new Error('organization service');
       const orgs = (await orgResponse.json()) as { organizations: Organization[] };
       setSession({ ...me, organizations: orgs.organizations });
@@ -50,19 +56,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timer);
   }, [refresh]);
   const logout = async () => {
-    await fetch('/api/v1/auth/logout', { method: 'POST', cache: 'no-store' });
+    const response = await fetch('/api/v1/auth/logout', { method: 'POST', cache: 'no-store' });
+    if (!response.ok && response.status !== 401) throw new Error('logout failed');
     localStorage.removeItem(HINT);
     setSession(null);
     setStatus('unauthenticated');
   };
   const switchOrganization = async (id: string) => {
-    const response = await fetch('/api/v1/auth/organizations/switch', {
+    const response = await fetch('/api/v1/me/organizations/switch', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ organizationId: id }),
       cache: 'no-store',
     });
-    if (response.ok) await refresh();
+    if (response.status === 401) {
+      setSession(null);
+      setStatus('expired');
+      localStorage.removeItem(HINT);
+      return;
+    }
+    if (!response.ok) throw new Error('organization switch failed');
+    await refresh();
   };
   return (
     <SessionContext.Provider value={{ status, session, refresh, logout, switchOrganization }}>

@@ -65,25 +65,25 @@ export function DashboardPage({ preview = false }: { preview?: boolean }) {
           label={t('dashboard.students')}
           value="128"
           icon={GraduationCap}
-          detail="Fictional preview"
+          detail={t('dashboard.fictional')}
         />
         <Stat
           label={t('dashboard.updates')}
           value="42"
           icon={NotebookTabs}
-          detail="12 more than last week"
+          detail={t('dashboard.weeklyChange')}
         />
         <Stat
           label={t('dashboard.attention')}
           value="3"
           icon={CircleAlert}
-          detail="Review suggested"
+          detail={t('dashboard.reviewSuggested')}
         />
         <Stat
           label={t('dashboard.completion')}
           value="84%"
           icon={BookOpenCheck}
-          detail="Across active tracks"
+          detail={t('dashboard.acrossTracks')}
         />
       </div>
       <div className="mt-6 grid gap-6 xl:grid-cols-[1.4fr_1fr]">
@@ -95,7 +95,8 @@ export function DashboardPage({ preview = false }: { preview?: boolean }) {
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{name}</p>
                   <p className="text-sm text-text-secondary">
-                    {i === 1 ? 'Connected letters' : 'Surah review'} · Fictional
+                    {i === 1 ? t('dashboard.connectedLetters') : t('dashboard.surahReview')} ·{' '}
+                    {t('dashboard.fictional')}
                   </p>
                 </div>
                 <Badge tone={i === 1 ? 'warning' : 'success'}>
@@ -110,10 +111,7 @@ export function DashboardPage({ preview = false }: { preview?: boolean }) {
           <p lang="ar" dir="rtl" className="quran-text">
             اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ
           </p>
-          <p className="mt-4 text-sm text-text-secondary">
-            Arabic content uses a readable local system font stack and an explicit direction
-            boundary.
-          </p>
+          <p className="mt-4 text-sm text-text-secondary">{t('dashboard.arabicHelp')}</p>
         </Card>
       </div>
     </>

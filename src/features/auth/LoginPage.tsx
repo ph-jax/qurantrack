@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Alert, Button, Card, FormField, Input, Select } from '../../components/ui';
+import { Alert, Button, Card, FormField, Input, Select, Spinner } from '../../components/ui';
 import { useSession } from './SessionProvider';
 type TurnstileStatus = 'missing-key' | 'loading' | 'ready' | 'verified' | 'failed';
 type TurnstileApi = {
@@ -20,7 +20,8 @@ declare global {
     turnstile?: TurnstileApi;
   }
 }
-const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+const siteKey = (import.meta as ImportMeta & { env: { readonly VITE_TURNSTILE_SITE_KEY?: string } })
+  .env.VITE_TURNSTILE_SITE_KEY;
 
 export function LoginPage({ preview = false }: { preview?: boolean }) {
   const { t, i18n } = useTranslation();
@@ -73,7 +74,7 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
     script.defer = true;
     script.onload = render;
     script.onerror = () => setTurnstile('failed');
-    document.head.append(script);
+    document.head.appendChild(script);
   }, [preview]);
   if (status === 'authenticated' && !preview) return <Navigate to="/app" replace />;
   const submit = async (e: React.FormEvent) => {
@@ -102,6 +103,23 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
   };
   const invalid = location.pathname === '/auth/invalid';
   const expired = Boolean((location.state as { expired?: boolean } | null)?.expired);
+  if (!preview && status === 'checking')
+    return (
+      <main className="grid min-h-screen place-items-center p-6">
+        <Spinner label={t('auth.loading')} />
+      </main>
+    );
+  if (!preview && status === 'error')
+    return (
+      <main className="grid min-h-screen place-items-center p-6">
+        <div className="max-w-md">
+          <Alert tone="error" title={t('auth.service')} />
+          <Button className="mt-4" onClick={() => void refresh()}>
+            {t('auth.retry')}
+          </Button>
+        </div>
+      </main>
+    );
   return (
     <main className="auth-page">
       <section className="auth-panel" aria-labelledby="login-title">
@@ -134,7 +152,13 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
           {serviceError && <Alert tone="error" title={t('auth.service')} />}
         </div>
         <form className="mt-6 space-y-5" onSubmit={submit}>
-          <FormField id="email" label={t('auth.email')} description={t('auth.emailHelp')} required>
+          <FormField
+            id="email"
+            label={t('auth.email')}
+            description={t('auth.emailHelp')}
+            required
+            requiredLabel={t('common.required')}
+          >
             <Input
               id="email"
               type="email"
@@ -164,11 +188,6 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
             {t('auth.send')}
           </Button>
         </form>
-        {status === 'error' && !preview && (
-          <Button variant="ghost" className="mt-3 w-full" onClick={() => void refresh()}>
-            {t('auth.retry')}
-          </Button>
-        )}
         {preview && (
           <button
             className="mt-6 text-sm text-brand underline-offset-4 hover:underline"

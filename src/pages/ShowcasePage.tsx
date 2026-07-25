@@ -1,5 +1,6 @@
 import { BookMarked, ChevronRight, Layers3 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router-dom';
 import {
   Alert,
   Badge,
@@ -24,11 +25,15 @@ const learners = [
 ];
 export function ShowcasePage() {
   const { t } = useTranslation();
+  const { section = 'dashboard' } = useParams();
   return (
     <>
       <header className="page-header">
         <div>
           <Badge tone="info">{t('shell.preview')}</Badge>
+          <p className="mt-3 eyebrow" data-testid="preview-section">
+            {t(`nav.${section}`)}
+          </p>
           <h2 className="mt-3">{t('showcase.title')}</h2>
           <p>{t('showcase.description')}</p>
         </div>
@@ -74,6 +79,7 @@ export function ShowcasePage() {
               description={t('showcase.help')}
               error={t('showcase.validation')}
               required
+              requiredLabel={t('common.required')}
             >
               <Input
                 id="program-name"
@@ -88,10 +94,10 @@ export function ShowcasePage() {
               label={t('showcase.track')}
               items={[
                 { value: 'reading', label: t('showcase.track') },
-                { value: 'memorization', label: 'Memorization' },
+                { value: 'memorization', label: t('showcase.memorization') },
               ]}
             />
-            <Checkbox id="public" label="Visible to teachers" />
+            <Checkbox id="public" label={t('showcase.visibleTeachers')} />
             <Switch id="active" label={t('showcase.enabled')} />
             <div className="flex flex-wrap gap-2">
               <Button>{t('common.save')}</Button>
@@ -100,6 +106,7 @@ export function ShowcasePage() {
                 title={t('common.confirm')}
                 description={t('common.confirmBody')}
                 action={t('common.confirmAction')}
+                cancelLabel={t('common.cancel')}
               />
             </div>
           </form>
@@ -118,9 +125,9 @@ export function ShowcasePage() {
           <table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Class</th>
-                <th>Track</th>
+                <th>{t('showcase.studentName')}</th>
+                <th>{t('showcase.class')}</th>
+                <th>{t('showcase.trackColumn')}</th>
                 <th>{t('common.status')}</th>
               </tr>
             </thead>
@@ -155,7 +162,10 @@ export function ShowcasePage() {
             ))}
           </div>
         </div>
-        <nav aria-label="Pagination" className="mt-5 flex items-center justify-between gap-2">
+        <nav
+          aria-label={t('common.pagination')}
+          className="mt-5 flex items-center justify-between gap-2"
+        >
           <Button variant="secondary">{t('common.previous')}</Button>
           <span className="text-sm text-text-secondary">
             {t('common.page', { page: 1, pages: 4 })}
