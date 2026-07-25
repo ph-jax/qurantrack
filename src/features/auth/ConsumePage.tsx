@@ -1,9 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../../components/ui';
 import { useSession } from './SessionProvider';
-import { consumeMagicLinkOnce } from './consumeRequest';
+import { runConsumeFlowOnce } from './consumeRequest';
 
 export function ConsumePage() {
   const location = useLocation();
@@ -11,19 +11,17 @@ export function ConsumePage() {
   const { refresh } = useSession();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const missingTokenHandled = useRef(false);
   useEffect(() => {
     if (!token) {
+      if (missingTokenHandled.current) return;
+      missingTokenHandled.current = true;
       navigate('/auth/invalid', { replace: true });
       return;
     }
-    void consumeMagicLinkOnce(token).then(async (ok) => {
-      if (!ok) {
-        navigate('/auth/invalid', { replace: true });
-        return;
-      }
-      await refresh();
-      navigate('/app', { replace: true });
-    });
+    void runConsumeFlowOnce(token, refresh, (authenticated) =>
+      navigate(authenticated ? '/app' : '/auth/invalid', { replace: true }),
+    );
   }, [navigate, refresh, token]);
   return (
     <main className="grid min-h-screen place-items-center">

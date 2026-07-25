@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 export type Role = 'system_admin' | 'organization_admin' | 'teacher' | 'read_only';
 export type Organization = { id: string; name: string; slug: string; role: Role };
@@ -22,10 +30,13 @@ const HINT = 'qurantrack-had-session';
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>('checking');
   const [session, setSession] = useState<Session | null>(null);
+  const refreshGeneration = useRef(0);
   const refresh = useCallback(async () => {
+    const generation = ++refreshGeneration.current;
     setStatus('checking');
     try {
       const response = await fetch('/api/v1/me', { cache: 'no-store' });
+      if (generation !== refreshGeneration.current) return;
       if (response.status === 401) {
         setSession(null);
         setStatus(localStorage.getItem(HINT) ? 'expired' : 'unauthenticated');
@@ -35,6 +46,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (!response.ok) throw new Error('session service');
       const me = (await response.json()) as Omit<Session, 'organizations'>;
       const orgResponse = await fetch('/api/v1/me/organizations', { cache: 'no-store' });
+      if (generation !== refreshGeneration.current) return;
       if (orgResponse.status === 401) {
         setSession(null);
         setStatus('expired');
@@ -47,6 +59,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setStatus('authenticated');
       localStorage.setItem(HINT, 'true');
     } catch {
+      if (generation !== refreshGeneration.current) return;
       setSession(null);
       setStatus('error');
     }
@@ -56,6 +69,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timer);
   }, [refresh]);
   const logout = async () => {
+    refreshGeneration.current += 1;
     const response = await fetch('/api/v1/auth/logout', { method: 'POST', cache: 'no-store' });
     if (!response.ok && response.status !== 401) throw new Error('logout failed');
     localStorage.removeItem(HINT);
@@ -63,6 +77,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setStatus('unauthenticated');
   };
   const switchOrganization = async (id: string) => {
+    refreshGeneration.current += 1;
     const response = await fetch('/api/v1/me/organizations/switch', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

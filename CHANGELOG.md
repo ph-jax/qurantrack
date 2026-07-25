@@ -61,3 +61,4 @@ All notable changes to QuranTrack will be documented in this file.
 - Corrected the Phase 2.5 frontend authentication contract to use the existing `/api/v1/me/organizations` routes, surface switch/logout failures, and expire stale sessions when organization loading is unauthorized.
 - Prevented React StrictMode from consuming a single-use magic link more than once per token and added success, invalid, missing-token, and network regression coverage.
 - Added unique development-preview destinations, completed Turkish interface translations, and prevented the login form from flashing during initial session validation.
+- Fully isolated preview identity, organization switching, and account actions from authenticated session mutations, and completed StrictMode consume-flow coordination so refresh and navigation also execute once.

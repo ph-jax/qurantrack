@@ -1,4 +1,4 @@
-import { StrictMode, useState } from 'react';
+import { StrictMode, useEffect, useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -7,7 +7,10 @@ import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { SessionProvider, useSession } from '../../../src/features/auth/SessionProvider';
 import { ConsumePage } from '../../../src/features/auth/ConsumePage';
 import { LoginPage } from '../../../src/features/auth/LoginPage';
-import { resetConsumeRequestsForTests } from '../../../src/features/auth/consumeRequest';
+import {
+  resetConsumeRequestsForTests,
+  runConsumeFlowOnce,
+} from '../../../src/features/auth/consumeRequest';
 import { AppLayout } from '../../../src/app/AppLayout';
 import { navigation, previewDestination } from '../../../src/app/navigation';
 import { i18n } from '../../../src/i18n';
@@ -140,6 +143,19 @@ function consumeTree(path: string) {
     </StrictMode>
   );
 }
+
+function FlowProbe({
+  refresh,
+  decide,
+}: {
+  refresh: () => Promise<void>;
+  decide: (authenticated: boolean) => void;
+}) {
+  useEffect(() => {
+    void runConsumeFlowOnce('delayed-token', refresh, decide);
+  }, [decide, refresh]);
+  return null;
+}
 describe('single-use magic-link consumption', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -157,6 +173,59 @@ describe('single-use magic-link consumption', () => {
     render(consumeTree('/auth/consume?token=secure-token-value'));
     await screen.findByText('Authenticated app');
     expect(fetch.mock.calls.filter(([u]) => String(u).includes('/consume'))).toHaveLength(1);
+  });
+  it('runs delayed completion, refresh, and navigation decisions exactly once under StrictMode', async () => {
+    let resolveConsume!: (value: Response) => void;
+    const fetch = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveConsume = resolve;
+        }),
+    );
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    const decide = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    render(
+      <StrictMode>
+        <FlowProbe refresh={refresh} decide={decide} />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    resolveConsume(response({ ok: true }));
+    await waitFor(() => expect(decide).toHaveBeenCalledTimes(1));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(decide).toHaveBeenCalledWith(true);
+  });
+  it('prevents a stale initial session response from replacing post-consumption authentication', async () => {
+    let resolveConsume!: (value: Response) => void;
+    let resolveStaleMe!: (value: Response) => void;
+    let meCalls = 0;
+    const fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/consume'))
+        return new Promise<Response>((resolve) => {
+          resolveConsume = resolve;
+        });
+      if (url === '/api/v1/me' && ++meCalls === 1)
+        return new Promise<Response>((resolve) => {
+          resolveStaleMe = resolve;
+        });
+      if (url === '/api/v1/me') return Promise.resolve(response(me));
+      return Promise.resolve(response({ organizations }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    render(consumeTree('/auth/consume?token=stale-race-token'));
+    await waitFor(() => expect(resolveConsume).toBeTypeOf('function'));
+    await waitFor(() => expect(resolveStaleMe).toBeTypeOf('function'));
+    resolveConsume(response({ ok: true }));
+    await screen.findByText('Authenticated app');
+    resolveStaleMe(response({}, 401));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText('Authenticated app')).toBeInTheDocument();
+    expect(fetch.mock.calls.filter(([url]) => String(url) === '/api/v1/me')).toHaveLength(2);
+    expect(
+      fetch.mock.calls.filter(([url]) => String(url) === '/api/v1/me/organizations'),
+    ).toHaveLength(1);
   });
   it.each([
     ['invalid', response({}, 400)],
@@ -218,6 +287,54 @@ describe('development preview navigation', () => {
     expect(
       screen.getAllByRole('link').filter((x) => x.getAttribute('aria-current') === 'page'),
     ).toHaveLength(1);
+  });
+  it('isolates fictional preview identity and account actions from a real session', async () => {
+    await i18n.changeLanguage('en');
+    const realOrganizations = [
+      { id: 'real-org', name: 'Real Private Organization', slug: 'real', role: 'system_admin' },
+    ];
+    const fetch = vi.fn(async (input: RequestInfo | URL) =>
+      String(input) === '/api/v1/me'
+        ? response({
+            user: { id: 'real-user', email: 'real@example.test' },
+            activeOrganizationId: 'real-org',
+            role: 'system_admin',
+          })
+        : response({ organizations: realOrganizations }),
+    );
+    vi.stubGlobal('fetch', fetch);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={['/ui-preview/dashboard']}>
+          <SessionProvider>
+            <Routes>
+              <Route path="/ui-preview" element={<AppLayout preview />}>
+                <Route path=":section" element={<Section />} />
+              </Route>
+            </Routes>
+          </SessionProvider>
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+    await waitFor(() =>
+      expect(fetch.mock.calls.some(([url]) => String(url) === '/api/v1/me/organizations')).toBe(
+        true,
+      ),
+    );
+    expect(screen.getAllByText(i18n.t('showcase.organizationName')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Real Private Organization')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('combobox', { name: i18n.t('shell.switchOrg') }));
+    await userEvent.click(
+      screen.getByRole('option', { name: i18n.t('showcase.secondOrganization') }),
+    );
+    expect(screen.getAllByText(i18n.t('showcase.secondOrganization')).length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('shell.account') }));
+    expect(screen.getByText('preview.staff@example.test')).toBeInTheDocument();
+    expect(screen.getByText(i18n.t('shell.previewAccountAction'))).toBeInTheDocument();
+    expect(
+      fetch.mock.calls.some(([url]) => String(url) === '/api/v1/me/organizations/switch'),
+    ).toBe(false);
+    expect(fetch.mock.calls.some(([url]) => String(url) === '/api/v1/auth/logout')).toBe(false);
   });
 });
 

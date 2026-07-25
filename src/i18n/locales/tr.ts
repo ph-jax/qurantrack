@@ -41,6 +41,7 @@ export default {
     account: 'Hesap menüsü',
     logout: 'Çıkış yap',
     actionError: 'Bu hesap işlemi tamamlanamadı. Lütfen yeniden deneyin.',
+    previewAccountAction: 'Önizleme hesabı — oturum işlemi yoktur',
     phase: 'Önerilen arayüz temeli — üretim kaydı veya değişikliği yoktur',
     next: 'Bir sonraki aşamada geliyor',
     nextBody:

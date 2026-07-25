@@ -41,11 +41,12 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
   const { t, i18n } = useTranslation();
   const [mobile, setMobile] = useState(false);
   const [actionError, setActionError] = useState(false);
+  const [previewOrganizationId, setPreviewOrganizationId] = useState('fictional-1');
   const location = useLocation();
   if (!session && !preview) return null;
-  const fake = session ?? {
-    user: { email: 'staff@example.test' },
-    activeOrganizationId: 'fictional-1',
+  const previewSession = {
+    user: { id: 'fictional-user', email: 'preview.staff@example.test' },
+    activeOrganizationId: previewOrganizationId,
     role: 'organization_admin' as const,
     organizations: [
       {
@@ -62,8 +63,11 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
       },
     ],
   };
+  const displaySession = preview ? previewSession : session!;
   const current =
-    fake.organizations.find((o) => o.id === fake.activeOrganizationId) ?? fake.organizations[0];
+    displaySession.organizations.find(
+      (organization) => organization.id === displaySession.activeOrganizationId,
+    ) ?? displaySession.organizations[0];
   const key = location.pathname.split('/').pop() || 'dashboard';
   return (
     <div className="app-frame">
@@ -77,21 +81,25 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
         <div className="mt-6">
           <p className="eyebrow">{t('shell.organization')}</p>
           <OrganizationIdentity name={current.name} />
-          {fake.organizations.length > 1 && (
+          {displaySession.organizations.length > 1 && (
             <Select
               label={t('shell.switchOrg')}
               value={current.id}
               onValueChange={(id) => {
                 setActionError(false);
+                if (preview) {
+                  setPreviewOrganizationId(id);
+                  return;
+                }
                 void switchOrganization(id).catch(() => setActionError(true));
               }}
-              items={fake.organizations.map((o) => ({ value: o.id, label: o.name }))}
+              items={displaySession.organizations.map((o) => ({ value: o.id, label: o.name }))}
             />
           )}
         </div>
         <Nav
           label={t('nav.primaryLabel')}
-          role={fake.role}
+          role={displaySession.role}
           prefix={preview ? '/ui-preview' : '/app'}
         />
         <p className="sidebar-note">{t('shell.phase')}</p>
@@ -130,15 +138,19 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
               </Button>
             }
           >
-            <MenuItem>{fake.user.email}</MenuItem>
-            <MenuItem
-              onSelect={() => {
-                setActionError(false);
-                void logout().catch(() => setActionError(true));
-              }}
-            >
-              {t('shell.logout')}
-            </MenuItem>
+            <MenuItem>{displaySession.user.email}</MenuItem>
+            {preview ? (
+              <MenuItem>{t('shell.previewAccountAction')}</MenuItem>
+            ) : (
+              <MenuItem
+                onSelect={() => {
+                  setActionError(false);
+                  void logout().catch(() => setActionError(true));
+                }}
+              >
+                {t('shell.logout')}
+              </MenuItem>
+            )}
           </Menu>
         </header>
         <main className="content">
@@ -150,7 +162,7 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
         <OrganizationIdentity name={current.name} />
         <Nav
           label={t('nav.primaryLabel')}
-          role={fake.role}
+          role={displaySession.role}
           prefix={preview ? '/ui-preview' : '/app'}
           close={() => setMobile(false)}
         />

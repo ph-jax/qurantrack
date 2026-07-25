@@ -41,6 +41,7 @@ export default {
     account: 'Account menu',
     logout: 'Log out',
     actionError: 'That account action could not be completed. Please try again.',
+    previewAccountAction: 'Preview account — no session actions',
     phase: 'Proposed UI foundation — no production records or mutations',
     next: 'Coming in the next phase',
     nextBody:

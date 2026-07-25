@@ -53,7 +53,7 @@ QuranTrack identity remains visible. Organization presentation supports name-onl
 3. Open `http://localhost:5173/ui-preview/login` for the non-submitting login preview.
 4. Change viewport and language, open the drawer/menu/dialog, and inspect the table-to-card transition.
 
-The route uses fictional in-memory examples and no production mutation client. It is included only when Vite compiles with `import.meta.env.DEV`; a production build routes `/ui-preview` to safe not-found and a query parameter cannot enable it.
+The route uses fictional in-memory examples and no production mutation client. Preview mode always ignores any restored real-session identity; organization selection is local state and the account menu offers no logout or session action. It is included only when Vite compiles with `import.meta.env.DEV`; a production build routes `/ui-preview` to safe not-found and a query parameter cannot enable it.
 
 ## Product-owner decisions still needed
 
