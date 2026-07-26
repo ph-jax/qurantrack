@@ -64,6 +64,7 @@ class AuthDb implements D1DatabaseLike {
           org_slug: 'org',
           email_sender_name: 'Org',
           email_reply_to: 'reply@example.com',
+          email_sender_alias: null,
         } as T,
       ],
     };

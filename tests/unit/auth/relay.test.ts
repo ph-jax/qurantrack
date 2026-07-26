@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   relayResponseSucceeded,
   relayUrlWithAuth,
@@ -10,6 +11,7 @@ import {
 const message = {
   to: 'staff@example.com',
   fromAlias: 'sender@example.com',
+  senderName: 'Example Center',
   replyTo: 'reply@example.com',
   subject: 'Sign in',
   text: 'Open QuranTrack.',
@@ -69,6 +71,54 @@ describe('mail relay protocol', () => {
   it('keeps Apps Script auth parameters reliably outside custom headers', () => {
     const url = relayUrlWithAuth('https://example.com/relay', '10', 'nonce', 'sig');
     expect(url).toBe('https://example.com/relay?timestamp=10&nonce=nonce&signature=sig');
+  });
+
+  it('enforces authenticated atomic nonce claiming before message and sender processing', () => {
+    const script = readFileSync('apps-script-mail-relay/Code.gs', 'utf8');
+    const doPost = script.slice(
+      script.indexOf('function doPost'),
+      script.indexOf('function claimAuthenticatedNonce_'),
+    );
+    const orderedCalls = [
+      'getStaticRelayConfig_()',
+      'constantTimeEqual_',
+      'claimAuthenticatedNonce_(nonce)',
+      'JSON.parse(body)',
+      'validateMessage_(message)',
+      'getSenderConfig_(staticConfig.approved)',
+      'authorizeSender_',
+      'GmailApp.sendEmail',
+    ];
+    const positions = orderedCalls.map((call) => doPost.indexOf(call));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+
+    // A replay or lock failure returns before parsing and can never reach delivery.
+    expect(doPost).toContain(
+      'const nonceError = claimAuthenticatedNonce_(nonce);\n    if (nonceError) return json_({ ok: false, error: nonceError });',
+    );
+
+    const nonceHelper = script.slice(
+      script.indexOf('function claimAuthenticatedNonce_'),
+      script.indexOf('function getStaticRelayConfig_'),
+    );
+    expect(nonceHelper).toContain('LockService.getScriptLock()');
+    expect(nonceHelper).toContain("if (!lock.tryLock(5000)) return 'relay_busy'");
+    expect(nonceHelper.indexOf('try {')).toBeLessThan(nonceHelper.indexOf('cache.get(nonce)'));
+    expect(nonceHelper.indexOf('cache.get(nonce)')).toBeLessThan(
+      nonceHelper.indexOf('cache.put(nonce'),
+    );
+    expect(nonceHelper.indexOf('cache.put(nonce')).toBeLessThan(nonceHelper.indexOf('} finally {'));
+    expect(nonceHelper.indexOf('} finally {')).toBeLessThan(
+      nonceHelper.indexOf('lock.releaseLock()'),
+    );
+
+    const staticConfig = script.slice(
+      script.indexOf('function getStaticRelayConfig_'),
+      script.indexOf('function getSenderConfig_'),
+    );
+    expect(staticConfig).not.toContain('Session.');
+    expect(staticConfig).not.toContain('GmailApp.');
   });
 
   it('verifies and rejects relay auth for missing, expiry, replay, bad signature, and alias failures', async () => {

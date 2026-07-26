@@ -74,6 +74,26 @@ print(conn.execute("select count(*) from sqlite_master where type='table'").fetc
   });
 });
 
+describe('Phase 2.6 sender migration', () => {
+  it('applies after the core schema and accepts the explicit-column demo seed', () => {
+    execFileSync('python3', [
+      '-c',
+      `import sqlite3, pathlib
+conn=sqlite3.connect(':memory:')
+conn.execute('PRAGMA foreign_keys = ON')
+conn.executescript(pathlib.Path('migrations/0001_core_schema.sql').read_text())
+conn.executescript(pathlib.Path('migrations/0002_organization_email_sender_alias.sql').read_text())
+conn.executescript(pathlib.Path('seeds/demo_seed.sql').read_text())
+columns = [row[1] for row in conn.execute('PRAGMA table_info(organizations)')]
+assert 'email_sender_alias' in columns
+assert conn.execute("SELECT email_sender_alias FROM organizations WHERE id = 'org_demo'").fetchone() == (None,)`,
+    ]);
+
+    const seed = readFileSync('seeds/demo_seed.sql', 'utf8');
+    expect(seed).toMatch(/INSERT INTO organizations\s*\([\s\S]*email_sender_alias[\s\S]*\) VALUES/);
+  });
+});
+
 describe('tenant repositories', () => {
   it('always scopes by trusted organizationId and blocks cross-organization IDs', async () => {
     const db = new MockDb({ 'org_a:student_a': { id: 'student_a', organization_id: 'org_a' } });

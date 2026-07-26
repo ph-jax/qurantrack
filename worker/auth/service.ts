@@ -2,6 +2,7 @@ import type { Env } from '../types/env';
 import { appBaseUrl, requireSecret } from './config';
 import { hashSecret, randomToken, sha256Hex } from '../../shared/auth/crypto';
 import { sendRelayMail } from '../email/relay';
+import { resolveSender } from '../email/sender';
 
 const LOGIN_TTL_MINUTES = 15;
 const SESSION_IDLE_HOURS = 12;
@@ -29,6 +30,7 @@ interface Membership {
   org_slug: string;
   email_sender_name: string;
   email_reply_to: string;
+  email_sender_alias: string | null;
 }
 
 export async function requestMagicLink(
@@ -58,17 +60,19 @@ export async function requestMagicLink(
     .bind(id, email, tokenHash, organizationSlug ?? null, expires, ipHash, now.toISOString())
     .run();
   const link = `${appBaseUrl(env)}/auth/consume?token=${encodeURIComponent(token)}`;
+  const sender = resolveSender(env, memberships[0]);
   await sendRelayMail(env, {
     to: email,
-    fromAlias: memberships[0].email_reply_to,
-    replyTo: memberships[0].email_reply_to,
+    fromAlias: sender.fromAlias,
+    senderName: sender.senderName,
+    replyTo: sender.replyTo,
     subject: 'Your QuranTrack sign-in link',
     text: `Welcome to QuranTrack. Tap this secure sign-in link within ${LOGIN_TTL_MINUTES} minutes:\n\n${link}\n\nIf you did not request this, you can ignore this email.`,
   });
 }
 
 async function activeMemberships(env: Env, userId: string, slug?: string): Promise<Membership[]> {
-  const sql = `SELECT m.organization_id, m.role, m.active, o.active AS org_active, o.name AS org_name, o.slug AS org_slug, o.email_sender_name, o.email_reply_to FROM organization_memberships m JOIN organizations o ON o.id = m.organization_id WHERE m.user_id = ? AND m.active = 1 AND o.active = 1 ${slug ? 'AND o.slug = ?' : ''} ORDER BY o.name ASC`;
+  const sql = `SELECT m.organization_id, m.role, m.active, o.active AS org_active, o.name AS org_name, o.slug AS org_slug, o.email_sender_name, o.email_reply_to, o.email_sender_alias FROM organization_memberships m JOIN organizations o ON o.id = m.organization_id WHERE m.user_id = ? AND m.active = 1 AND o.active = 1 ${slug ? 'AND o.slug = ?' : ''} ORDER BY o.name ASC`;
   const result = await (
     slug ? env.DB.prepare(sql).bind(userId, slug) : env.DB.prepare(sql).bind(userId)
   ).all<Membership>();

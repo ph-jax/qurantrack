@@ -1,5 +1,23 @@
 PRAGMA foreign_keys = ON;
-INSERT INTO organizations VALUES ('org_demo','qurantrack-demo','QuranTrack Demo Learning Center',NULL,NULL,'#166534','en','America/New_York','QuranTrack Demo','admin@example.com','QuranTrack Progress Update',14,30,1,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z');
+INSERT INTO organizations (
+  id,
+  slug,
+  name,
+  logo_url,
+  logo_data_url,
+  primary_color,
+  default_locale,
+  timezone,
+  email_sender_name,
+  email_reply_to,
+  report_title,
+  missing_update_days,
+  guardian_token_lifetime_days,
+  active,
+  created_at,
+  updated_at,
+  email_sender_alias
+) VALUES ('org_demo','qurantrack-demo','QuranTrack Demo Learning Center',NULL,NULL,'#166534','en','America/New_York','QuranTrack Demo','admin@example.com','QuranTrack Progress Update',14,30,1,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',NULL);
 INSERT INTO organization_settings VALUES ('set_demo_locale_tr','org_demo','secondary_locale','tr','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z');
 INSERT INTO users VALUES ('user_teacher_a','teacher.a@example.com','Demo Teacher A',1,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',NULL),('user_teacher_b','teacher.b@example.com','Demo Teacher B',1,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',NULL);
 INSERT INTO organization_memberships VALUES ('mem_teacher_a','org_demo','user_teacher_a','teacher',1,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z'),('mem_teacher_b','org_demo','user_teacher_b','teacher',1,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z');

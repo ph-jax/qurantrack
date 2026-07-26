@@ -58,6 +58,9 @@ All notable changes to QuranTrack will be documented in this file.
 
 ## Unreleased
 
+- Added Phase 2.6 configurable mail sender resolution: a required allowlisted deployment default, optional allowlisted organization override, and strict separation of From, display name, and Reply-To.
+- Added the additive `0002_organization_email_sender_alias.sql` migration and hardened the Apps Script relay's sender authorization, input handling, structured errors, and deploying-account-only test function without committing deployment addresses.
+
 - Marked the Phase 2.5 visual foundation approved and complete after product-owner staging review; the mobile containment and account-menu stability repairs were manually verified in the deployed staging preview, while Playwright remains unexecuted because browser binaries are unavailable.
 - Confirmed Phase 3 has not started and synchronized base, staging, and production Worker `APP_VERSION` values to `0.3.0` without changing D1 bindings or IDs.
 - Configured account dropdowns as non-modal Radix menus to prevent mobile scroll-lock from shifting the preview page horizontally.

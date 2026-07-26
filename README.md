@@ -75,6 +75,8 @@ Secrets or local-only variables documented in `.dev.vars.example`:
 - `TOKEN_HASH_PEPPER`
 - `MAIL_RELAY_URL`
 - `MAIL_RELAY_SECRET`
+- `MAIL_DEFAULT_FROM_ALIAS` (verified deployment default; do not commit a real address)
+- `MAIL_APPROVED_FROM_ALIASES` (comma-separated verified allowlist including the default)
 - `TURNSTILE_SITE_KEY`
 - `TURNSTILE_SECRET_KEY`
 - `APP_BASE_URL`
@@ -95,3 +97,5 @@ Demo data is stored in `seeds/demo_seed.sql`, outside Wrangler’s migrations di
 ## Phase 2 authentication
 
 Phase 2 adds staff magic-link authentication, Turnstile verification, the Google Apps Script mail relay, secure session cookies, organization switching, role checks, and one-time system-admin bootstrap. See `docs/AUTHENTICATION.md`, `docs/EMAIL_RELAY.md`, and `docs/BOOTSTRAP.md`.
+
+Phase 2.6 separates verified From aliases from organization Reply-To configuration and hardens relay validation. Deployment operators must complete the placeholder-based post-merge staging steps in `docs/EMAIL_RELAY.md`; this repository does not contain deployment email addresses.

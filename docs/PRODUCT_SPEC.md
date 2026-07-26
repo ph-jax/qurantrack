@@ -624,6 +624,7 @@ Fields:
 - default_locale
 - timezone
 - email_sender_name
+- email_sender_alias (optional verified From override; deployment allowlist enforced)
 - email_reply_to
 - report_title
 - missing_update_days
@@ -2740,6 +2741,8 @@ Example variable names:
     TOKEN_HASH_PEPPER
     MAIL_RELAY_URL
     MAIL_RELAY_SECRET
+    MAIL_DEFAULT_FROM_ALIAS
+    MAIL_APPROVED_FROM_ALIASES
     TURNSTILE_SITE_KEY
     TURNSTILE_SECRET_KEY
     APP_BASE_URL

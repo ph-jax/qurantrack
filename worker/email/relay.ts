@@ -5,6 +5,7 @@ import { requireSecret } from '../auth/config';
 export interface RelayMessage {
   to: string;
   fromAlias: string;
+  senderName: string;
   replyTo: string;
   subject: string;
   text: string;
