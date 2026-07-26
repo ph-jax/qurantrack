@@ -99,4 +99,11 @@ Status: Approved and complete.
 - Added focused behavior and accessibility tests and `docs/UI_DESIGN_SYSTEM.md`.
 - No Phase 3 CRUD, database migration, upload flow, or production mutation API was added.
 
+### Phase 2.6 — Configurable email sender and relay hardening
+
+- Added an optional organization From override in a new migration while keeping display name and Reply-To distinct.
+- Added a deployment-default sender and verified allowlist, with normalized approved overrides and safe fallback/failure behavior.
+- Hardened Apps Script parsing, field/length validation, primary-account and additional-alias authorization, structured responses, and safe deploying-account-only testing while preserving HMAC, timestamp, nonce, and replay controls.
+- Preserved generic login responses and single-use token behavior. Phase 3 CRUD, onboarding, and program administration remain out of scope.
+
 Further phases continue exactly as defined in `docs/PRODUCT_SPEC.md`.

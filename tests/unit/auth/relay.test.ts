@@ -10,6 +10,7 @@ import {
 const message = {
   to: 'staff@example.com',
   fromAlias: 'sender@example.com',
+  senderName: 'Example Center',
   replyTo: 'reply@example.com',
   subject: 'Sign in',
   text: 'Open QuranTrack.',

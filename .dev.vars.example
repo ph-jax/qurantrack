@@ -3,6 +3,9 @@ SESSION_SIGNING_SECRET=replace-with-at-least-32-random-bytes
 TOKEN_HASH_PEPPER=replace-with-at-least-32-random-bytes
 MAIL_RELAY_URL=https://script.google.com/macros/s/example/exec
 MAIL_RELAY_SECRET=replace-with-relay-shared-secret
+# Comma-separated verified senders. The default must also appear in the allowlist.
+MAIL_DEFAULT_FROM_ALIAS=sender@example.invalid
+MAIL_APPROVED_FROM_ALIASES=sender@example.invalid,organization-sender@example.invalid
 TURNSTILE_SITE_KEY=1x00000000000000000000AA
 TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 APP_BASE_URL=http://localhost:5173

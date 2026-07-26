@@ -2,6 +2,8 @@
 
 Phase 1 adds the core Cloudflare D1 schema in `migrations/0001_core_schema.sql`. Safe fictional demo data lives outside the migrations path in `seeds/demo_seed.sql` so `wrangler d1 migrations apply` never loads demo records.
 
+Phase 2.6 adds nullable `organizations.email_sender_alias` in `0002_organization_email_sender_alias.sql`; the original core migration remains immutable. `NULL` selects the deployment-default sender.
+
 ## Local commands
 
 - Apply local migrations: `npm run db:migrate:local`
