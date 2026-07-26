@@ -73,17 +73,44 @@ describe('mail relay protocol', () => {
     expect(url).toBe('https://example.com/relay?timestamp=10&nonce=nonce&signature=sig');
   });
 
-  it('does not access Google account or Gmail APIs before HMAC authentication', () => {
+  it('enforces authenticated atomic nonce claiming before message and sender processing', () => {
     const script = readFileSync('apps-script-mail-relay/Code.gs', 'utf8');
     const doPost = script.slice(
       script.indexOf('function doPost'),
+      script.indexOf('function claimAuthenticatedNonce_'),
+    );
+    const orderedCalls = [
+      'getStaticRelayConfig_()',
+      'constantTimeEqual_',
+      'claimAuthenticatedNonce_(nonce)',
+      'JSON.parse(body)',
+      'validateMessage_(message)',
+      'getSenderConfig_(staticConfig.approved)',
+      'authorizeSender_',
+      'GmailApp.sendEmail',
+    ];
+    const positions = orderedCalls.map((call) => doPost.indexOf(call));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+
+    // A replay or lock failure returns before parsing and can never reach delivery.
+    expect(doPost).toContain(
+      'const nonceError = claimAuthenticatedNonce_(nonce);\n    if (nonceError) return json_({ ok: false, error: nonceError });',
+    );
+
+    const nonceHelper = script.slice(
+      script.indexOf('function claimAuthenticatedNonce_'),
       script.indexOf('function getStaticRelayConfig_'),
     );
-    expect(doPost.indexOf('constantTimeEqual_')).toBeGreaterThan(
-      doPost.indexOf('getStaticRelayConfig_'),
+    expect(nonceHelper).toContain('LockService.getScriptLock()');
+    expect(nonceHelper).toContain("if (!lock.tryLock(5000)) return 'relay_busy'");
+    expect(nonceHelper.indexOf('try {')).toBeLessThan(nonceHelper.indexOf('cache.get(nonce)'));
+    expect(nonceHelper.indexOf('cache.get(nonce)')).toBeLessThan(
+      nonceHelper.indexOf('cache.put(nonce'),
     );
-    expect(doPost.indexOf('getSenderConfig_')).toBeGreaterThan(
-      doPost.indexOf('constantTimeEqual_'),
+    expect(nonceHelper.indexOf('cache.put(nonce')).toBeLessThan(nonceHelper.indexOf('} finally {'));
+    expect(nonceHelper.indexOf('} finally {')).toBeLessThan(
+      nonceHelper.indexOf('lock.releaseLock()'),
     );
 
     const staticConfig = script.slice(

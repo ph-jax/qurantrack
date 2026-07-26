@@ -24,8 +24,6 @@ function doPost(e) {
     if (Math.abs(Math.floor(Date.now() / 1000) - timestamp) > NONCE_TTL_SECONDS)
       return json_({ ok: false, error: 'expired' });
     if (!/^[A-Za-z0-9_-]{8,128}$/.test(nonce)) return json_({ ok: false, error: 'invalid_nonce' });
-    const cache = CacheService.getScriptCache();
-    if (cache.get(nonce)) return json_({ ok: false, error: 'replay' });
     const expected = Utilities.base64EncodeWebSafe(
       Utilities.computeHmacSha256Signature(
         `${timestampText}.${nonce}.${body}`,
@@ -35,7 +33,8 @@ function doPost(e) {
     if (!constantTimeEqual_(expected, signature))
       return json_({ ok: false, error: 'bad_signature' });
 
-    const senderConfig = getSenderConfig_(staticConfig.approved);
+    const nonceError = claimAuthenticatedNonce_(nonce);
+    if (nonceError) return json_({ ok: false, error: nonceError });
 
     let message;
     try {
@@ -46,12 +45,11 @@ function doPost(e) {
     const validationError = validateMessage_(message);
     if (validationError) return json_({ ok: false, error: validationError });
 
+    const senderConfig = getSenderConfig_(staticConfig.approved);
     const sender = normalizeEmail_(message.fromAlias);
     const senderError = authorizeSender_(sender, senderConfig);
     if (senderError) return json_({ ok: false, error: senderError });
 
-    // Claim the nonce only after authentication and validation, immediately before the side effect.
-    cache.put(nonce, '1', NONCE_TTL_SECONDS);
     const options = {
       replyTo: normalizeEmail_(message.replyTo),
       name: message.senderName.trim(),
@@ -62,6 +60,19 @@ function doPost(e) {
   } catch (_error) {
     // Never include message/configuration details in responses or logs.
     return json_({ ok: false, error: 'relay_unavailable' });
+  }
+}
+
+function claimAuthenticatedNonce_(nonce) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return 'relay_busy';
+  try {
+    const cache = CacheService.getScriptCache();
+    if (cache.get(nonce)) return 'replay';
+    cache.put(nonce, '1', NONCE_TTL_SECONDS);
+    return null;
+  } finally {
+    lock.releaseLock();
   }
 }
 
