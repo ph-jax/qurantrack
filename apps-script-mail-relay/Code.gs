@@ -4,7 +4,8 @@ const EMAIL_ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function doPost(e) {
   try {
-    const config = getRelayConfig_();
+    // Do not access Google account or Gmail APIs until the request is authenticated.
+    const staticConfig = getStaticRelayConfig_();
     const parameter = (e && e.parameter) || {};
     const timestampText = String(parameter.timestamp || '');
     const timestamp = Number(timestampText);
@@ -12,7 +13,7 @@ function doPost(e) {
     const signature = String(parameter.signature || '');
     const body = e && e.postData && e.postData.contents ? e.postData.contents : '';
     if (
-      !config.secret ||
+      !staticConfig.secret ||
       !timestampText ||
       !Number.isFinite(timestamp) ||
       !nonce ||
@@ -26,10 +27,15 @@ function doPost(e) {
     const cache = CacheService.getScriptCache();
     if (cache.get(nonce)) return json_({ ok: false, error: 'replay' });
     const expected = Utilities.base64EncodeWebSafe(
-      Utilities.computeHmacSha256Signature(`${timestampText}.${nonce}.${body}`, config.secret),
+      Utilities.computeHmacSha256Signature(
+        `${timestampText}.${nonce}.${body}`,
+        staticConfig.secret,
+      ),
     ).replace(/=+$/, '');
     if (!constantTimeEqual_(expected, signature))
       return json_({ ok: false, error: 'bad_signature' });
+
+    const senderConfig = getSenderConfig_(staticConfig.approved);
 
     let message;
     try {
@@ -41,7 +47,7 @@ function doPost(e) {
     if (validationError) return json_({ ok: false, error: validationError });
 
     const sender = normalizeEmail_(message.fromAlias);
-    const senderError = authorizeSender_(sender, config);
+    const senderError = authorizeSender_(sender, senderConfig);
     if (senderError) return json_({ ok: false, error: senderError });
 
     // Claim the nonce only after authentication and validation, immediately before the side effect.
@@ -50,7 +56,7 @@ function doPost(e) {
       replyTo: normalizeEmail_(message.replyTo),
       name: message.senderName.trim(),
     };
-    if (sender !== config.primarySender) options.from = sender;
+    if (sender !== senderConfig.primarySender) options.from = sender;
     GmailApp.sendEmail(normalizeEmail_(message.to), message.subject, message.text, options);
     return json_({ ok: true });
   } catch (_error) {
@@ -59,13 +65,18 @@ function doPost(e) {
   }
 }
 
-function getRelayConfig_() {
+function getStaticRelayConfig_() {
   const props = PropertiesService.getScriptProperties();
-  const primarySender = normalizeEmail_(Session.getEffectiveUser().getEmail());
   return {
     secret: props.getProperty('MAIL_RELAY_SECRET') || '',
-    primarySender,
     approved: parseEmailList_(props.getProperty('APPROVED_SENDER_ALIASES') || ''),
+  };
+}
+
+function getSenderConfig_(approved) {
+  return {
+    primarySender: normalizeEmail_(Session.getEffectiveUser().getEmail()),
+    approved,
     gmailAliases: GmailApp.getAliases().map(normalizeEmail_).filter(Boolean),
   };
 }
@@ -129,7 +140,8 @@ function json_(value) {
 
 /** Sends a configuration test only to the deploying/executing account. Run manually in the editor. */
 function sendTestEmail() {
-  const config = getRelayConfig_();
+  const staticConfig = getStaticRelayConfig_();
+  const config = getSenderConfig_(staticConfig.approved);
   if (!config.primarySender || authorizeSender_(config.primarySender, config))
     throw new Error('Primary sender is not safely configured');
   GmailApp.sendEmail(

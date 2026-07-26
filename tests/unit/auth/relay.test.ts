@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   relayResponseSucceeded,
   relayUrlWithAuth,
@@ -70,6 +71,27 @@ describe('mail relay protocol', () => {
   it('keeps Apps Script auth parameters reliably outside custom headers', () => {
     const url = relayUrlWithAuth('https://example.com/relay', '10', 'nonce', 'sig');
     expect(url).toBe('https://example.com/relay?timestamp=10&nonce=nonce&signature=sig');
+  });
+
+  it('does not access Google account or Gmail APIs before HMAC authentication', () => {
+    const script = readFileSync('apps-script-mail-relay/Code.gs', 'utf8');
+    const doPost = script.slice(
+      script.indexOf('function doPost'),
+      script.indexOf('function getStaticRelayConfig_'),
+    );
+    expect(doPost.indexOf('constantTimeEqual_')).toBeGreaterThan(
+      doPost.indexOf('getStaticRelayConfig_'),
+    );
+    expect(doPost.indexOf('getSenderConfig_')).toBeGreaterThan(
+      doPost.indexOf('constantTimeEqual_'),
+    );
+
+    const staticConfig = script.slice(
+      script.indexOf('function getStaticRelayConfig_'),
+      script.indexOf('function getSenderConfig_'),
+    );
+    expect(staticConfig).not.toContain('Session.');
+    expect(staticConfig).not.toContain('GmailApp.');
   });
 
   it('verifies and rejects relay auth for missing, expiry, replay, bad signature, and alias failures', async () => {
