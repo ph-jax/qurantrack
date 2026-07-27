@@ -9,8 +9,12 @@ interface WranglerConfig {
     not_found_handling?: string;
     run_worker_first?: string[];
   };
+  vars?: Record<string, string>;
   env?: {
     staging?: {
+      vars?: Record<string, string>;
+    };
+    production?: {
       vars?: Record<string, string>;
     };
   };
@@ -28,9 +32,11 @@ describe('Wrangler routing configuration', () => {
     expect(config.assets.not_found_handling).toBe('single-page-application');
   });
 
-  it('uses the staging Worker URL as the staging application base URL', () => {
+  it('uses the staging Worker URL only for the staging application base URL', () => {
     expect(config.env?.staging?.vars?.APP_BASE_URL).toBe(
       'https://qurantrack-staging.samet-2fb.workers.dev',
     );
+    expect(config.vars?.APP_BASE_URL).toBeUndefined();
+    expect(config.env?.production?.vars?.APP_BASE_URL).toBeUndefined();
   });
 });
