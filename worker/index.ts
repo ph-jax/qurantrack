@@ -3,6 +3,10 @@ import { Hono } from 'hono';
 import { healthHandler } from './api/v1/health';
 import { consumeLogin, logout, me, organizations, requestLogin, switchOrg } from './api/v1/auth';
 import { bootstrapAdmin } from './api/v1/bootstrap';
+import {
+  patchOrganizationSettings,
+  readOrganizationSettings,
+} from './api/v1/organization-settings';
 import { noStore, requireAuth } from './middleware/auth';
 import type { Env, Variables } from './types/env';
 
@@ -26,6 +30,12 @@ app.post('/api/v1/auth/logout', requireAuth(), logout);
 app.get('/api/v1/me', requireAuth(), me);
 app.get('/api/v1/me/organizations', requireAuth(), organizations);
 app.post('/api/v1/me/organizations/switch', requireAuth(), switchOrg);
+app.get('/api/v1/organization/settings', requireAuth(), readOrganizationSettings);
+app.patch(
+  '/api/v1/organization/settings',
+  requireAuth(['system_admin', 'organization_admin']),
+  patchOrganizationSettings,
+);
 
 app.notFound((c) =>
   c.json(

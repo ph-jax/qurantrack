@@ -58,6 +58,11 @@ All notable changes to QuranTrack will be documented in this file.
 
 ## Unreleased
 
+- Added Phase 3A production organization settings APIs and responsive English/Turkish administration UI with live branding preview.
+- Added administrator authorization, session-derived tenant scoping, approved sender-alias enforcement, strict settings validation, and safe PNG/JPEG/WebP data-URL uploads capped at 200 KB encoded.
+- Reused the existing organization schema, so Phase 3A requires no database migration.
+- Recorded successful manual end-to-end staging verification of Phase 2.6 authentication without recording real addresses, approved-alias configuration, or secrets.
+
 - Added Phase 2.6 configurable mail sender resolution: a required allowlisted deployment default, optional allowlisted organization override, and strict separation of From, display name, and Reply-To.
 - Added the additive `0002_organization_email_sender_alias.sql` migration and hardened the Apps Script relay's sender authorization, input handling, structured errors, and deploying-account-only test function without committing deployment addresses.
 

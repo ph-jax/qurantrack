@@ -6,20 +6,15 @@ import { ConsumePage } from '../features/auth/ConsumePage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { PlaceholderPage } from '../pages/PlaceholderPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
+import { SettingsPage } from '../pages/SettingsPage';
 import { showcasePaths } from './showcaseGate';
 const uiPreviewEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_UI_PREVIEW === 'true';
 const appChildren = [
   { index: true, element: <DashboardPage /> },
-  ...[
-    'students',
-    'teachers',
-    'classes',
-    'program',
-    'reports',
-    'families',
-    'notifications',
-    'settings',
-  ].map((path) => ({ path, element: <PlaceholderPage /> })),
+  ...['students', 'teachers', 'classes', 'program', 'reports', 'families', 'notifications'].map(
+    (path) => ({ path, element: <PlaceholderPage /> }),
+  ),
+  { path: 'settings', element: <SettingsPage /> },
 ];
 export const router = createBrowserRouter([
   { path: '/', element: <Navigate to="/app" replace /> },
