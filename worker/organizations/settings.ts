@@ -44,7 +44,7 @@ function validImage(value: string) {
 const optionalEmail = z
   .preprocess(
     (value) => (typeof value === 'string' ? value.trim().toLowerCase() : value),
-    z.union([z.literal(''), z.email().max(254)]),
+    z.union([z.null(), z.literal(''), z.email().max(254)]),
   )
   .transform((v) => v || null);
 export const organizationSettingsSchema = z.object({
@@ -62,7 +62,7 @@ export const organizationSettingsSchema = z.object({
   missingUpdateDays: z.number().int().min(1).max(365),
   guardianTokenLifetimeDays: z.number().int().min(1).max(365),
   logoUrl: z
-    .union([z.literal(''), z.url().startsWith('https://').max(2048)])
+    .union([z.null(), z.literal(''), z.url().startsWith('https://').max(2048)])
     .transform((v) => v || null),
   logoDataUrl: z.union([z.null(), z.string().refine(validImage)]),
 });

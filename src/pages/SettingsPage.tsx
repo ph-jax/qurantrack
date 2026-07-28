@@ -1,46 +1,55 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, Button, Card, FormField, Input, Spinner } from '../components/ui';
 import { OrganizationIdentity } from '../components/OrganizationIdentity';
-import { useSession } from '../features/auth/SessionProvider';
+import { useSession, type Session } from '../features/auth/SessionProvider';
 import { prepareLogo } from '../features/settings/image';
 import { canEditSettings, type OrganizationSettings } from '../features/settings/types';
 
 const zones = ['UTC', 'Europe/Istanbul', 'Europe/London', 'America/New_York', 'Asia/Dubai'];
 
 export function SettingsPage() {
-  const { t } = useTranslation();
   const { session } = useSession();
+  return <SettingsForm key={session?.activeOrganizationId} session={session} />;
+}
+
+function SettingsForm({ session }: { session: Session | null }) {
+  const { t } = useTranslation();
   const [value, setValue] = useState<OrganizationSettings | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'saving' | 'success' | 'error'>(
     'loading',
   );
   const [validation, setValidation] = useState('');
+  const saving = useRef(false);
   const editable = canEditSettings(session?.role ?? '');
 
   useEffect(() => {
-    let active = true;
-    void fetch('/api/v1/organization/settings', { cache: 'no-store' })
+    const controller = new AbortController();
+    void fetch('/api/v1/organization/settings', { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error();
         const body = (await response.json()) as { settings: OrganizationSettings };
-        if (active) {
+        if (!controller.signal.aborted) {
           setValue(body.settings);
           setState('ready');
         }
       })
-      .catch(() => active && setState('error'));
+      .catch(() => !controller.signal.aborted && setState('error'));
     return () => {
-      active = false;
+      controller.abort();
     };
   }, []);
 
-  const set = <K extends keyof OrganizationSettings>(key: K, next: OrganizationSettings[K]) =>
+  const set = <K extends keyof OrganizationSettings>(key: K, next: OrganizationSettings[K]) => {
+    setState('ready');
+    setValidation('');
     setValue((current) => (current ? { ...current, [key]: next } : current));
+  };
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!value || !editable) return;
+    if (!value || !editable || saving.current) return;
+    saving.current = true;
     setValidation('');
     setState('saving');
     try {
@@ -59,6 +68,8 @@ export function SettingsPage() {
       setState('success');
     } catch {
       setState('error');
+    } finally {
+      saving.current = false;
     }
   }
 
@@ -132,7 +143,10 @@ export function SettingsPage() {
                         set('logoDataUrl', data);
                         setValidation('');
                       })
-                      .catch(() => setValidation(t('settings.imageError')));
+                      .catch(() => {
+                        setValidation(t('settings.imageError'));
+                        setState('error');
+                      });
                 }}
               />
             </Field>

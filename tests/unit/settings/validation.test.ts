@@ -16,6 +16,8 @@ const valid = {
   logoDataUrl: null,
 };
 const env = { MAIL_APPROVED_FROM_ALIASES: 'approved@example.test' };
+const dataUrl = (type: string, bytes: number[]) =>
+  `data:${type};base64,${btoa(String.fromCharCode(...bytes))}`;
 
 describe('organization settings validation', () => {
   it('accepts supported settings and normalizes an approved alias', () => {
@@ -37,14 +39,23 @@ describe('organization settings validation', () => {
     expect(validateSettings({ ...valid, ...change }, env)).toEqual({ ok: false });
   });
 
-  it('checks the declared image type and file signature and rejects SVG', () => {
-    const png = `data:image/png;base64,${btoa(String.fromCharCode(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a))}`;
-    expect(validateSettings({ ...valid, logoDataUrl: png }, env).ok).toBe(true);
-    expect(
-      validateSettings({ ...valid, logoDataUrl: 'data:image/png;base64,PHN2Zz4=' }, env).ok,
-    ).toBe(false);
-    expect(
-      validateSettings({ ...valid, logoDataUrl: 'data:image/svg+xml;base64,PHN2Zz4=' }, env).ok,
-    ).toBe(false);
+  it.each([
+    ['PNG', dataUrl('image/png', [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+    ['JPEG', dataUrl('image/jpeg', [0xff, 0xd8, 0xff])],
+    ['WebP', dataUrl('image/webp', [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50])],
+  ])('accepts a valid %s signature', (_name, logoDataUrl) => {
+    expect(validateSettings({ ...valid, logoDataUrl }, env).ok).toBe(true);
+  });
+
+  it.each([
+    ['SVG', 'data:image/svg+xml;base64,PHN2Zz4='],
+    ['unsupported GIF', dataUrl('image/gif', [0x47, 0x49, 0x46, 0x38])],
+    ['mismatched MIME and signature', dataUrl('image/png', [0xff, 0xd8, 0xff])],
+    ['malformed Base64 characters', 'data:image/png;base64,%%%'],
+    ['malformed Base64 padding', 'data:image/png;base64,abcde==='],
+    ['empty image', 'data:image/png;base64,'],
+    ['oversized encoded value', `data:image/png;base64,${'A'.repeat(200 * 1024)}`],
+  ])('rejects %s', (_name, logoDataUrl) => {
+    expect(validateSettings({ ...valid, logoDataUrl }, env).ok).toBe(false);
   });
 });
