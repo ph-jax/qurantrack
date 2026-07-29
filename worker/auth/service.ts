@@ -181,6 +181,46 @@ export async function validateSession(env: Env, token: string): Promise<AuthCont
   };
 }
 
+/** Validates session ownership/expiry without requiring the selected membership to remain active. */
+export async function validateSessionForRecovery(
+  env: Env,
+  token: string,
+): Promise<AuthContext | null> {
+  const now = new Date();
+  const hash = await hashSecret(token, requireSecret(env.TOKEN_HASH_PEPPER, 'TOKEN_HASH_PEPPER'));
+  const row = await env.DB.prepare(
+    `SELECT s.id session_id,s.user_id,s.active_organization_id,s.expires_at,s.absolute_expires_at,
+      s.revoked_at,u.email,u.active user_active
+     FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? LIMIT 1`,
+  )
+    .bind(hash)
+    .first<{
+      session_id: string;
+      user_id: string;
+      active_organization_id: string;
+      expires_at: string;
+      absolute_expires_at: string;
+      revoked_at: string | null;
+      email: string;
+      user_active: number;
+    }>();
+  if (
+    !row ||
+    row.revoked_at ||
+    !row.user_active ||
+    new Date(row.expires_at) <= now ||
+    new Date(row.absolute_expires_at) <= now
+  )
+    return null;
+  return {
+    userId: row.user_id,
+    email: row.email,
+    organizationId: row.active_organization_id,
+    role: 'read_only',
+    sessionId: row.session_id,
+  };
+}
+
 export async function revokeSession(env: Env, sessionId: string) {
   await env.DB.prepare('UPDATE sessions SET revoked_at = ? WHERE id = ?')
     .bind(new Date().toISOString(), sessionId)

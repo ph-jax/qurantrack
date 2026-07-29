@@ -1,60 +1,105 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Alert, Button, Card } from '../../components/ui';
+import { Alert, Button, Card, Spinner } from '../../components/ui';
+type State =
+  'loading' | 'pending' | 'expired' | 'revoked' | 'used' | 'invalid' | 'network' | 'success';
+type Invitation = {
+  organizationName: string;
+  locale: 'en' | 'tr';
+  role: string;
+  state: Exclude<State, 'loading' | 'invalid' | 'network' | 'success'>;
+};
 export function InvitationPage() {
+  const { t, i18n } = useTranslation();
   const [params] = useSearchParams(),
     navigate = useNavigate(),
     token = params.get('token') ?? '';
-  const [valid, setValid] = useState<boolean | null>(null),
-    [name, setName] = useState(''),
+  const [state, setState] = useState<State>('loading'),
+    [invitation, setInvitation] = useState<Invitation | null>(null),
     [busy, setBusy] = useState(false);
+  const inspectedToken = useRef('');
+  const inspect = useCallback(async () => {
+    setState('loading');
+    try {
+      const response = await fetch(
+        `/api/v1/invitations/inspect?token=${encodeURIComponent(token)}`,
+        { cache: 'no-store' },
+      );
+      if (!response.ok) {
+        setState('invalid');
+        return;
+      }
+      const json = (await response.json()) as { invitation: Invitation };
+      setInvitation(json.invitation);
+      await i18n.changeLanguage(json.invitation.locale);
+      setState(json.invitation.state);
+    } catch {
+      setState('network');
+    }
+  }, [token, i18n]);
   useEffect(() => {
-    fetch(`/api/v1/invitations/inspect?token=${encodeURIComponent(token)}`, { cache: 'no-store' })
-      .then(async (r) => {
-        setValid(r.ok);
-        if (r.ok) {
-          const j = (await r.json()) as { invitation: { organizationName: string } };
-          setName(j.invitation.organizationName);
-        }
-      })
-      .catch(() => setValid(false));
-  }, [token]);
-  if (valid === null)
-    return (
-      <main className="auth-page">
-        <p role="status">Checking invitation…</p>
-      </main>
-    );
+    if (inspectedToken.current === token) return;
+    inspectedToken.current = token;
+    const timer = window.setTimeout(() => void inspect(), 0);
+    return () => window.clearTimeout(timer);
+  }, [inspect, token]);
+  const accept = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const response = await fetch('/api/v1/invitations/accept', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      if (!response.ok) {
+        const json = (await response.json().catch(() => null)) as {
+          error?: { code?: string };
+        } | null;
+        setState(json?.error?.code === 'INVITATION_USED' ? 'used' : 'invalid');
+        return;
+      }
+      setState('success');
+      localStorage.setItem('qurantrack-had-session', 'true');
+      window.setTimeout(() => {
+        navigate('/app?invitation=accepted', { replace: true });
+        window.location.reload();
+      }, 300);
+    } catch {
+      setState('network');
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <main className="auth-page">
-      <Card className="mx-auto max-w-lg">
-        <h1 className="text-2xl font-bold">QuranTrack invitation</h1>
-        {!valid ? (
-          <Alert tone="error" title="This invitation is invalid or no longer usable." />
+      <Card className="mx-auto max-w-lg space-y-4">
+        <h1 className="text-2xl font-bold">{t('invitation.title')}</h1>
+        {state === 'loading' ? (
+          <Spinner label={t('invitation.loading')} />
+        ) : state === 'pending' && invitation ? (
+          <>
+            <p>
+              {t('invitation.description', {
+                organization: invitation.organizationName,
+                role: t(`roles.${invitation.role}`),
+              })}
+            </p>
+            <Button loading={busy} disabled={busy} onClick={() => void accept()}>
+              {t('invitation.accept')}
+            </Button>
+          </>
+        ) : state === 'success' ? (
+          <Alert tone="success" title={t('invitation.success')} />
         ) : (
           <>
-            <p>You have been invited to join {name}.</p>
-            <Button
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                const r = await fetch('/api/v1/invitations/accept', {
-                  method: 'POST',
-                  headers: { 'content-type': 'application/json' },
-                  body: JSON.stringify({ token }),
-                });
-                if (r.ok) {
-                  localStorage.setItem('qurantrack-had-session', 'true');
-                  navigate('/app?invitation=accepted', { replace: true });
-                  window.location.reload();
-                } else {
-                  setValid(false);
-                  setBusy(false);
-                }
-              }}
-            >
-              Accept invitation
-            </Button>
+            <Alert tone="error" title={t(`invitation.${state}`)} />
+            {state === 'network' && (
+              <Button variant="secondary" onClick={() => void inspect()}>
+                {t('invitation.retry')}
+              </Button>
+            )}
           </>
         )}
       </Card>

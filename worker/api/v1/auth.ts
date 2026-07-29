@@ -84,6 +84,20 @@ export async function me(c: Ctx) {
 export async function organizations(c: Ctx) {
   const auth = c.get('auth');
   const orgs = await listOrganizations(c.env, auth.userId);
+  if (orgs.length === 0) {
+    await revokeSession(c.env, auth.sessionId);
+    c.header('Set-Cookie', clearSessionCookie(c.env));
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: 'NO_ACTIVE_MEMBERSHIP',
+          message: 'No active organization membership remains.',
+        },
+      },
+      401,
+    );
+  }
   return c.json({
     ok: true,
     organizations: orgs.map((o) => ({

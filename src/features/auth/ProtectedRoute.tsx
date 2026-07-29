@@ -26,6 +26,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   if (status === 'expired')
     return <Navigate to="/login" replace state={{ expired: true, from: location.pathname }} />;
+  if (status === 'no_membership')
+    return <Navigate to="/login" replace state={{ noMembership: true, from: location.pathname }} />;
   if (status !== 'authenticated') return <Navigate to="/login" replace />;
   return children;
 }

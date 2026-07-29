@@ -26,3 +26,5 @@ Phase 2.6 adds nullable `organizations.email_sender_alias` in `0002_organization
 ## Phase 3B1 invitation migration
 
 `0003_organization_invitations.sql` adds tenant-scoped invitations with a unique token hash, normalized email, permitted role, inviter, seven-day expiry, acceptance/revocation timestamps, and delivery retry status. A partial unique index permits only one usable invitation for an organization/email pair. Memberships remain soft-deactivated.
+
+Migration 0003 also creates `organization_invitation_acceptances` and a validation trigger. A unique claim serializes concurrent acceptance and all acceptance writes execute in one atomic D1 batch. Final-administrator changes use one conditional update whose `EXISTS` guard is evaluated with the write, avoiding a count/update race.

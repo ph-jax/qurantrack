@@ -16,7 +16,8 @@ export type Session = {
   role: Role;
   organizations: Organization[];
 };
-type Status = 'checking' | 'authenticated' | 'unauthenticated' | 'expired' | 'error';
+type Status =
+  'checking' | 'authenticated' | 'unauthenticated' | 'expired' | 'no_membership' | 'error';
 type SessionContextValue = {
   status: Status;
   session: Session | null;
@@ -38,13 +39,41 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const generation = ++refreshGeneration.current;
     setStatus('checking');
     try {
-      const response = await fetch('/api/v1/me', { cache: 'no-store' });
+      let response = await fetch('/api/v1/me', { cache: 'no-store' });
       if (generation !== refreshGeneration.current) return;
       if (response.status === 401) {
-        setSession(null);
-        setStatus(localStorage.getItem(HINT) ? 'expired' : 'unauthenticated');
-        localStorage.removeItem(HINT);
-        return;
+        const recovery = await fetch('/api/v1/me/organizations', { cache: 'no-store' });
+        if (generation !== refreshGeneration.current) return;
+        if (recovery.ok) {
+          const available = (await recovery.json()) as { organizations: Organization[] };
+          const destination = available.organizations[0];
+          if (destination) {
+            const switched = await fetch('/api/v1/me/organizations/switch', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ organizationId: destination.id }),
+              cache: 'no-store',
+            });
+            if (!switched.ok) throw new Error('organization recovery failed');
+            response = await fetch('/api/v1/me', { cache: 'no-store' });
+            if (generation !== refreshGeneration.current) return;
+          }
+        }
+        if (!response.ok) {
+          const recoveryBody = (await recovery.json().catch(() => null)) as {
+            error?: { code?: string };
+          } | null;
+          setSession(null);
+          setStatus(
+            recoveryBody?.error?.code === 'NO_ACTIVE_MEMBERSHIP'
+              ? 'no_membership'
+              : localStorage.getItem(HINT)
+                ? 'expired'
+                : 'unauthenticated',
+          );
+          localStorage.removeItem(HINT);
+          return;
+        }
       }
       if (!response.ok) throw new Error('session service');
       const me = (await response.json()) as Omit<Session, 'organizations'>;
@@ -101,6 +130,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
       if (!response.ok) throw new Error('organization switch failed');
       await refresh();
+    } catch (error) {
+      await refresh();
+      throw error;
     } finally {
       organizationSwitchingRef.current = false;
       setOrganizationSwitching(false);

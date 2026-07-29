@@ -18,3 +18,5 @@ Magic-link From addresses are resolved by the single server-side sender service.
 ## Organization invitations
 
 Invitation tokens use a purpose domain separate from login tokens; only peppered hashes are persisted. Acceptance resolves the tenant and normalized identity from the trusted invitation record, consumes the invitation once, establishes the invited identity's session, and selects the inviting organization. A conflicting browser session is revoked rather than receiving the membership. Every protected request revalidates the active organization, membership state, organization state, and current role.
+
+Phase 3B1 correction: every staff mutation carries the organization for which its page data was loaded. The server compares that value with the session tenant and returns `409 STALE_ORGANIZATION` before executing a write; it never uses the value to select a tenant. Invitation acceptance is one atomic D1 batch guarded by a unique acceptance claim and validation trigger, so any failed write rolls back the claim, user, membership, session, invitation timestamp, and audit event.

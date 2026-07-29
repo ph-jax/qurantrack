@@ -7,7 +7,7 @@ import {
   patchOrganizationSettings,
   readOrganizationSettings,
 } from './api/v1/organization-settings';
-import { noStore, requireAuth } from './middleware/auth';
+import { noStore, requireAuth, requireRecoverySession } from './middleware/auth';
 import {
   invitationAccept,
   invitationCreate,
@@ -39,8 +39,8 @@ app.get('/api/v1/invitations/inspect', invitationInspect);
 app.post('/api/v1/invitations/accept', invitationAccept);
 app.post('/api/v1/auth/logout', requireAuth(), logout);
 app.get('/api/v1/me', requireAuth(), me);
-app.get('/api/v1/me/organizations', requireAuth(), organizations);
-app.post('/api/v1/me/organizations/switch', requireAuth(), switchOrg);
+app.get('/api/v1/me/organizations', requireRecoverySession(), organizations);
+app.post('/api/v1/me/organizations/switch', requireRecoverySession(), switchOrg);
 app.get(
   '/api/v1/organization/staff',
   requireAuth(['system_admin', 'organization_admin']),

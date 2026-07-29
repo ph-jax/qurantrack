@@ -55,16 +55,19 @@ async function audit(
     .run();
 }
 
-export async function listStaff(env: Env, organizationId: string) {
+export async function listStaff(env: Env, auth: AuthContext) {
   const members = await env.DB.prepare(
-    `SELECT m.id,u.display_name AS displayName,lower(u.email) AS email,m.role,m.active,m.updated_at AS updatedAt FROM organization_memberships m JOIN users u ON u.id=m.user_id WHERE m.organization_id=? ORDER BY u.display_name COLLATE NOCASE`,
+    `SELECT m.id,u.display_name AS displayName,lower(u.email) AS email,m.role,m.active,
+      CASE WHEN m.user_id=? THEN 1 ELSE 0 END AS isSelf,m.updated_at AS updatedAt
+     FROM organization_memberships m JOIN users u ON u.id=m.user_id
+     WHERE m.organization_id=? ORDER BY u.display_name COLLATE NOCASE`,
   )
-    .bind(organizationId)
+    .bind(auth.userId, auth.organizationId)
     .all();
   const invitations = await env.DB.prepare(
     `SELECT id,normalized_email AS email,role,expires_at AS expiresAt,accepted_at AS acceptedAt,revoked_at AS revokedAt,delivery_status AS deliveryStatus,created_at AS createdAt FROM organization_invitations WHERE organization_id=? ORDER BY created_at DESC`,
   )
-    .bind(organizationId)
+    .bind(auth.organizationId)
     .all();
   return { members: members.results ?? [], invitations: invitations.results ?? [] };
 }
@@ -118,11 +121,11 @@ export async function createInvitation(
   const token = randomToken(32);
   const hash = await invitationHash(env, token);
   const existingMember = await env.DB.prepare(
-    'SELECT m.id FROM organization_memberships m JOIN users u ON u.id=m.user_id WHERE m.organization_id=? AND u.email=? COLLATE NOCASE',
+    'SELECT m.id,m.active FROM organization_memberships m JOIN users u ON u.id=m.user_id WHERE m.organization_id=? AND u.email=? COLLATE NOCASE',
   )
     .bind(auth.organizationId, email)
-    .first();
-  if (existingMember) return { conflict: true as const };
+    .first<{ id: string; active: number }>();
+  if (existingMember?.active) return { conflict: true as const };
   try {
     await env.DB.prepare(
       'INSERT INTO organization_invitations (id,organization_id,normalized_email,role,token_hash,invited_by_user_id,expires_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
@@ -263,20 +266,20 @@ export async function updateMembership(
   if (row.role === 'system_admin') return 'forbidden';
   const nextRole = input.role ?? (row.role as AssignableRole),
     nextActive = input.active === undefined ? row.active : Number(input.active);
-  if (row.role === 'organization_admin' && (nextRole !== 'organization_admin' || !nextActive)) {
-    const admins = await env.DB.prepare(
-      "SELECT count(*) count FROM organization_memberships WHERE organization_id=? AND active=1 AND role IN ('system_admin','organization_admin')",
-    )
-      .bind(auth.organizationId)
-      .first<{ count: number }>();
-    if ((admins?.count ?? 0) <= 1) return 'last_admin';
-  }
   const now = new Date().toISOString();
-  await env.DB.prepare(
-    'UPDATE organization_memberships SET role=?,active=?,updated_at=? WHERE id=? AND organization_id=?',
+  const result = await env.DB.prepare(
+    `UPDATE organization_memberships SET role=?,active=?,updated_at=?
+     WHERE id=? AND organization_id=?
+       AND (role NOT IN ('system_admin','organization_admin')
+         OR (? IN ('system_admin','organization_admin') AND ?=1)
+         OR EXISTS (SELECT 1 FROM organization_memberships administrator
+           WHERE administrator.organization_id=organization_memberships.organization_id
+             AND administrator.id<>organization_memberships.id AND administrator.active=1
+             AND administrator.role IN ('system_admin','organization_admin')))`,
   )
-    .bind(nextRole, nextActive, now, id, auth.organizationId)
+    .bind(nextRole, nextActive, now, id, auth.organizationId, nextRole, nextActive)
     .run();
+  if (changes(result) !== 1) return 'last_admin';
   const action =
     row.active !== nextActive
       ? nextActive
@@ -287,17 +290,45 @@ export async function updateMembership(
   return 'ok';
 }
 
+export type InvitationPublicState = 'pending' | 'expired' | 'revoked' | 'used';
 export async function inspectInvitation(env: Env, token: string) {
   if (!/^[A-Za-z0-9_-]{40,60}$/.test(token)) return null;
   const hash = await invitationHash(env, token);
-  return env.DB.prepare(
-    `SELECT i.id,o.name organizationName,i.role,i.expires_at expiresAt FROM organization_invitations i JOIN organizations o ON o.id=i.organization_id WHERE i.token_hash=? AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at>? AND o.active=1`,
+  const row = await env.DB.prepare(
+    `SELECT o.name organizationName,o.default_locale locale,i.role,i.expires_at expiresAt,
+      i.accepted_at acceptedAt,i.revoked_at revokedAt,o.active organizationActive
+     FROM organization_invitations i JOIN organizations o ON o.id=i.organization_id
+     WHERE i.token_hash=?`,
   )
-    .bind(hash, new Date().toISOString())
-    .first();
+    .bind(hash)
+    .first<{
+      organizationName: string;
+      locale: string;
+      role: AssignableRole;
+      expiresAt: string;
+      acceptedAt: string | null;
+      revokedAt: string | null;
+      organizationActive: number;
+    }>();
+  if (!row) return null;
+  const state: InvitationPublicState = row.acceptedAt
+    ? 'used'
+    : row.revokedAt
+      ? 'revoked'
+      : !row.organizationActive || new Date(row.expiresAt) <= new Date()
+        ? 'expired'
+        : 'pending';
+  return {
+    organizationName: row.organizationName,
+    locale: row.locale,
+    role: row.role,
+    expiresAt: row.expiresAt,
+    state,
+  };
 }
 
 export async function acceptInvitation(env: Env, token: string, request: Request) {
+  if (!/^[A-Za-z0-9_-]{40,60}$/.test(token)) return null;
   const hash = await invitationHash(env, token);
   const now = new Date();
   const invite = await env.DB.prepare(
@@ -311,71 +342,77 @@ export async function acceptInvitation(env: Env, token: string, request: Request
       role: AssignableRole;
     }>();
   if (!invite) return null;
-  const user = await env.DB.prepare('SELECT id FROM users WHERE email=? COLLATE NOCASE')
+  const user = await env.DB.prepare('SELECT id,active FROM users WHERE email=? COLLATE NOCASE')
     .bind(invite.normalized_email)
-    .first<{ id: string }>();
+    .first<{ id: string; active: number }>();
+  if (user && !user.active) return null;
   const userId = user?.id ?? crypto.randomUUID();
-  if (!user)
-    await env.DB.prepare(
-      'INSERT INTO users (id,email,display_name,active,created_at,updated_at) VALUES (?,?,?,?,?,?)',
-    )
-      .bind(
-        userId,
-        invite.normalized_email,
-        invite.normalized_email.split('@')[0],
-        1,
-        now.toISOString(),
-        now.toISOString(),
-      )
-      .run();
-  const consumed = await env.DB.prepare(
-    'UPDATE organization_invitations SET accepted_at=?,updated_at=? WHERE id=? AND token_hash=? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>?',
-  )
-    .bind(now.toISOString(), now.toISOString(), invite.id, hash, now.toISOString())
-    .run();
-  if (changes(consumed) !== 1) return null;
-  await env.DB.prepare(
-    `INSERT INTO organization_memberships (id,organization_id,user_id,role,active,created_at,updated_at) VALUES (?,?,?,?,1,?,?) ON CONFLICT(organization_id,user_id) DO UPDATE SET role=excluded.role,active=1,updated_at=excluded.updated_at`,
-  )
-    .bind(
-      crypto.randomUUID(),
-      invite.organization_id,
-      userId,
-      invite.role,
-      now.toISOString(),
-      now.toISOString(),
-    )
-    .run();
+  const sessionId = crypto.randomUUID();
   const sessionToken = randomToken(32),
     sessionHash = await hashSecret(
       sessionToken,
       requireSecret(env.TOKEN_HASH_PEPPER, 'TOKEN_HASH_PEPPER'),
     ),
     expires = new Date(now.getTime() + 12 * 3600000),
-    absolute = new Date(now.getTime() + 30 * 86400000);
-  await env.DB.prepare(
-    'INSERT INTO sessions (id,user_id,token_hash,active_organization_id,expires_at,absolute_expires_at,last_seen_at,created_at,user_agent_hash,ip_hash) VALUES (?,?,?,?,?,?,?,?,?,?)',
-  )
-    .bind(
-      crypto.randomUUID(),
+    absolute = new Date(now.getTime() + 30 * 86400000),
+    timestamp = now.toISOString();
+  const statements = [];
+  if (!user)
+    statements.push(
+      env.DB.prepare(
+        'INSERT INTO users (id,email,display_name,active,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+      ).bind(
+        userId,
+        invite.normalized_email,
+        invite.normalized_email.split('@')[0],
+        1,
+        timestamp,
+        timestamp,
+      ),
+    );
+  statements.push(
+    env.DB.prepare(
+      'INSERT INTO organization_invitation_acceptances (invitation_id,user_id,session_id,accepted_at) VALUES (?,?,?,?)',
+    ).bind(invite.id, userId, sessionId, timestamp),
+    env.DB.prepare(
+      `INSERT INTO organization_memberships (id,organization_id,user_id,role,active,created_at,updated_at) VALUES (?,?,?,?,1,?,?) ON CONFLICT(organization_id,user_id) DO UPDATE SET role=excluded.role,active=1,updated_at=excluded.updated_at`,
+    ).bind(crypto.randomUUID(), invite.organization_id, userId, invite.role, timestamp, timestamp),
+    env.DB.prepare(
+      'INSERT INTO sessions (id,user_id,token_hash,active_organization_id,expires_at,absolute_expires_at,last_seen_at,created_at,user_agent_hash,ip_hash) VALUES (?,?,?,?,?,?,?,?,?,?)',
+    ).bind(
+      sessionId,
       userId,
       sessionHash,
       invite.organization_id,
       expires.toISOString(),
       absolute.toISOString(),
-      now.toISOString(),
-      now.toISOString(),
+      timestamp,
+      timestamp,
       await sha256Hex(request.headers.get('user-agent') ?? 'unknown'),
       await sha256Hex(request.headers.get('cf-connecting-ip') ?? 'unknown'),
-    )
-    .run();
-  await audit(
-    env,
-    null,
-    invite.organization_id,
-    'invitation_accepted',
-    'organization_invitation',
-    invite.id,
+    ),
+    env.DB.prepare(
+      'UPDATE organization_invitations SET accepted_at=?,updated_at=? WHERE id=?',
+    ).bind(timestamp, timestamp, invite.id),
+    env.DB.prepare(
+      'INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+    ).bind(
+      crypto.randomUUID(),
+      invite.organization_id,
+      userId,
+      'invitation_accepted',
+      'organization_invitation',
+      invite.id,
+      'invitation accepted',
+      null,
+      null,
+      timestamp,
+    ),
   );
+  try {
+    await env.DB.batch(statements);
+  } catch {
+    return null;
+  }
   return { sessionToken, expires };
 }

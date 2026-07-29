@@ -24,3 +24,31 @@ CREATE UNIQUE INDEX idx_organization_invitations_one_usable
 CREATE INDEX idx_organization_invitations_admin
   ON organization_invitations(organization_id, created_at DESC);
 
+-- A claim is inserted in the same D1 batch as every acceptance side effect. Its
+-- primary key serializes racing acceptances; D1 rolls the entire batch back when
+-- this insert or any later write fails.
+CREATE TABLE organization_invitation_acceptances (
+  invitation_id TEXT PRIMARY KEY REFERENCES organization_invitations(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  accepted_at TEXT NOT NULL
+);
+
+CREATE TRIGGER validate_organization_invitation_acceptance
+BEFORE INSERT ON organization_invitation_acceptances
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1
+    FROM organization_invitations i
+    JOIN organizations o ON o.id = i.organization_id AND o.active = 1
+    JOIN users u ON u.id = NEW.user_id AND u.active = 1
+    WHERE i.id = NEW.invitation_id
+      AND i.accepted_at IS NULL AND i.revoked_at IS NULL
+      AND i.expires_at > NEW.accepted_at
+      AND u.email = i.normalized_email COLLATE NOCASE
+      AND NOT EXISTS (
+        SELECT 1 FROM organization_memberships m
+        WHERE m.organization_id = i.organization_id AND m.user_id = NEW.user_id AND m.active = 1
+      )
+  ) THEN RAISE(ABORT, 'invitation_not_usable') END;
+END;

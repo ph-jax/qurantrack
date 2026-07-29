@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Env, Variables } from '../../types/env';
 import { buildSessionCookie, readCookie } from '../../auth/cookies';
 import { SESSION_COOKIE } from '../../auth/config';
-import { revokeSession, validateSession } from '../../auth/service';
+import { revokeSession, validateSessionForRecovery } from '../../auth/service';
 import {
   acceptInvitation,
   ASSIGNABLE_ROLES,
@@ -23,20 +23,37 @@ const invite = z.object({
     .max(254)
     .transform((v) => v.trim().toLowerCase()),
   role,
+  expectedOrganizationId: z.string().min(1),
 });
 const update = z
-  .object({ role: role.optional(), active: z.boolean().optional() })
+  .object({
+    role: role.optional(),
+    active: z.boolean().optional(),
+    expectedOrganizationId: z.string().min(1),
+  })
   .refine((v) => v.role !== undefined || v.active !== undefined);
+const mutationContext = z.object({ expectedOrganizationId: z.string().min(1) });
 const token = z.object({ token: z.string().min(40).max(100) });
 const failure = (c: Ctx, code: string, message: string, status: 400 | 403 | 404 | 409 | 502) =>
   c.json({ ok: false, error: { code, message } }, status);
+const stale = (c: Ctx, expectedOrganizationId: string) =>
+  expectedOrganizationId !== c.get('auth').organizationId
+    ? failure(
+        c,
+        'STALE_ORGANIZATION',
+        'The active organization changed. Reload and try again.',
+        409,
+      )
+    : null;
 
 export async function staffList(c: Ctx) {
-  return c.json({ ok: true, ...(await listStaff(c.env, c.get('auth').organizationId)) });
+  return c.json({ ok: true, ...(await listStaff(c.env, c.get('auth'))) });
 }
 export async function invitationCreate(c: Ctx) {
   const parsed = invite.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return failure(c, 'BAD_REQUEST', 'Enter a valid email and role.', 400);
+  const staleResponse = stale(c, parsed.data.expectedOrganizationId);
+  if (staleResponse) return staleResponse;
   const result = await createInvitation(
     c.env,
     c.get('auth'),
@@ -56,6 +73,10 @@ export async function invitationCreate(c: Ctx) {
   return c.json({ ok: true }, 201);
 }
 export async function invitationResend(c: Ctx) {
+  const parsed = mutationContext.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return failure(c, 'BAD_REQUEST', 'Invalid organization context.', 400);
+  const staleResponse = stale(c, parsed.data.expectedOrganizationId);
+  if (staleResponse) return staleResponse;
   const result = await resendInvitation(
     c.env,
     c.get('auth'),
@@ -73,6 +94,10 @@ export async function invitationResend(c: Ctx) {
   return c.json({ ok: true });
 }
 export async function invitationRevoke(c: Ctx) {
+  const parsed = mutationContext.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return failure(c, 'BAD_REQUEST', 'Invalid organization context.', 400);
+  const staleResponse = stale(c, parsed.data.expectedOrganizationId);
+  if (staleResponse) return staleResponse;
   return (await revokeInvitation(c.env, c.get('auth'), c.req.param('id')!, c.get('requestId')))
     ? c.json({ ok: true })
     : failure(c, 'NOT_FOUND', 'Pending invitation not found.', 404);
@@ -80,6 +105,8 @@ export async function invitationRevoke(c: Ctx) {
 export async function membershipUpdate(c: Ctx) {
   const parsed = update.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return failure(c, 'BAD_REQUEST', 'Invalid membership update.', 400);
+  const staleResponse = stale(c, parsed.data.expectedOrganizationId);
+  if (staleResponse) return staleResponse;
   const result = await updateMembership(
     c.env,
     c.get('auth'),
@@ -111,14 +138,26 @@ export async function invitationAccept(c: Ctx) {
   const parsed = token.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success)
     return failure(c, 'INVALID_INVITATION', 'This invitation is invalid or no longer usable.', 400);
+  const inspected = await inspectInvitation(c.env, parsed.data.token);
+  if (!inspected || inspected.state !== 'pending') {
+    const code =
+      inspected?.state === 'used'
+        ? 'INVITATION_USED'
+        : inspected?.state === 'expired'
+          ? 'INVITATION_EXPIRED'
+          : inspected?.state === 'revoked'
+            ? 'INVITATION_REVOKED'
+            : 'INVALID_INVITATION';
+    return failure(c, code, 'This invitation is invalid or no longer usable.', 400);
+  }
+  const current = readCookie(c.req.header('cookie'), SESSION_COOKIE);
+  if (current) {
+    const auth = await validateSessionForRecovery(c.env, current);
+    if (auth) await revokeSession(c.env, auth.sessionId);
+  }
   const session = await acceptInvitation(c.env, parsed.data.token, c.req.raw);
   if (!session)
     return failure(c, 'INVALID_INVITATION', 'This invitation is invalid or no longer usable.', 400);
-  const current = readCookie(c.req.header('cookie'), SESSION_COOKIE);
-  if (current) {
-    const auth = await validateSession(c.env, current);
-    if (auth) await revokeSession(c.env, auth.sessionId);
-  }
   c.header('Set-Cookie', buildSessionCookie(session.sessionToken, session.expires, c.env));
   return c.json({ ok: true });
 }

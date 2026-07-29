@@ -2,7 +2,7 @@ import { createMiddleware } from 'hono/factory';
 import type { Env, Variables } from '../types/env';
 import { SESSION_COOKIE } from '../auth/config';
 import { readCookie } from '../auth/cookies';
-import { validateSession, type Role } from '../auth/service';
+import { validateSession, validateSessionForRecovery, type Role } from '../auth/service';
 
 export const noStore = createMiddleware<{ Bindings: Env; Variables: Variables }>(
   async (c, next) => {
@@ -29,6 +29,20 @@ export function requireAuth(roles?: Role[]) {
       return c.json(
         { ok: false, error: { code: 'FORBIDDEN', message: 'Insufficient role.' } },
         403,
+      );
+    c.set('auth', auth);
+    await next();
+  });
+}
+
+export function requireRecoverySession() {
+  return createMiddleware<{ Bindings: Env; Variables: Variables }>(async (c, next) => {
+    const token = readCookie(c.req.header('cookie'), SESSION_COOKIE);
+    const auth = token ? await validateSessionForRecovery(c.env, token) : null;
+    if (!auth)
+      return c.json(
+        { ok: false, error: { code: 'UNAUTHORIZED', message: 'Sign in required.' } },
+        401,
       );
     c.set('auth', auth);
     await next();
