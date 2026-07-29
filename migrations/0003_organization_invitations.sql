@@ -37,7 +37,10 @@ CREATE TABLE organization_invitation_acceptances (
 CREATE TRIGGER validate_organization_invitation_acceptance
 BEFORE INSERT ON organization_invitation_acceptances
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  -- Keep CASE parenthesized: the remote D1 parser can otherwise mistake its END
+  -- for the trigger END. Local SQLite execution alone does not verify this D1
+  -- parser compatibility requirement.
+  SELECT (CASE WHEN NOT EXISTS (
     SELECT 1
     FROM organization_invitations i
     JOIN organizations o ON o.id = i.organization_id AND o.active = 1
@@ -50,5 +53,5 @@ BEGIN
         SELECT 1 FROM organization_memberships m
         WHERE m.organization_id = i.organization_id AND m.user_id = NEW.user_id AND m.active = 1
       )
-  ) THEN RAISE(ABORT, 'invitation_not_usable') END;
+  ) THEN RAISE(ABORT, 'invitation_not_usable') END);
 END;
