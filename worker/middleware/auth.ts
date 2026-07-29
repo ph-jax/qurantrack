@@ -7,8 +7,7 @@ import { validateSession, type Role } from '../auth/service';
 export const noStore = createMiddleware<{ Bindings: Env; Variables: Variables }>(
   async (c, next) => {
     await next();
-    if (c.req.path.startsWith('/api/v1/auth') || c.req.path.startsWith('/api/v1/me'))
-      c.header('Cache-Control', 'no-store');
+    c.header('Cache-Control', 'no-store');
   },
 );
 

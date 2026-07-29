@@ -58,6 +58,15 @@ All notable changes to QuranTrack will be documented in this file.
 
 ## Unreleased
 
+- Disabled all settings controls while a save is in flight so edits cannot be silently overwritten by the response, and added localized stale-organization conflict feedback.
+- Added a final Phase 3A stale-organization guard: PATCH compares the loaded settings organization ID with the authenticated active organization, returns `409` without an update on mismatch, and disables saving while organization switching is pending without trusting the browser ID as a tenant selector.
+- Corrected the Phase 3A settings review findings: nullable optional email/logo fields now round-trip through PATCH, upload failures are visible, edits clear stale success feedback, duplicate saves are guarded, logo previews recover when their source changes, and organization switches reload settings without rendering stale responses.
+- Expanded Phase 3A security and behavior coverage for route authorization, trusted tenant binding, cross-tenant isolation, validation atomicity, supported and rejected image formats, read-only controls, upload errors, save feedback, and active-organization changes.
+- Added Phase 3A production organization settings APIs and responsive English/Turkish administration UI with live branding preview.
+- Added administrator authorization, session-derived tenant scoping, approved sender-alias enforcement, strict settings validation, and safe PNG/JPEG/WebP data-URL uploads capped at 200 KB encoded.
+- Reused the existing organization schema, so Phase 3A requires no database migration.
+- Recorded successful manual end-to-end staging verification of Phase 2.6 authentication without recording real addresses, approved-alias configuration, or secrets.
+
 - Added Phase 2.6 configurable mail sender resolution: a required allowlisted deployment default, optional allowlisted organization override, and strict separation of From, display name, and Reply-To.
 - Added the additive `0002_organization_email_sender_alias.sql` migration and hardened the Apps Script relay's sender authorization, input handling, structured errors, and deploying-account-only test function without committing deployment addresses.
 

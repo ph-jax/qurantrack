@@ -4,11 +4,13 @@ QuranTrack — Quran Learning & Progress Platform
 
 Kur'an Öğrenme ve Gelişim Platformu
 
-## Current status — Phase 2.5 UI foundation
+## Current status — Phase 3A organization settings
 
 QuranTrack is a full-stack Cloudflare Worker application. Phase 1 established its tenant-scoped D1 domain model, and Phase 2 completed secure staff magic-link authentication, Turnstile verification, server-controlled organization context, role authorization, session restoration, logout, and the Apps Script email relay.
 
-Phase 2.5 completes the product-owner-approved, light-theme QuranTrack design system: Tailwind design tokens, repository-owned shadcn-style components backed by Radix primitives, Lucide icons, React Router, English/Turkish internationalization, a responsive authenticated shell, and polished authentication states. The production routes for students, teachers, classes, program, reports, families, notifications, and settings remain honest placeholders; Phase 3 CRUD has not begun.
+Phase 3A adds production-backed settings for the active organization, including branding, locale and time-zone defaults, email identity, and progress-report policy. The server derives tenant context exclusively from the authenticated session, and only system and organization administrators can save changes. Other Phase 3 resources remain honest placeholders.
+
+Uploaded logos are resized/compressed in the browser and stored in D1 as validated PNG, JPEG, or WebP data URLs with a 200 KB encoded limit. HTTPS-hosted logos are also supported. SVG and signature/type mismatches are rejected.
 
 ### Development UI showcase
 
@@ -99,3 +101,5 @@ Demo data is stored in `seeds/demo_seed.sql`, outside Wrangler’s migrations di
 Phase 2 adds staff magic-link authentication, Turnstile verification, the Google Apps Script mail relay, secure session cookies, organization switching, role checks, and one-time system-admin bootstrap. See `docs/AUTHENTICATION.md`, `docs/EMAIL_RELAY.md`, and `docs/BOOTSTRAP.md`.
 
 Phase 2.6 separates verified From aliases from organization Reply-To configuration and hardens relay validation. Deployment operators must complete the placeholder-based post-merge staging steps in `docs/EMAIL_RELAY.md`; this repository does not contain deployment email addresses.
+
+Phase 2.6 authentication, Turnstile, session, organization switching, and email relay behavior was manually verified end to end in staging. No real email address, alias allowlist, credential, or secret is recorded here.

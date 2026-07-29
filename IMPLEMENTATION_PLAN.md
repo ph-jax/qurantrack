@@ -107,3 +107,45 @@ Status: Approved and complete.
 - Preserved generic login responses and single-use token behavior. Phase 3 CRUD, onboarding, and program administration remain out of scope.
 
 Further phases continue exactly as defined in `docs/PRODUCT_SPEC.md`.
+
+### Phase 3A — Organization settings and branding
+
+Status: Complete in code; awaiting review.
+
+- Added authenticated GET and administrator-only PATCH APIs using the active organization from the validated server session.
+- Added prepared-statement persistence for all existing organization settings fields; no migration was required.
+- Added strict locale, IANA time-zone, hex color, HTTPS URL, email, numeric-limit, approved-alias, encoded-size, MIME, and image-signature validation.
+- Replaced the settings placeholder with a responsive English/Turkish form, live preview, upload compression, stored-logo removal, and explicit loading/success/error/read-only states.
+- Preserved the completed Phase 2.6 authentication and tenant-isolation behavior. Organization creation, memberships, program content, and onboarding remain deferred.
+
+### Multi-organization access requirements for later Phase 3 work
+
+- One QuranTrack installation may host multiple strictly isolated organizations, such as a Weekend School and Youth Groups. Each organization owns its administrators, teachers or mentors, students, groups or classes, curriculum, settings, and progress records.
+- A user may hold memberships in multiple organizations and may have a different role in each. Multi-organization users must be able to switch their active organization, and every request must be authorized against that active organization's membership and role.
+- Organization administrators may see all students in their active organization. Teachers and mentors may see only students assigned to their groups or classes in that organization; organization membership by itself must never grant a teacher access to every student.
+- Teacher and mentor visibility must be enforced server-side through group or class assignments and active enrollments. Browser filtering is presentation only and must never be treated as an authorization boundary.
+- The same student may participate in multiple organizations, but each organization's enrollment, lesson progress, comments, homework, and reports remain separate organization-owned records.
+- Cross-organization access is prohibited. Only an authorized platform-level `system_admin` may perform an explicitly defined cross-organization platform operation; ordinary organization and teacher workflows remain scoped to the active organization.
+
+### Phase 3B — Memberships, rosters, and group assignments
+
+- Implement organization-scoped administrator, teacher or mentor, and read-only memberships, including different roles for the same user across organizations and active-organization switching.
+- Implement organization-owned student rosters, groups or classes, teacher assignments, and enrollments without merging records or progress across organizations.
+- Apply server-side student-visibility authorization to every roster, enrollment, search, detail, progress, comment, homework, and report endpoint: organization administrators receive organization-wide access, while teachers and mentors require a matching group or class assignment and enrollment.
+- Add tenant-isolation and authorization tests covering multi-membership role differences, active-organization switching, teacher assignment boundaries, students participating in multiple organizations, and prohibited cross-organization access.
+
+### Phase 3C — Program administration and default curriculum installation
+
+- Define versioned QuranTrack default curriculum templates containing the approved starter tracks and levels, with English and Turkish labels where applicable.
+- Obtain or confirm product-owner approval of the final starter curriculum before Phase 3C implementation; this plan intentionally does not invent track or level names.
+- Add a safe, idempotent installation process that copies template content into organization-owned records without retaining shared mutable curriculum records.
+- Allow administrators to edit, order, activate, deactivate, and delete installed tracks, levels, and lessons using the same tenant-isolation and authorization guarantees as other organization-owned content.
+- Provide an **Install Default Curriculum** action for existing organizations.
+- Detect prior installation and existing organization content so rerunning installation never duplicates records or overwrites previously customized content.
+
+### Phase 3D — New-organization onboarding
+
+- Add new-organization onboarding that installs the approved default curriculum or explicitly offers it during setup, so administrators are not required to create every track and level manually.
+- Reuse the Phase 3C versioned, idempotent installation process so onboarding cannot duplicate or overwrite organization-owned curriculum content.
+- Create or invite only organization-scoped memberships and establish the new organization as the active organization without changing the user's roles or access in any other organization.
+- Keep onboarding-created administrators, teachers or mentors, students, groups or classes, curriculum, settings, enrollments, and progress records isolated within the new organization.
