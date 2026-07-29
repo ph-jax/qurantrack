@@ -14,3 +14,7 @@ QuranTrack staff authentication uses magic links, Cloudflare Turnstile, opaque s
 Required Worker variables/secrets are documented in `.dev.vars.example`.
 
 Magic-link From addresses are resolved by the single server-side sender service. The verified deployment default is mandatory; a normalized organization override is accepted only from the deployment allowlist. Organization `email_sender_name` remains the display name, while `email_reply_to` is only Reply-To and is never a From alias. See `docs/EMAIL_RELAY.md` for relay security and staging steps.
+
+## Organization invitations
+
+Invitation tokens use a purpose domain separate from login tokens; only peppered hashes are persisted. Acceptance resolves the tenant and normalized identity from the trusted invitation record, consumes the invitation once, establishes the invited identity's session, and selects the inviting organization. A conflicting browser session is revoked rather than receiving the membership. Every protected request revalidates the active organization, membership state, organization state, and current role.

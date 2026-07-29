@@ -149,3 +149,9 @@ Status: Complete in code; awaiting review.
 - Reuse the Phase 3C versioned, idempotent installation process so onboarding cannot duplicate or overwrite organization-owned curriculum content.
 - Create or invite only organization-scoped memberships and establish the new organization as the active organization without changing the user's roles or access in any other organization.
 - Keep onboarding-created administrators, teachers or mentors, students, groups or classes, curriculum, settings, enrollments, and progress records isolated within the new organization.
+
+## Phase 3B1 — staff access
+
+Status: Implemented. Phase 3A is complete and manually accepted in staging.
+
+Organization-scoped memberships, invitations, roles, and switching. Groups/classes, teacher assignments, rosters, enrollments, and server-enforced teacher visibility remain Phase 3B2; approved curriculum is Phase 3C; new-organization onboarding is Phase 3D.

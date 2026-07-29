@@ -80,3 +80,10 @@ All notable changes to QuranTrack will be documented in this file.
 - Prevented React StrictMode from consuming a single-use magic link more than once per token and added success, invalid, missing-token, and network regression coverage.
 - Added unique development-preview destinations, completed Turkish interface translations, and prevented the login form from flashing during initial session validation.
 - Fully isolated preview identity, organization switching, and account actions from authenticated session mutations, and completed StrictMode consume-flow coordination so refresh and navigation also execute once.
+
+## Phase 3B1
+
+- Added tenant-scoped staff membership administration and organization-aware invitations.
+- Added secure seven-day, single-use invitation acceptance and session establishment.
+- Enhanced organization switching to show each membership role and discard prior tenant UI state.
+- Marked Phase 3A complete and manually accepted in staging.

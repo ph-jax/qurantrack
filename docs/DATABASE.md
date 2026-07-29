@@ -22,3 +22,7 @@ Phase 2.6 adds nullable `organizations.email_sender_alias` in `0002_organization
 ## Demo seed safety
 
 `npm run db:migrate:local` applies schema migrations only and must leave tenant tables empty. Demo rows are added only when a developer explicitly runs `npm run db:seed:local`. Production and remote migration commands must not reference `seeds/demo_seed.sql`.
+
+## Phase 3B1 invitation migration
+
+`0003_organization_invitations.sql` adds tenant-scoped invitations with a unique token hash, normalized email, permitted role, inviter, seven-day expiry, acceptance/revocation timestamps, and delivery retry status. A partial unique index permits only one usable invitation for an organization/email pair. Memberships remain soft-deactivated.

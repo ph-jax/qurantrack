@@ -7,13 +7,17 @@ import { DashboardPage } from '../pages/DashboardPage';
 import { PlaceholderPage } from '../pages/PlaceholderPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { SettingsPage } from '../pages/SettingsPage';
+import { StaffPage } from '../pages/StaffPage';
+import { InvitationPage } from '../features/auth/InvitationPage';
 import { showcasePaths } from './showcaseGate';
 const uiPreviewEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_UI_PREVIEW === 'true';
 const appChildren = [
   { index: true, element: <DashboardPage /> },
-  ...['students', 'teachers', 'classes', 'program', 'reports', 'families', 'notifications'].map(
-    (path) => ({ path, element: <PlaceholderPage /> }),
-  ),
+  ...['students', 'classes', 'program', 'reports', 'families', 'notifications'].map((path) => ({
+    path,
+    element: <PlaceholderPage />,
+  })),
+  { path: 'teachers', element: <StaffPage /> },
   { path: 'settings', element: <SettingsPage /> },
 ];
 export const router = createBrowserRouter([
@@ -22,6 +26,7 @@ export const router = createBrowserRouter([
   { path: '/o/:organizationSlug/login', element: <LoginPage /> },
   { path: '/auth/consume', element: <ConsumePage /> },
   { path: '/auth/invalid', element: <LoginPage /> },
+  { path: '/invitations/accept', element: <InvitationPage /> },
   {
     path: '/app',
     element: (

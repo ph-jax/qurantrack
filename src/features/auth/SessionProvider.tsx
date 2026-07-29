@@ -84,6 +84,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     organizationSwitchingRef.current = true;
     refreshGeneration.current += 1;
     setOrganizationSwitching(true);
+    setSession(null);
+    setStatus('checking');
     try {
       const response = await fetch('/api/v1/me/organizations/switch', {
         method: 'POST',

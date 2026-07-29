@@ -200,6 +200,20 @@ export async function switchOrganization(
   await env.DB.prepare('UPDATE sessions SET active_organization_id = ? WHERE id = ?')
     .bind(organizationId, sessionId)
     .run();
+  await env.DB.prepare(
+    'INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,created_at) VALUES (?,?,?,?,?,?,?,?)',
+  )
+    .bind(
+      crypto.randomUUID(),
+      organizationId,
+      userId,
+      'organization_switched',
+      'session',
+      sessionId,
+      'organization switched',
+      new Date().toISOString(),
+    )
+    .run();
   return true;
 }
 export function can(role: Role, allowed: Role[]) {
