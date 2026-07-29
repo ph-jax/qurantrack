@@ -19,7 +19,33 @@ export async function readOrganizationSettings(c: Ctx) {
 }
 
 export async function patchOrganizationSettings(c: Ctx) {
-  const parsed = validateSettings(await c.req.json().catch(() => null), c.env);
+  const body = await c.req.json<unknown>().catch(() => null);
+  if (
+    !body ||
+    typeof body !== 'object' ||
+    !('organizationId' in body) ||
+    typeof body.organizationId !== 'string'
+  )
+    return c.json(
+      {
+        ok: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Review the settings and try again.' },
+      },
+      400,
+    );
+  const trustedOrganizationId = c.get('auth').organizationId;
+  if (body.organizationId !== trustedOrganizationId)
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: 'STALE_ORGANIZATION',
+          message: 'The active organization changed. Reload settings and try again.',
+        },
+      },
+      409,
+    );
+  const parsed = validateSettings(body, c.env);
   if (!parsed.ok)
     return c.json(
       {
@@ -28,11 +54,7 @@ export async function patchOrganizationSettings(c: Ctx) {
       },
       400,
     );
-  const settings = await updateOrganizationSettings(
-    c.env.DB,
-    c.get('auth').organizationId,
-    parsed.data,
-  );
+  const settings = await updateOrganizationSettings(c.env.DB, trustedOrganizationId, parsed.data);
   if (!settings)
     return c.json(
       { ok: false, error: { code: 'NOT_FOUND', message: 'Organization not found.' } },

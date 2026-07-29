@@ -63,7 +63,7 @@ describe('settings UI behavior', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
     prepareLogo.mockReset();
-    useSession.mockReturnValue({ session: session() });
+    useSession.mockReturnValue({ session: session(), organizationSwitching: false });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response()));
   });
 
@@ -75,7 +75,7 @@ describe('settings UI behavior', () => {
   });
 
   it.each(['teacher', 'read_only'] as Role[])('renders %s settings read-only', async (role) => {
-    useSession.mockReturnValue({ session: session(role) });
+    useSession.mockReturnValue({ session: session(role), organizationSwitching: false });
     renderPage();
     expect(await screen.findByText(/do not have permission/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /save settings/i })).toBeDisabled();
@@ -104,6 +104,11 @@ describe('settings UI behavior', () => {
     await user.type(name, 'Saved');
     await user.click(screen.getByRole('button', { name: /save settings/i }));
     expect(await screen.findByText(/settings saved/i)).toBeInTheDocument();
+    expect(JSON.parse(String(fetch.mock.calls[1][1]?.body))).toMatchObject({
+      organizationId: 'org-a',
+      emailSenderAlias: null,
+      logoUrl: null,
+    });
     await user.type(name, ' again');
     expect(screen.queryByText(/settings saved/i)).not.toBeInTheDocument();
   });
@@ -128,6 +133,12 @@ describe('settings UI behavior', () => {
     expect(await screen.findByText(/settings saved/i)).toBeInTheDocument();
   });
 
+  it('disables Save while an organization switch is pending', async () => {
+    useSession.mockReturnValue({ session: session(), organizationSwitching: true });
+    renderPage();
+    expect(await screen.findByRole('button', { name: /save settings/i })).toBeDisabled();
+  });
+
   it('reloads settings when the active organization changes', async () => {
     const fetch = vi.mocked(globalThis.fetch);
     fetch
@@ -135,7 +146,10 @@ describe('settings UI behavior', () => {
       .mockResolvedValueOnce(response({ ...settings, id: 'org-b', name: 'Organization B' }));
     const view = renderPage();
     expect(await screen.findByLabelText(/organization name/i)).toHaveValue('Organization A');
-    useSession.mockReturnValue({ session: session('organization_admin', 'org-b') });
+    useSession.mockReturnValue({
+      session: session('organization_admin', 'org-b'),
+      organizationSwitching: false,
+    });
     view.rerender(
       <I18nextProvider i18n={i18n}>
         <SettingsPage />

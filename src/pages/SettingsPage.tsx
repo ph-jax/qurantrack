@@ -9,11 +9,23 @@ import { canEditSettings, type OrganizationSettings } from '../features/settings
 const zones = ['UTC', 'Europe/Istanbul', 'Europe/London', 'America/New_York', 'Asia/Dubai'];
 
 export function SettingsPage() {
-  const { session } = useSession();
-  return <SettingsForm key={session?.activeOrganizationId} session={session} />;
+  const { session, organizationSwitching } = useSession();
+  return (
+    <SettingsForm
+      key={session?.activeOrganizationId}
+      session={session}
+      organizationSwitching={organizationSwitching}
+    />
+  );
 }
 
-function SettingsForm({ session }: { session: Session | null }) {
+function SettingsForm({
+  session,
+  organizationSwitching,
+}: {
+  session: Session | null;
+  organizationSwitching: boolean;
+}) {
   const { t } = useTranslation();
   const [value, setValue] = useState<OrganizationSettings | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'saving' | 'success' | 'error'>(
@@ -48,7 +60,7 @@ function SettingsForm({ session }: { session: Session | null }) {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!value || !editable || saving.current) return;
+    if (!value || !editable || organizationSwitching || saving.current) return;
     saving.current = true;
     setValidation('');
     setState('saving');
@@ -57,7 +69,7 @@ function SettingsForm({ session }: { session: Session | null }) {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         cache: 'no-store',
-        body: JSON.stringify(value),
+        body: JSON.stringify({ ...value, organizationId: value.id }),
       });
       if (!response.ok) {
         if (response.status === 400) setValidation(t('settings.validation'));
@@ -261,7 +273,11 @@ function SettingsForm({ session }: { session: Session | null }) {
               />
             </Field>
           </Card>
-          <Button type="submit" loading={state === 'saving'} disabled={!editable}>
+          <Button
+            type="submit"
+            loading={state === 'saving'}
+            disabled={!editable || organizationSwitching}
+          >
             {t('settings.save')}
           </Button>
         </div>

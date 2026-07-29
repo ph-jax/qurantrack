@@ -20,6 +20,7 @@ type Status = 'checking' | 'authenticated' | 'unauthenticated' | 'expired' | 'er
 type SessionContextValue = {
   status: Status;
   session: Session | null;
+  organizationSwitching: boolean;
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
   switchOrganization: (id: string) => Promise<void>;
@@ -30,7 +31,9 @@ const HINT = 'qurantrack-had-session';
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>('checking');
   const [session, setSession] = useState<Session | null>(null);
+  const [organizationSwitching, setOrganizationSwitching] = useState(false);
   const refreshGeneration = useRef(0);
+  const organizationSwitchingRef = useRef(false);
   const refresh = useCallback(async () => {
     const generation = ++refreshGeneration.current;
     setStatus('checking');
@@ -77,24 +80,34 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setStatus('unauthenticated');
   };
   const switchOrganization = async (id: string) => {
+    if (organizationSwitchingRef.current) return;
+    organizationSwitchingRef.current = true;
     refreshGeneration.current += 1;
-    const response = await fetch('/api/v1/me/organizations/switch', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ organizationId: id }),
-      cache: 'no-store',
-    });
-    if (response.status === 401) {
-      setSession(null);
-      setStatus('expired');
-      localStorage.removeItem(HINT);
-      return;
+    setOrganizationSwitching(true);
+    try {
+      const response = await fetch('/api/v1/me/organizations/switch', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId: id }),
+        cache: 'no-store',
+      });
+      if (response.status === 401) {
+        setSession(null);
+        setStatus('expired');
+        localStorage.removeItem(HINT);
+        return;
+      }
+      if (!response.ok) throw new Error('organization switch failed');
+      await refresh();
+    } finally {
+      organizationSwitchingRef.current = false;
+      setOrganizationSwitching(false);
     }
-    if (!response.ok) throw new Error('organization switch failed');
-    await refresh();
   };
   return (
-    <SessionContext.Provider value={{ status, session, refresh, logout, switchOrganization }}>
+    <SessionContext.Provider
+      value={{ status, session, organizationSwitching, refresh, logout, switchOrganization }}
+    >
       {children}
     </SessionContext.Provider>
   );

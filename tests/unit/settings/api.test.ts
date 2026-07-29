@@ -23,6 +23,7 @@ const input = {
   logoUrl: null,
   logoDataUrl: null,
 };
+const settingsFor = (organizationId: string) => ({ ...input, organizationId });
 
 function row(
   id: string,
@@ -146,24 +147,28 @@ describe('organization settings API authorization and isolation', () => {
     'returns 403 when %s attempts PATCH',
     async (role) => {
       authenticate(role);
-      expect((await app.fetch(request('PATCH', input), { DB: database().DB })).status).toBe(403);
+      expect(
+        (await app.fetch(request('PATCH', settingsFor('org-a')), { DB: database().DB })).status,
+      ).toBe(403);
     },
   );
 
   it.each(['system_admin', 'organization_admin'] as Role[])('allows %s to PATCH', async (role) => {
     authenticate(role);
-    const response = await app.fetch(request('PATCH', input), { DB: database().DB });
+    const response = await app.fetch(request('PATCH', settingsFor('org-a')), {
+      DB: database().DB,
+    });
     expect(response.status).toBe(200);
     expect((await response.json()) as { settings: unknown }).toMatchObject({ settings: input });
   });
 
-  it('uses only the session tenant for GET and PATCH, ignoring a browser organization ID', async () => {
+  it('allows matching IDs and binds only the session tenant for GET and PATCH', async () => {
     authenticate('organization_admin', 'org-a');
     const db = database();
     const get = await app.fetch(request('GET'), { DB: db.DB });
     expect(((await get.json()) as { settings: { id: string } }).settings.id).toBe('org-a');
 
-    const response = await app.fetch(request('PATCH', { ...input, organizationId: 'org-b' }), {
+    const response = await app.fetch(request('PATCH', settingsFor('org-a')), {
       DB: db.DB,
     });
     expect(response.status).toBe(200);
@@ -172,12 +177,33 @@ describe('organization settings API authorization and isolation', () => {
     expect(db.rows.get('org-b')?.name).toBe('Organization B');
   });
 
+  it('rejects settings loaded for A after the session switches to B without updating either', async () => {
+    authenticate('organization_admin', 'org-b');
+    const db = database();
+    const response = await app.fetch(request('PATCH', settingsFor('org-a')), { DB: db.DB });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: 'STALE_ORGANIZATION' } });
+    expect(db.updateBindings).toHaveLength(0);
+    expect(db.rows.get('org-a')?.name).toBe('Organization A');
+    expect(db.rows.get('org-b')?.name).toBe('Organization B');
+  });
+
+  it('does not let a browser-provided organization ID select another tenant', async () => {
+    authenticate('organization_admin', 'org-a');
+    const db = database();
+    const response = await app.fetch(request('PATCH', settingsFor('org-b')), { DB: db.DB });
+    expect(response.status).toBe(409);
+    expect(db.updateBindings).toHaveLength(0);
+    expect(db.rows.get('org-b')?.name).toBe('Organization B');
+  });
+
   it('does not execute an update for invalid input', async () => {
     authenticate('organization_admin');
     const db = database();
-    const response = await app.fetch(request('PATCH', { ...input, primaryColor: 'red' }), {
-      DB: db.DB,
-    });
+    const response = await app.fetch(
+      request('PATCH', { ...settingsFor('org-a'), primaryColor: 'red' }),
+      { DB: db.DB },
+    );
     expect(response.status).toBe(400);
     expect(db.updateBindings).toHaveLength(0);
     expect(db.rows.get('org-a')?.name).toBe('Organization A');

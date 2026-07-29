@@ -58,6 +58,7 @@ All notable changes to QuranTrack will be documented in this file.
 
 ## Unreleased
 
+- Added a final Phase 3A stale-organization guard: PATCH compares the loaded settings organization ID with the authenticated active organization, returns `409` without an update on mismatch, and disables saving while organization switching is pending without trusting the browser ID as a tenant selector.
 - Corrected the Phase 3A settings review findings: nullable optional email/logo fields now round-trip through PATCH, upload failures are visible, edits clear stale success feedback, duplicate saves are guarded, logo previews recover when their source changes, and organization switches reload settings without rendering stale responses.
 - Expanded Phase 3A security and behavior coverage for route authorization, trusted tenant binding, cross-tenant isolation, validation atomicity, supported and rejected image formats, read-only controls, upload errors, save feedback, and active-organization changes.
 - Added Phase 3A production organization settings APIs and responsive English/Turkish administration UI with live branding preview.
