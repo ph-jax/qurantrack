@@ -103,6 +103,7 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
   };
   const invalid = location.pathname === '/auth/invalid';
   const expired = Boolean((location.state as { expired?: boolean } | null)?.expired);
+  const noMembership = Boolean((location.state as { noMembership?: boolean } | null)?.noMembership);
   if (!preview && status === 'checking')
     return (
       <main className="grid min-h-screen place-items-center p-6">
@@ -147,6 +148,7 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
         </div>
         <div className="mt-5 space-y-3">
           {expired && <Alert tone="warning" title={t('auth.expired')} />}{' '}
+          {noMembership && <Alert tone="warning" title={t('auth.noMembership')} />}{' '}
           {invalid && <Alert tone="error" title={t('auth.invalid')} />}{' '}
           {requested && <Alert tone="success" title={t('auth.generic')} />}{' '}
           {serviceError && <Alert tone="error" title={t('auth.service')} />}

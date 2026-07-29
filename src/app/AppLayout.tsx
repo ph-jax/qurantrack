@@ -96,6 +96,7 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
               items={displaySession.organizations.map((o) => ({ value: o.id, label: o.name }))}
             />
           )}
+          <p className="mt-1 text-xs text-text-secondary">{t(`roles.${current.role}`)}</p>
         </div>
         <Nav
           label={t('nav.primaryLabel')}

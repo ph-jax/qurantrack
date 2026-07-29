@@ -103,3 +103,9 @@ Phase 2 adds staff magic-link authentication, Turnstile verification, the Google
 Phase 2.6 separates verified From aliases from organization Reply-To configuration and hardens relay validation. Deployment operators must complete the placeholder-based post-merge staging steps in `docs/EMAIL_RELAY.md`; this repository does not contain deployment email addresses.
 
 Phase 2.6 authentication, Turnstile, session, organization switching, and email relay behavior was manually verified end to end in staging. No real email address, alias allowlist, credential, or secret is recorded here.
+
+## Phase 3B1 staff access
+
+Phase 3B1 adds production-backed staff memberships, single-use organization invitations, per-organization roles, and authenticated organization switching. Invitation links expire after seven days and only purpose-separated, peppered hashes are stored. Phase 3A is complete and was manually accepted in staging.
+
+Phase 3B2 will add groups/classes, teacher assignments, rosters, enrollments, and server-enforced teacher visibility. Phase 3C will add approved default curriculum and program administration. Phase 3D will add new-organization onboarding.

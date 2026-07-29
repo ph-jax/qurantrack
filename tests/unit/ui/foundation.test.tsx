@@ -40,12 +40,15 @@ describe('session and protected routing foundation', () => {
     let resolve!: (v: Response) => void;
     vi.stubGlobal(
       'fetch',
-      vi.fn(
-        () =>
-          new Promise<Response>((r) => {
-            resolve = r;
-          }),
-      ),
+      vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<Response>((r) => {
+              resolve = r;
+            }),
+        )
+        .mockResolvedValueOnce(new Response('{}', { status: 401 })),
     );
     renderSession();
     expect(screen.getByText('checking')).toBeInTheDocument();

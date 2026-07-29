@@ -7,7 +7,16 @@ import {
   patchOrganizationSettings,
   readOrganizationSettings,
 } from './api/v1/organization-settings';
-import { noStore, requireAuth } from './middleware/auth';
+import { noStore, requireAuth, requireRecoverySession } from './middleware/auth';
+import {
+  invitationAccept,
+  invitationCreate,
+  invitationInspect,
+  invitationResend,
+  invitationRevoke,
+  membershipUpdate,
+  staffList,
+} from './api/v1/memberships';
 import type { Env, Variables } from './types/env';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -26,10 +35,37 @@ app.get('/api/v1/health', healthHandler);
 app.post('/api/v1/auth/magic-link/request', requestLogin);
 app.post('/api/v1/auth/magic-link/consume', consumeLogin);
 app.post('/api/v1/auth/bootstrap/system-admin', bootstrapAdmin);
+app.get('/api/v1/invitations/inspect', invitationInspect);
+app.post('/api/v1/invitations/accept', invitationAccept);
 app.post('/api/v1/auth/logout', requireAuth(), logout);
 app.get('/api/v1/me', requireAuth(), me);
-app.get('/api/v1/me/organizations', requireAuth(), organizations);
-app.post('/api/v1/me/organizations/switch', requireAuth(), switchOrg);
+app.get('/api/v1/me/organizations', requireRecoverySession(), organizations);
+app.post('/api/v1/me/organizations/switch', requireRecoverySession(), switchOrg);
+app.get(
+  '/api/v1/organization/staff',
+  requireAuth(['system_admin', 'organization_admin']),
+  staffList,
+);
+app.patch(
+  '/api/v1/organization/memberships/:id',
+  requireAuth(['system_admin', 'organization_admin']),
+  membershipUpdate,
+);
+app.post(
+  '/api/v1/organization/invitations',
+  requireAuth(['system_admin', 'organization_admin']),
+  invitationCreate,
+);
+app.post(
+  '/api/v1/organization/invitations/:id/resend',
+  requireAuth(['system_admin', 'organization_admin']),
+  invitationResend,
+);
+app.post(
+  '/api/v1/organization/invitations/:id/revoke',
+  requireAuth(['system_admin', 'organization_admin']),
+  invitationRevoke,
+);
 app.get('/api/v1/organization/settings', requireAuth(), readOrganizationSettings);
 app.patch(
   '/api/v1/organization/settings',
