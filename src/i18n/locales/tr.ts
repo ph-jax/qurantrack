@@ -103,6 +103,7 @@ export default {
     saved: 'Kurum ayarları kaydedildi.',
     saveError: 'Ayarlar kaydedilemedi. Mevcut veriler değiştirilmedi.',
     validation: 'Değerleri gözden geçirin. Mevcut veriler değiştirilmedi.',
+    staleOrganization: 'Etkin kurum değişti. Ayarları yeniden yükleyip tekrar deneyin.',
     readOnly: 'Kurum ayarlarını değiştirme yetkiniz yok.',
     branding: 'Marka',
     name: 'Kurum adı',

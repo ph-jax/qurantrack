@@ -102,6 +102,7 @@ export default {
     saved: 'Organization settings saved.',
     saveError: 'Settings could not be saved. Existing data was not changed.',
     validation: 'Review the highlighted values. Existing data was not changed.',
+    staleOrganization: 'The active organization changed. Reload settings and try again.',
     readOnly: 'You do not have permission to change organization settings.',
     branding: 'Branding',
     name: 'Organization name',

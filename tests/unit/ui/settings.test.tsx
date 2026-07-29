@@ -127,10 +127,24 @@ describe('settings UI behavior', () => {
     const save = await screen.findByRole('button', { name: /save settings/i });
     await user.click(save);
     expect(save).toBeDisabled();
+    expect(screen.getByLabelText(/organization name/i)).toBeDisabled();
     await user.click(save);
     expect(fetch).toHaveBeenCalledTimes(2);
     resolveSave(response());
     expect(await screen.findByText(/settings saved/i)).toBeInTheDocument();
+  });
+
+  it('shows a specific stale-organization message for a 409 response', async () => {
+    const fetch = vi.mocked(globalThis.fetch);
+    fetch
+      .mockResolvedValueOnce(response())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { code: 'STALE_ORGANIZATION' } }), { status: 409 }),
+      );
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: /save settings/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/active organization changed/i);
   });
 
   it('disables Save while an organization switch is pending', async () => {

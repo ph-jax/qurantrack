@@ -34,6 +34,7 @@ function SettingsForm({
   const [validation, setValidation] = useState('');
   const saving = useRef(false);
   const editable = canEditSettings(session?.role ?? '');
+  const controlsDisabled = !editable || organizationSwitching || state === 'saving';
 
   useEffect(() => {
     const controller = new AbortController();
@@ -73,6 +74,7 @@ function SettingsForm({
       });
       if (!response.ok) {
         if (response.status === 400) setValidation(t('settings.validation'));
+        if (response.status === 409) setValidation(t('settings.staleOrganization'));
         throw new Error();
       }
       const body = (await response.json()) as { settings: OrganizationSettings };
@@ -116,7 +118,7 @@ function SettingsForm({
                 id="org-name"
                 required
                 maxLength={120}
-                disabled={!editable}
+                disabled={controlsDisabled}
                 value={value.name}
                 onChange={(e) => set('name', e.target.value)}
               />
@@ -126,7 +128,7 @@ function SettingsForm({
                 id="color"
                 required
                 pattern="#[0-9A-Fa-f]{6}"
-                disabled={!editable}
+                disabled={controlsDisabled}
                 value={value.primaryColor}
                 onChange={(e) => set('primaryColor', e.target.value)}
               />
@@ -136,7 +138,7 @@ function SettingsForm({
                 id="logo-url"
                 type="url"
                 placeholder="https://"
-                disabled={!editable}
+                disabled={controlsDisabled}
                 value={value.logoUrl ?? ''}
                 onChange={(e) => set('logoUrl', e.target.value || null)}
               />
@@ -146,7 +148,7 @@ function SettingsForm({
                 id="logo-file"
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
-                disabled={!editable}
+                disabled={controlsDisabled}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file)
@@ -167,7 +169,7 @@ function SettingsForm({
                 className="sm:col-span-2"
                 type="button"
                 variant="secondary"
-                disabled={!editable}
+                disabled={controlsDisabled}
                 onClick={() => set('logoDataUrl', null)}
               >
                 {t('settings.removeLogo')}
@@ -180,7 +182,7 @@ function SettingsForm({
               <select
                 id="locale"
                 className="settings-select"
-                disabled={!editable}
+                disabled={controlsDisabled}
                 value={value.defaultLocale}
                 onChange={(e) => set('defaultLocale', e.target.value as 'en' | 'tr')}
               >
@@ -193,7 +195,7 @@ function SettingsForm({
                 id="timezone"
                 required
                 list="timezones"
-                disabled={!editable}
+                disabled={controlsDisabled}
                 value={value.timezone}
                 onChange={(e) => set('timezone', e.target.value)}
               />
@@ -211,7 +213,7 @@ function SettingsForm({
                 id="sender"
                 required
                 maxLength={120}
-                disabled={!editable}
+                disabled={controlsDisabled}
                 value={value.emailSenderName}
                 onChange={(e) => set('emailSenderName', e.target.value)}
               />
@@ -221,7 +223,7 @@ function SettingsForm({
                 id="reply"
                 required
                 type="email"
-                disabled={!editable}
+                disabled={controlsDisabled}
                 value={value.emailReplyTo}
                 onChange={(e) => set('emailReplyTo', e.target.value)}
               />
@@ -230,7 +232,7 @@ function SettingsForm({
               <Input
                 id="alias"
                 type="email"
-                disabled={!editable}
+                disabled={controlsDisabled}
                 value={value.emailSenderAlias ?? ''}
                 onChange={(e) => set('emailSenderAlias', e.target.value || null)}
               />
@@ -243,7 +245,7 @@ function SettingsForm({
                 id="report-title"
                 required
                 maxLength={160}
-                disabled={!editable}
+                disabled={controlsDisabled}
                 value={value.reportTitle}
                 onChange={(e) => set('reportTitle', e.target.value)}
               />
@@ -255,7 +257,7 @@ function SettingsForm({
                 type="number"
                 min={1}
                 max={365}
-                disabled={!editable}
+                disabled={controlsDisabled}
                 value={value.missingUpdateDays}
                 onChange={(e) => set('missingUpdateDays', Number(e.target.value))}
               />
@@ -267,17 +269,13 @@ function SettingsForm({
                 type="number"
                 min={1}
                 max={365}
-                disabled={!editable}
+                disabled={controlsDisabled}
                 value={value.guardianTokenLifetimeDays}
                 onChange={(e) => set('guardianTokenLifetimeDays', Number(e.target.value))}
               />
             </Field>
           </Card>
-          <Button
-            type="submit"
-            loading={state === 'saving'}
-            disabled={!editable || organizationSwitching}
-          >
+          <Button type="submit" loading={state === 'saving'} disabled={controlsDisabled}>
             {t('settings.save')}
           </Button>
         </div>
