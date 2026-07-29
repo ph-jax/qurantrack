@@ -5,6 +5,7 @@ import {
   inspectInvitation,
   listStaff,
   resendInvitation,
+  revokeInvitation,
   updateMembership,
 } from '../../../worker/organizations/memberships';
 import { listOrganizations, switchOrganization } from '../../../worker/auth/service';
@@ -39,6 +40,135 @@ const auth = {
 } as const;
 afterEach(() => vi.unstubAllGlobals());
 describe('real SQLite/D1 membership security', () => {
+  it('creates an invitation and audit atomically before delivery', async () => {
+    const db = new SqliteD1();
+    base(db);
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    expect(await createInvitation(env(db), auth, 'created@example.test', 'teacher')).toEqual({
+      ok: true,
+    });
+    expect(db.count('organization_invitations')).toBe(1);
+    expect(db.count('audit_log')).toBe(1);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(db.db.prepare('SELECT action,metadata_json FROM audit_log').get()).toEqual({
+      action: 'invitation_created',
+      metadata_json: null,
+    });
+    db.close();
+  });
+  it('rolls back creation when its audit fails and never attempts delivery', async () => {
+    const db = new SqliteD1();
+    base(db);
+    db.failBatchAt = 2;
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    await expect(
+      createInvitation(env(db), auth, 'rollback@example.test', 'teacher'),
+    ).rejects.toThrow('injected_sql_failure');
+    expect(db.count('organization_invitations')).toBe(0);
+    expect(db.count('audit_log')).toBe(0);
+    expect(fetch).not.toHaveBeenCalled();
+    db.close();
+  });
+  it('rolls back resend audit failures without invalidating the previous token', async () => {
+    const db = new SqliteD1();
+    base(db);
+    await invitation(db, 'i1', 'org-a', 'resend@example.test', 'teacher', token);
+    const before = db.db
+      .prepare(
+        'SELECT token_hash,expires_at,delivery_status FROM organization_invitations WHERE id=?',
+      )
+      .get('i1');
+    db.failBatchAt = 2;
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    await expect(resendInvitation(env(db), auth, 'i1')).rejects.toThrow('injected_sql_failure');
+    expect(
+      db.db
+        .prepare(
+          'SELECT token_hash,expires_at,delivery_status FROM organization_invitations WHERE id=?',
+        )
+        .get('i1'),
+    ).toEqual(before);
+    expect((await inspectInvitation(env(db), token))?.state).toBe('pending');
+    expect(db.count('audit_log')).toBe(0);
+    expect(fetch).not.toHaveBeenCalled();
+    db.close();
+  });
+  it('revokes with one audit and rolls both back when the audit fails', async () => {
+    for (const fail of [false, true]) {
+      const db = new SqliteD1();
+      base(db);
+      await invitation(db, 'i1', 'org-a', 'revoke@example.test', 'teacher', token);
+      if (fail) db.failBatchAt = 2;
+      if (fail)
+        await expect(revokeInvitation(env(db), auth, 'i1')).rejects.toThrow('injected_sql_failure');
+      else expect(await revokeInvitation(env(db), auth, 'i1')).toBe(true);
+      const row = db.db
+        .prepare('SELECT revoked_at FROM organization_invitations WHERE id=?')
+        .get('i1') as { revoked_at: string | null };
+      expect(Boolean(row.revoked_at)).toBe(!fail);
+      expect(db.count('audit_log')).toBe(fail ? 0 : 1);
+      expect((await inspectInvitation(env(db), token))?.state).toBe(fail ? 'pending' : 'revoked');
+      db.close();
+    }
+  });
+  it('creates no audit for zero-row and cross-tenant resend/revoke attempts', async () => {
+    const db = new SqliteD1();
+    base(db);
+    await invitation(db, 'i1', 'org-a', 'scoped@example.test', 'teacher', token);
+    const other = { ...auth, organizationId: 'org-b' };
+    expect(await resendInvitation(env(db), other, 'i1')).toEqual({ missing: true });
+    expect(await revokeInvitation(env(db), other, 'i1')).toBe(false);
+    expect(await resendInvitation(env(db), auth, 'missing')).toEqual({ missing: true });
+    expect(await revokeInvitation(env(db), auth, 'missing')).toBe(false);
+    expect(db.count('audit_log')).toBe(0);
+    expect((await inspectInvitation(env(db), token))?.state).toBe('pending');
+    db.close();
+  });
+  it('creates no audit or email when resend/revoke lose a conditional race', async () => {
+    for (const operation of ['resend', 'revoke'] as const) {
+      const db = new SqliteD1();
+      base(db);
+      await invitation(db, 'i1', 'org-a', `${operation}@example.test`, 'teacher', token);
+      db.beforeBatch = () => {
+        db.db
+          .prepare('UPDATE organization_invitations SET accepted_at=? WHERE id=?')
+          .run(now, 'i1');
+      };
+      const fetch = vi.fn();
+      vi.stubGlobal('fetch', fetch);
+      if (operation === 'resend')
+        expect(await resendInvitation(env(db), auth, 'i1')).toEqual({ missing: true });
+      else expect(await revokeInvitation(env(db), auth, 'i1')).toBe(false);
+      expect(db.count('audit_log')).toBe(0);
+      expect(fetch).not.toHaveBeenCalled();
+      db.close();
+    }
+  });
+  it('keeps a successfully resent invitation visible and retryable after delivery failure', async () => {
+    const db = new SqliteD1();
+    base(db);
+    await invitation(db, 'i1', 'org-a', 'failed@example.test', 'teacher', token);
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('relay')));
+    expect(await resendInvitation(env(db), auth, 'i1')).toEqual({ deliveryFailed: true });
+    const row = db.db
+      .prepare('SELECT delivery_status,token_hash FROM organization_invitations WHERE id=?')
+      .get('i1') as { delivery_status: string; token_hash: string };
+    expect(row.delivery_status).toBe('failed');
+    expect(await inspectInvitation(env(db), token)).toBeNull();
+    expect(db.count('audit_log')).toBe(1);
+    expect(db.db.prepare('SELECT metadata_json FROM audit_log').get()).toEqual({
+      metadata_json: null,
+    });
+    expect(
+      JSON.stringify(db.db.prepare('SELECT metadata_json FROM audit_log').all()),
+    ).not.toContain(row.token_hash);
+    db.close();
+  });
   it('atomically commits every acceptance record', async () => {
     const db = new SqliteD1();
     base(db);
@@ -215,6 +345,7 @@ describe('real SQLite/D1 membership security', () => {
     expect(await resendInvitation(env(db), auth, 'i1')).toEqual({ ok: true });
     expect(await inspectInvitation(env(db), token)).toBeNull();
     expect(delivered).not.toContain('token_hash');
+    expect(db.count('audit_log')).toBe(1);
     expect(
       (
         db.db

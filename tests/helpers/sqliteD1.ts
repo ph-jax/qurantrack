@@ -33,6 +33,7 @@ class SqliteStatement {
 export class SqliteD1 {
   db = new DatabaseSync(':memory:');
   failBatchAt = 0;
+  beforeBatch?: () => void;
   private batchQueue: Promise<unknown> = Promise.resolve();
   constructor() {
     this.db.exec('PRAGMA foreign_keys=ON');
@@ -52,6 +53,9 @@ export class SqliteD1 {
     return operation;
   }
   private async executeBatch(statements: SqliteStatement[]) {
+    const beforeBatch = this.beforeBatch;
+    this.beforeBatch = undefined;
+    beforeBatch?.();
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const results = [];

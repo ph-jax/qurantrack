@@ -28,7 +28,7 @@ const changes = (result: { meta?: unknown }) =>
   (result.meta as { rows_written?: number } | undefined)?.rows_written ??
   0;
 
-async function audit(
+function auditInsert(
   env: Env,
   auth: AuthContext | null,
   organizationId: string,
@@ -36,23 +36,22 @@ async function audit(
   entityType: string,
   entityId: string,
   requestId?: string,
+  createdAt = new Date().toISOString(),
 ) {
-  await env.DB.prepare(
+  return env.DB.prepare(
     'INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-  )
-    .bind(
-      crypto.randomUUID(),
-      organizationId,
-      auth?.userId ?? null,
-      action,
-      entityType,
-      entityId,
-      action.replaceAll('_', ' '),
-      null,
-      requestId ?? null,
-      new Date().toISOString(),
-    )
-    .run();
+  ).bind(
+    crypto.randomUUID(),
+    organizationId,
+    auth?.userId ?? null,
+    action,
+    entityType,
+    entityId,
+    action.replaceAll('_', ' '),
+    null,
+    requestId ?? null,
+    createdAt,
+  );
 }
 
 export async function listStaff(env: Env, auth: AuthContext) {
@@ -120,6 +119,8 @@ export async function createInvitation(
   const id = crypto.randomUUID();
   const token = randomToken(32);
   const hash = await invitationHash(env, token);
+  const timestamp = now.toISOString();
+  const expiresAt = new Date(now.getTime() + INVITATION_DAYS * 86400000).toISOString();
   const existingMember = await env.DB.prepare(
     'SELECT m.id,m.active FROM organization_memberships m JOIN users u ON u.id=m.user_id WHERE m.organization_id=? AND u.email=? COLLATE NOCASE',
   )
@@ -127,33 +128,41 @@ export async function createInvitation(
     .first<{ id: string; active: number }>();
   if (existingMember?.active) return { conflict: true as const };
   try {
-    await env.DB.prepare(
-      'INSERT INTO organization_invitations (id,organization_id,normalized_email,role,token_hash,invited_by_user_id,expires_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
-    )
-      .bind(
+    await env.DB.batch([
+      env.DB.prepare(
+        'INSERT INTO organization_invitations (id,organization_id,normalized_email,role,token_hash,invited_by_user_id,expires_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
+      ).bind(
         id,
         auth.organizationId,
         email,
         role,
         hash,
         auth.userId,
-        new Date(now.getTime() + INVITATION_DAYS * 86400000).toISOString(),
-        now.toISOString(),
-        now.toISOString(),
-      )
-      .run();
-  } catch {
-    return { conflict: true as const };
+        expiresAt,
+        timestamp,
+        timestamp,
+      ),
+      auditInsert(
+        env,
+        auth,
+        auth.organizationId,
+        'invitation_created',
+        'organization_invitation',
+        id,
+        requestId,
+        timestamp,
+      ),
+    ]);
+  } catch (error) {
+    const duplicate = await env.DB.prepare(
+      `SELECT 1 present FROM organization_invitations
+       WHERE organization_id=? AND normalized_email=? AND accepted_at IS NULL AND revoked_at IS NULL`,
+    )
+      .bind(auth.organizationId, email)
+      .first();
+    if (duplicate) return { conflict: true as const };
+    throw error;
   }
-  await audit(
-    env,
-    auth,
-    auth.organizationId,
-    'invitation_created',
-    'organization_invitation',
-    id,
-    requestId,
-  );
   const org = await organization(env, auth.organizationId);
   if (!org) return { deliveryFailed: true as const };
   try {
@@ -161,14 +170,14 @@ export async function createInvitation(
     await env.DB.prepare(
       "UPDATE organization_invitations SET delivery_status='sent',last_delivery_attempt_at=?,updated_at=? WHERE id=? AND organization_id=?",
     )
-      .bind(now.toISOString(), now.toISOString(), id, auth.organizationId)
+      .bind(timestamp, timestamp, id, auth.organizationId)
       .run();
     return { ok: true as const };
   } catch {
     await env.DB.prepare(
       "UPDATE organization_invitations SET delivery_status='failed',last_delivery_attempt_at=?,updated_at=? WHERE id=? AND organization_id=?",
     )
-      .bind(now.toISOString(), now.toISOString(), id, auth.organizationId)
+      .bind(timestamp, timestamp, id, auth.organizationId)
       .run();
     return { deliveryFailed: true as const };
   }
@@ -190,35 +199,49 @@ export async function resendInvitation(
     hash = await invitationHash(env, token),
     now = new Date(),
     expiry = new Date(now.getTime() + INVITATION_DAYS * 86400000).toISOString();
-  await env.DB.prepare(
-    "UPDATE organization_invitations SET token_hash=?,expires_at=?,delivery_status='pending',updated_at=? WHERE id=? AND organization_id=? AND accepted_at IS NULL AND revoked_at IS NULL",
-  )
-    .bind(hash, expiry, now.toISOString(), id, auth.organizationId)
-    .run();
-  await audit(
-    env,
-    auth,
-    auth.organizationId,
-    'invitation_resent',
-    'organization_invitation',
-    id,
-    requestId,
-  );
+  const timestamp = now.toISOString();
+  const [updated] = await env.DB.batch([
+    env.DB.prepare(
+      "UPDATE organization_invitations SET token_hash=?,expires_at=?,delivery_status='pending',updated_at=? WHERE id=? AND organization_id=? AND accepted_at IS NULL AND revoked_at IS NULL",
+    ).bind(hash, expiry, timestamp, id, auth.organizationId),
+    env.DB.prepare(
+      `INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at)
+     SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (
+       SELECT 1 FROM organization_invitations WHERE id=? AND organization_id=? AND token_hash=? AND updated_at=?
+     )`,
+    ).bind(
+      crypto.randomUUID(),
+      auth.organizationId,
+      auth.userId,
+      'invitation_resent',
+      'organization_invitation',
+      id,
+      'invitation resent',
+      null,
+      requestId ?? null,
+      timestamp,
+      id,
+      auth.organizationId,
+      hash,
+      timestamp,
+    ),
+  ]);
+  if (changes(updated) !== 1) return { missing: true as const };
   const org = await organization(env, auth.organizationId);
   try {
     if (!org) throw new Error();
     await deliver(env, org, row.email, row.role, token);
     await env.DB.prepare(
-      "UPDATE organization_invitations SET delivery_status='sent',last_delivery_attempt_at=?,updated_at=? WHERE id=?",
+      "UPDATE organization_invitations SET delivery_status='sent',last_delivery_attempt_at=?,updated_at=? WHERE id=? AND organization_id=? AND token_hash=? AND accepted_at IS NULL AND revoked_at IS NULL",
     )
-      .bind(now.toISOString(), now.toISOString(), id)
+      .bind(timestamp, timestamp, id, auth.organizationId, hash)
       .run();
     return { ok: true as const };
   } catch {
     await env.DB.prepare(
-      "UPDATE organization_invitations SET delivery_status='failed',last_delivery_attempt_at=?,updated_at=? WHERE id=?",
+      "UPDATE organization_invitations SET delivery_status='failed',last_delivery_attempt_at=?,updated_at=? WHERE id=? AND organization_id=? AND token_hash=? AND accepted_at IS NULL AND revoked_at IS NULL",
     )
-      .bind(now.toISOString(), now.toISOString(), id)
+      .bind(timestamp, timestamp, id, auth.organizationId, hash)
       .run();
     return { deliveryFailed: true as const };
   }
@@ -231,21 +254,32 @@ export async function revokeInvitation(
   requestId?: string,
 ) {
   const now = new Date().toISOString();
-  const r = await env.DB.prepare(
-    'UPDATE organization_invitations SET revoked_at=?,updated_at=? WHERE id=? AND organization_id=? AND accepted_at IS NULL AND revoked_at IS NULL',
-  )
-    .bind(now, now, id, auth.organizationId)
-    .run();
-  if (changes(r) !== 1) return false;
-  await audit(
-    env,
-    auth,
-    auth.organizationId,
-    'invitation_revoked',
-    'organization_invitation',
-    id,
-    requestId,
-  );
+  const [result] = await env.DB.batch([
+    env.DB.prepare(
+      'UPDATE organization_invitations SET revoked_at=?,updated_at=? WHERE id=? AND organization_id=? AND accepted_at IS NULL AND revoked_at IS NULL',
+    ).bind(now, now, id, auth.organizationId),
+    env.DB.prepare(
+      `INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at)
+     SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (
+       SELECT 1 FROM organization_invitations WHERE id=? AND organization_id=? AND revoked_at=?
+     )`,
+    ).bind(
+      crypto.randomUUID(),
+      auth.organizationId,
+      auth.userId,
+      'invitation_revoked',
+      'organization_invitation',
+      id,
+      'invitation revoked',
+      null,
+      requestId ?? null,
+      now,
+      id,
+      auth.organizationId,
+      now,
+    ),
+  ]);
+  if (changes(result) !== 1) return false;
   return true;
 }
 
