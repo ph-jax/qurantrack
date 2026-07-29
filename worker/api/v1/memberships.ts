@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Env, Variables } from '../../types/env';
 import { buildSessionCookie, readCookie } from '../../auth/cookies';
 import { SESSION_COOKIE } from '../../auth/config';
-import { revokeSession, validateSessionForRecovery } from '../../auth/service';
+import { validateSessionForRecovery } from '../../auth/service';
 import {
   acceptInvitation,
   ASSIGNABLE_ROLES,
@@ -151,11 +151,12 @@ export async function invitationAccept(c: Ctx) {
     return failure(c, code, 'This invitation is invalid or no longer usable.', 400);
   }
   const current = readCookie(c.req.header('cookie'), SESSION_COOKIE);
+  let priorSessionId: string | undefined;
   if (current) {
     const auth = await validateSessionForRecovery(c.env, current);
-    if (auth) await revokeSession(c.env, auth.sessionId);
+    priorSessionId = auth?.sessionId;
   }
-  const session = await acceptInvitation(c.env, parsed.data.token, c.req.raw);
+  const session = await acceptInvitation(c.env, parsed.data.token, c.req.raw, priorSessionId);
   if (!session)
     return failure(c, 'INVALID_INVITATION', 'This invitation is invalid or no longer usable.', 400);
   c.header('Set-Cookie', buildSessionCookie(session.sessionToken, session.expires, c.env));

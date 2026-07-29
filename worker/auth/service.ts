@@ -237,13 +237,15 @@ export async function switchOrganization(
 ) {
   const rows = await activeMemberships(env, userId);
   if (!rows.some((r) => r.organization_id === organizationId)) return false;
-  await env.DB.prepare('UPDATE sessions SET active_organization_id = ? WHERE id = ?')
-    .bind(organizationId, sessionId)
-    .run();
-  await env.DB.prepare(
-    'INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,created_at) VALUES (?,?,?,?,?,?,?,?)',
-  )
-    .bind(
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare('UPDATE sessions SET active_organization_id = ? WHERE id = ?').bind(
+      organizationId,
+      sessionId,
+    ),
+    env.DB.prepare(
+      'INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,created_at) VALUES (?,?,?,?,?,?,?,?)',
+    ).bind(
       crypto.randomUUID(),
       organizationId,
       userId,
@@ -251,9 +253,9 @@ export async function switchOrganization(
       'session',
       sessionId,
       'organization switched',
-      new Date().toISOString(),
-    )
-    .run();
+      now,
+    ),
+  ]);
   return true;
 }
 export function can(role: Role, allowed: Role[]) {

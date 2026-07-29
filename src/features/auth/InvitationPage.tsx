@@ -57,7 +57,15 @@ export function InvitationPage() {
         const json = (await response.json().catch(() => null)) as {
           error?: { code?: string };
         } | null;
-        setState(json?.error?.code === 'INVITATION_USED' ? 'used' : 'invalid');
+        setState(
+          json?.error?.code === 'INVITATION_USED'
+            ? 'used'
+            : json?.error?.code === 'INVITATION_EXPIRED'
+              ? 'expired'
+              : json?.error?.code === 'INVITATION_REVOKED'
+                ? 'revoked'
+                : 'invalid',
+        );
         return;
       }
       setState('success');

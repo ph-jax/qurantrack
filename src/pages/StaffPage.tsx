@@ -79,7 +79,18 @@ export function StaffPage() {
           error?: { code?: string; message?: string };
         } | null;
         if (j?.error?.code === 'DELIVERY_FAILED') await load();
-        throw new Error(j?.error?.message || t('staff.actionError'));
+        const knownCodes = [
+          'STALE_ORGANIZATION',
+          'DELIVERY_FAILED',
+          'LAST_ADMIN',
+          'SELF_CHANGE',
+          'CONFLICT',
+          'FORBIDDEN',
+        ] as const;
+        const code = knownCodes.includes(j?.error?.code as (typeof knownCodes)[number])
+          ? j?.error?.code
+          : 'GENERAL';
+        throw new Error(t(`staff.errors.${code}`));
       }
       await load();
       setSuccess(t(`staff.${successKey}`));
@@ -296,6 +307,7 @@ export function StaffPage() {
           </select>
         </label>
         <div className="grid gap-3">
+          {!shownInvitations.length && <p>{t('staff.invitationsEmpty')}</p>}
           {shownInvitations.map((i) => {
             const state = invitationState(i);
             return (

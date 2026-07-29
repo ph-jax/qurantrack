@@ -267,7 +267,7 @@ export async function updateMembership(
   const nextRole = input.role ?? (row.role as AssignableRole),
     nextActive = input.active === undefined ? row.active : Number(input.active);
   const now = new Date().toISOString();
-  const result = await env.DB.prepare(
+  const updateStatement = env.DB.prepare(
     `UPDATE organization_memberships SET role=?,active=?,updated_at=?
      WHERE id=? AND organization_id=?
        AND (role NOT IN ('system_admin','organization_admin')
@@ -276,17 +276,33 @@ export async function updateMembership(
            WHERE administrator.organization_id=organization_memberships.organization_id
              AND administrator.id<>organization_memberships.id AND administrator.active=1
              AND administrator.role IN ('system_admin','organization_admin')))`,
-  )
-    .bind(nextRole, nextActive, now, id, auth.organizationId, nextRole, nextActive)
-    .run();
-  if (changes(result) !== 1) return 'last_admin';
-  const action =
+  ).bind(nextRole, nextActive, now, id, auth.organizationId, nextRole, nextActive);
+  const auditStatement = env.DB.prepare(
+    `INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at)
+     SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (
+       SELECT 1 FROM organization_memberships WHERE id=? AND organization_id=? AND updated_at=?
+     )`,
+  ).bind(
+    crypto.randomUUID(),
+    auth.organizationId,
+    auth.userId,
     row.active !== nextActive
       ? nextActive
         ? 'membership_reactivated'
         : 'membership_deactivated'
-      : 'membership_role_changed';
-  await audit(env, auth, auth.organizationId, action, 'organization_membership', id, requestId);
+      : 'membership_role_changed',
+    'organization_membership',
+    id,
+    'membership updated',
+    null,
+    requestId ?? null,
+    now,
+    id,
+    auth.organizationId,
+    now,
+  );
+  const [result] = await env.DB.batch([updateStatement, auditStatement]);
+  if (changes(result) !== 1) return 'last_admin';
   return 'ok';
 }
 
@@ -327,7 +343,12 @@ export async function inspectInvitation(env: Env, token: string) {
   };
 }
 
-export async function acceptInvitation(env: Env, token: string, request: Request) {
+export async function acceptInvitation(
+  env: Env,
+  token: string,
+  request: Request,
+  priorSessionId?: string,
+) {
   if (!/^[A-Za-z0-9_-]{40,60}$/.test(token)) return null;
   const hash = await invitationHash(env, token);
   const now = new Date();
@@ -372,12 +393,6 @@ export async function acceptInvitation(env: Env, token: string, request: Request
     );
   statements.push(
     env.DB.prepare(
-      'INSERT INTO organization_invitation_acceptances (invitation_id,user_id,session_id,accepted_at) VALUES (?,?,?,?)',
-    ).bind(invite.id, userId, sessionId, timestamp),
-    env.DB.prepare(
-      `INSERT INTO organization_memberships (id,organization_id,user_id,role,active,created_at,updated_at) VALUES (?,?,?,?,1,?,?) ON CONFLICT(organization_id,user_id) DO UPDATE SET role=excluded.role,active=1,updated_at=excluded.updated_at`,
-    ).bind(crypto.randomUUID(), invite.organization_id, userId, invite.role, timestamp, timestamp),
-    env.DB.prepare(
       'INSERT INTO sessions (id,user_id,token_hash,active_organization_id,expires_at,absolute_expires_at,last_seen_at,created_at,user_agent_hash,ip_hash) VALUES (?,?,?,?,?,?,?,?,?,?)',
     ).bind(
       sessionId,
@@ -391,6 +406,12 @@ export async function acceptInvitation(env: Env, token: string, request: Request
       await sha256Hex(request.headers.get('user-agent') ?? 'unknown'),
       await sha256Hex(request.headers.get('cf-connecting-ip') ?? 'unknown'),
     ),
+    env.DB.prepare(
+      'INSERT INTO organization_invitation_acceptances (invitation_id,user_id,session_id,accepted_at) VALUES (?,?,?,?)',
+    ).bind(invite.id, userId, sessionId, timestamp),
+    env.DB.prepare(
+      `INSERT INTO organization_memberships (id,organization_id,user_id,role,active,created_at,updated_at) VALUES (?,?,?,?,1,?,?) ON CONFLICT(organization_id,user_id) DO UPDATE SET role=excluded.role,active=1,updated_at=excluded.updated_at`,
+    ).bind(crypto.randomUUID(), invite.organization_id, userId, invite.role, timestamp, timestamp),
     env.DB.prepare(
       'UPDATE organization_invitations SET accepted_at=?,updated_at=? WHERE id=?',
     ).bind(timestamp, timestamp, invite.id),
@@ -409,6 +430,14 @@ export async function acceptInvitation(env: Env, token: string, request: Request
       timestamp,
     ),
   );
+  if (priorSessionId) {
+    statements.push(
+      env.DB.prepare('UPDATE sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL').bind(
+        timestamp,
+        priorSessionId,
+      ),
+    );
+  }
   try {
     await env.DB.batch(statements);
   } catch {

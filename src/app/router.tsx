@@ -9,6 +9,7 @@ import { NotFoundPage } from '../pages/NotFoundPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { StaffPage } from '../pages/StaffPage';
 import { InvitationPage } from '../features/auth/InvitationPage';
+import { RoleProtectedRoute } from '../features/auth/RoleProtectedRoute';
 import { showcasePaths } from './showcaseGate';
 const uiPreviewEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_UI_PREVIEW === 'true';
 const appChildren = [
@@ -17,7 +18,14 @@ const appChildren = [
     path,
     element: <PlaceholderPage />,
   })),
-  { path: 'teachers', element: <StaffPage /> },
+  {
+    path: 'teachers',
+    element: (
+      <RoleProtectedRoute roles={['system_admin', 'organization_admin']}>
+        <StaffPage />
+      </RoleProtectedRoute>
+    ),
+  },
   { path: 'settings', element: <SettingsPage /> },
 ];
 export const router = createBrowserRouter([

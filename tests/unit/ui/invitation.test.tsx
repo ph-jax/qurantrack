@@ -49,4 +49,32 @@ describe('public invitation states', () => {
     await screen.findByText(/ulaşılamadı/);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Yeniden dene' })).toBeEnabled());
   });
+  it.each([
+    ['en', 'INVITATION_EXPIRED', /has expired/],
+    ['en', 'INVITATION_REVOKED', /was revoked/],
+    ['tr', 'INVITATION_EXPIRED', /süresi dolmuş/],
+    ['tr', 'INVITATION_REVOKED', /iptal edilmiş/],
+  ])('maps acceptance %s errors in %s', async (locale, code, message) => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              invitation: { organizationName: 'Org', locale, role: 'teacher', state: 'pending' },
+            }),
+            { status: 200 },
+          ),
+        )
+        .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code } }), { status: 400 })),
+    );
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole('button', {
+        name: locale === 'tr' ? 'Daveti kabul et' : 'Accept invitation',
+      }),
+    );
+    expect(await screen.findByText(message)).toBeInTheDocument();
+  });
 });
