@@ -83,7 +83,7 @@ All notable changes to QuranTrack will be documented in this file.
 
 ## Phase 3B1
 
-- Closed Phase 3B1 after staging deployment and manual verification without deploying production.
+- Implemented and deployed Phase 3B1 to staging; final mutation acceptance remains pending and production remains untouched.
 - Clarified invitation lifecycle versus relay-submission status, removed the obsolete live-layout preview notice, and corrected Staff-page secondary-text contrast.
 - Made staging deployment preserve dashboard variables and documented the exact connected-build configuration.
 - Added tenant-scoped staff membership administration and organization-aware invitations.

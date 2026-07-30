@@ -152,6 +152,6 @@ Status: Complete in code; awaiting review.
 
 ## Phase 3B1 — staff access
 
-Status: Closed after deployment and manual acceptance in staging; production remains untouched.
+Status: Implemented and deployed to staging; final Phase 3B1 mutation acceptance remains pending. Production remains untouched.
 
-Manual staging acceptance covered administrator Staff-page access, invitation creation, email submission and receipt, invitation acceptance, membership creation, and Teacher / Mentor route and mutation restrictions. Current staff authentication remains passwordless magic links; username/password authentication is a separate planned enhancement. Students initially remain non-login records. Groups/classes, teacher assignments, rosters, enrollments, and server-enforced teacher visibility remain Phase 3B2 after the authentication-enhancement decision is implemented; approved curriculum is Phase 3C; new-organization onboarding is Phase 3D.
+Staging verification covered administrator Staff-page access, invitation creation, email submission and receipt, invitation acceptance, membership creation, and Teacher / Mentor route restrictions. Final Phase 3B1 mutation acceptance remains pending. Current staff authentication remains passwordless magic links; username/password authentication is a separate planned enhancement. Students initially remain non-login records. Groups/classes, teacher assignments, rosters, enrollments, and server-enforced teacher visibility remain Phase 3B2 after the authentication-enhancement decision is implemented; approved curriculum is Phase 3C; new-organization onboarding is Phase 3D.
