@@ -20,7 +20,7 @@ Organization accent values pass a strict six-digit hex validator before becoming
 
 ## Layout and navigation
 
-At desktop widths the persistent sidebar combines the QuranTrack identity, bounded organization identity, membership switcher, role-aware navigation, and phase note. A sticky top bar contains page identity, locale selector, and user menu. Content uses a generous but bounded maximum width.
+At desktop widths the persistent sidebar combines the QuranTrack identity, bounded organization identity, membership switcher, and role-aware navigation. Only the fictional `/ui-preview` experience shows a preview-data notice; the authenticated live application does not. A sticky top bar contains page identity, locale selector, and user menu. Content uses a generous but bounded maximum width.
 
 Below the desktop breakpoint the sidebar disappears. A 44px menu control opens a focus-managed Radix sheet with the same navigation. Labels and names truncate safely. Logical `start`, `end`, `margin-inline`, `padding-inline`, and border properties prepare the layout for RTL.
 

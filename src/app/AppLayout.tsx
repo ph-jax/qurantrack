@@ -103,7 +103,7 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
           role={displaySession.role}
           prefix={preview ? '/ui-preview' : '/app'}
         />
-        <p className="sidebar-note">{t('shell.phase')}</p>
+        {preview && <p className="sidebar-note">{t('shell.previewNotice')}</p>}
       </aside>
       <div className="min-w-0">
         <header className="topbar">

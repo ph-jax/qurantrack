@@ -19,7 +19,7 @@ type Invitation = {
   expiresAt: string;
   acceptedAt: string | null;
   revokedAt: string | null;
-  deliveryStatus: string;
+  deliveryStatus: 'pending' | 'sent' | 'failed';
 };
 const roles: Role[] = ['organization_admin', 'teacher', 'read_only'];
 export function StaffPage() {
@@ -129,7 +129,7 @@ export function StaffPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold">{t('staff.title')}</h2>
-        <p className="text-muted">{t('staff.description')}</p>
+        <p className="text-text-secondary">{t('staff.description')}</p>
       </div>
       {error && <Alert tone="error" title={error} />}
       {success && <Alert tone="success" title={success} />}
@@ -315,10 +315,23 @@ export function StaffPage() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <strong>{i.email}</strong>
-                    <p>
-                      {label(i.role)} · {t(`staff.${state}`)}
-                      {i.deliveryStatus === 'failed' ? ` · ${t('staff.deliveryFailed')}` : ''}
-                    </p>
+                    <p className="text-sm text-text-secondary">{label(i.role)}</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Badge tone={state === 'accepted' ? 'success' : 'neutral'}>
+                        {t('staff.invitationState')}: {t(`staff.${state}`)}
+                      </Badge>
+                      <Badge
+                        tone={
+                          i.deliveryStatus === 'failed'
+                            ? 'error'
+                            : i.deliveryStatus === 'sent'
+                              ? 'success'
+                              : 'warning'
+                        }
+                      >
+                        {t('staff.emailState')}: {t(`staff.delivery.${i.deliveryStatus}`)}
+                      </Badge>
+                    </div>
                   </div>
                   {(state === 'pending' || state === 'expired') && (
                     <div className="flex gap-2">
