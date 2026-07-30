@@ -48,6 +48,15 @@ const data = {
   ],
   invitations: [
     {
+      id: 'queued',
+      email: 'queued@example.test',
+      role: 'teacher',
+      expiresAt: '2999-01-01',
+      acceptedAt: null,
+      revokedAt: null,
+      deliveryStatus: 'pending',
+    },
+    {
       id: 'pending',
       email: 'pending@example.test',
       role: 'teacher',
@@ -99,6 +108,18 @@ describe('Staff administration UI', () => {
     expect(screen.getByText('used@example.test')).toBeInTheDocument();
     expect(screen.queryByText('pending@example.test')).not.toBeInTheDocument();
   });
+  it('uses readable secondary text and separates all email states from lifecycle state', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(data)));
+    renderStaff();
+    expect(
+      await screen.findByText('Manage staff access for the current organization.'),
+    ).toHaveClass('text-text-secondary');
+    expect(screen.getAllByText('Invitation state: Pending')).toHaveLength(2);
+    expect(screen.getByText('Invitation state: Accepted')).toBeInTheDocument();
+    expect(screen.getByText('Email submission: Pending — not yet submitted')).toBeInTheDocument();
+    expect(screen.getByText('Email submission: Submitted to email service')).toBeInTheDocument();
+    expect(screen.getByText('Email submission: Failed — resend available')).toBeInTheDocument();
+  });
   it('reloads a failed delivery, retains email, and localizes the error', async () => {
     const fetch = vi
       .fn()
@@ -115,6 +136,8 @@ describe('Staff administration UI', () => {
     expect(await screen.findByText(/Email delivery failed/)).toBeInTheDocument();
     expect(input).toHaveValue('new@example.test');
     expect(screen.getByText('pending@example.test')).toBeInTheDocument();
+    expect(screen.getByText('Email submission: Failed — resend available')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Resend' }).length).toBeGreaterThan(0);
   });
   it('shows success, empty states, and disables controls while switching', async () => {
     sessionState.switching = true;
@@ -172,5 +195,19 @@ describe('Staff administration UI', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Pasifleştir' }));
     expect(await screen.findByText(/Etkin kurum değişti/)).toBeInTheDocument();
     expect(screen.queryByText('English server message')).not.toBeInTheDocument();
+  });
+  it('shows natural Turkish lifecycle and email submission labels', async () => {
+    await i18n.changeLanguage('tr');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(data)));
+    renderStaff();
+    expect(await screen.findAllByText('Davet durumu: Bekliyor')).toHaveLength(2);
+    expect(screen.getByText('Davet durumu: Kabul edildi')).toBeInTheDocument();
+    expect(
+      screen.getByText('E-posta gönderimi: Bekliyor — henüz gönderilmedi'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('E-posta gönderimi: E-posta hizmetine gönderildi')).toBeInTheDocument();
+    expect(
+      screen.getByText('E-posta gönderimi: Başarısız — yeniden gönderilebilir'),
+    ).toBeInTheDocument();
   });
 });

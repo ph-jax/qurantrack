@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
 interface WranglerConfig {
+  name: string;
   assets: {
     not_found_handling?: string;
     run_worker_first?: string[];
@@ -12,7 +13,9 @@ interface WranglerConfig {
   vars?: Record<string, string>;
   env?: {
     staging?: {
+      name?: string;
       vars?: Record<string, string>;
+      d1_databases?: Array<{ database_name: string; database_id: string }>;
     };
     production?: {
       vars?: Record<string, string>;
@@ -22,6 +25,9 @@ interface WranglerConfig {
 
 const configSource = readFileSync(resolve(process.cwd(), 'wrangler.jsonc'), 'utf8');
 const config = runInNewContext(`(${configSource})`) as WranglerConfig;
+const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as {
+  scripts: Record<string, string>;
+};
 
 describe('Wrangler routing configuration', () => {
   it('runs API requests through the Worker before checking static assets', () => {
@@ -38,5 +44,29 @@ describe('Wrangler routing configuration', () => {
     );
     expect(config.vars?.APP_BASE_URL).toBeUndefined();
     expect(config.env?.production?.vars?.APP_BASE_URL).toBeUndefined();
+  });
+
+  it('deploys only the staging build output while preserving dashboard variables', () => {
+    const command = packageJson.scripts['deploy:staging'];
+    expect(command).toBe(
+      'npm run build:staging && wrangler deploy --config dist/qurantrack/wrangler.json --keep-vars',
+    );
+    expect(command).not.toContain('production');
+  });
+
+  it('binds the staging build to the real staging Worker and D1, never preview placeholders', () => {
+    const staging = config.env?.staging;
+    expect(packageJson.scripts['build:staging']).toContain('CLOUDFLARE_ENV=staging');
+    expect(staging?.name).toBe('qurantrack-staging');
+    expect(staging?.vars?.ENVIRONMENT).toBe('staging');
+    expect(staging?.vars?.APP_BASE_URL).toBe('https://qurantrack-staging.samet-2fb.workers.dev');
+    expect(staging?.d1_databases).toEqual([
+      expect.objectContaining({
+        database_name: 'qurantrack-staging',
+        database_id: 'bf824e5e-a67b-4592-950b-16d01cbd5689',
+      }),
+    ]);
+    expect(staging?.d1_databases?.[0]?.database_name).not.toBe('qurantrack-preview');
+    expect(staging?.d1_databases?.[0]?.database_id).not.toMatch(/^00000000-/);
   });
 });

@@ -20,7 +20,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply qurantrack-production --env production --remote",
     "db:seed:local": "wrangler d1 execute qurantrack-preview --local --file seeds/demo_seed.sql",
     "deploy": "npm run build && wrangler deploy",
-    "deploy:staging": "npm run build:staging && wrangler deploy --config dist/qurantrack/wrangler.json",
+    "deploy:staging": "npm run build:staging && wrangler deploy --config dist/qurantrack/wrangler.json --keep-vars",
     "db:migrate:staging": "wrangler d1 migrations apply qurantrack-staging --env staging --remote",
     "db:reset:local": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate:local",
     "db:inspect:local": "wrangler d1 execute qurantrack-preview --local --command \"SELECT name, type FROM sqlite_master WHERE type IN ('table', 'index') ORDER BY type, name;\""

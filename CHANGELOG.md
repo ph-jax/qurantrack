@@ -83,6 +83,9 @@ All notable changes to QuranTrack will be documented in this file.
 
 ## Phase 3B1
 
+- Implemented and deployed Phase 3B1 to staging; final mutation acceptance remains pending and production remains untouched.
+- Clarified invitation lifecycle versus relay-submission status, removed the obsolete live-layout preview notice, and corrected Staff-page secondary-text contrast.
+- Made staging deployment preserve dashboard variables and documented the exact connected-build configuration.
 - Added tenant-scoped staff membership administration and organization-aware invitations.
 - Added secure seven-day, single-use invitation acceptance and session establishment.
 - Enhanced organization switching to show each membership role and discard prior tenant UI state.

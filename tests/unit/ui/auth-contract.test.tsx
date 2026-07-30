@@ -282,11 +282,37 @@ describe('development preview navigation', () => {
     expect(
       screen.getAllByRole('link').filter((x) => x.getAttribute('aria-current') === 'page'),
     ).toHaveLength(1);
+    expect(
+      screen.getByText('Fictional UI preview — no live records or mutations'),
+    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole('link', { name: i18n.t('nav.students') }));
     expect(screen.getByTestId('section')).toHaveTextContent('students');
     expect(
       screen.getAllByRole('link').filter((x) => x.getAttribute('aria-current') === 'page'),
     ).toHaveLength(1);
+  });
+  it('does not show the preview notice in the authenticated live layout', async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL) =>
+      String(input) === '/api/v1/me' ? response(me) : response({ organizations }),
+    );
+    vi.stubGlobal('fetch', fetch);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={['/app/dashboard']}>
+          <SessionProvider>
+            <Routes>
+              <Route path="/app" element={<AppLayout />}>
+                <Route path=":section" element={<Section />} />
+              </Route>
+            </Routes>
+          </SessionProvider>
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+    await screen.findByText('Fictional Center');
+    expect(
+      screen.queryByText('Fictional UI preview — no live records or mutations'),
+    ).not.toBeInTheDocument();
   });
   it('isolates fictional preview identity and account actions from a real session', async () => {
     await i18n.changeLanguage('en');

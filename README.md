@@ -4,11 +4,11 @@ QuranTrack — Quran Learning & Progress Platform
 
 Kur'an Öğrenme ve Gelişim Platformu
 
-## Current status — Phase 3A organization settings
+## Current status — Phase 3B1 staff access deployed to staging
 
 QuranTrack is a full-stack Cloudflare Worker application. Phase 1 established its tenant-scoped D1 domain model, and Phase 2 completed secure staff magic-link authentication, Turnstile verification, server-controlled organization context, role authorization, session restoration, logout, and the Apps Script email relay.
 
-Phase 3A adds production-backed settings for the active organization, including branding, locale and time-zone defaults, email identity, and progress-report policy. The server derives tenant context exclusively from the authenticated session, and only system and organization administrators can save changes. Other Phase 3 resources remain honest placeholders.
+Phase 3A added production-backed settings for the active organization. Phase 3B1 adds production-backed staff memberships, invitations, roles, and organization switching. Phase 3B1 is implemented and deployed to staging; final Phase 3B1 mutation acceptance remains pending. Production remains untouched.
 
 Uploaded logos are resized/compressed in the browser and stored in D1 as validated PNG, JPEG, or WebP data URLs with a 200 KB encoded limit. HTTPS-hosted logos are also supported. SVG and signature/type mismatches are rejected.
 
@@ -29,7 +29,7 @@ The Phase 2.5 visual direction is approved. The code-native QT monogram remains 
 | Command                      | Purpose                                                         |
 | ---------------------------- | --------------------------------------------------------------- |
 | `npm run dev`                | Start local Vite and Cloudflare Worker development.             |
-| `npm run build`              | Type-check and create a production build.                       |
+| `npm run build`              | Type-check and create the local/preview-configured build.       |
 | `npm run build:staging`      | Build staging with its Wrangler env and fictional UI preview.   |
 | `npm run preview`            | Preview the production build locally.                           |
 | `npm run lint`               | Run ESLint.                                                     |
@@ -84,6 +84,27 @@ Secrets or local-only variables documented in `.dev.vars.example`:
 - `APP_BASE_URL`
 - `ENVIRONMENT`
 
+### Cloudflare connected build — staging
+
+Configure the connected staging build exactly as follows:
+
+```text
+Build command: npm run build:staging
+Deploy command: npx wrangler deploy --config dist/qurantrack/wrangler.json --keep-vars
+Root directory: /
+```
+
+`build:staging` selects the staging Wrangler environment and produces a redirected configuration for Worker `qurantrack-staging`, D1 database `qurantrack-staging` (`bf824e5e-a67b-4592-950b-16d01cbd5689`), `ENVIRONMENT=staging`, and `APP_BASE_URL=https://qurantrack-staging.samet-2fb.workers.dev`. Do not substitute a plain `npm run build`: that command can emit the local `qurantrack-preview` binding with the placeholder `00000000-...` D1 ID.
+
+The deploy command's `--keep-vars` preserves dashboard-managed non-secret mail variables. Configure only these required mail variable names through Cloudflare; never commit their real values:
+
+- `MAIL_RELAY_URL`
+- `MAIL_RELAY_SECRET`
+- `MAIL_DEFAULT_FROM_ALIAS`
+- `MAIL_APPROVED_FROM_ALIASES`
+
+Secrets remain managed through Cloudflare and must never be committed. An invitation with database delivery status `sent` was accepted by the configured relay for submission; it does **not** confirm inbox delivery.
+
 ## License
 
 MIT
@@ -106,6 +127,6 @@ Phase 2.6 authentication, Turnstile, session, organization switching, and email 
 
 ## Phase 3B1 staff access
 
-Phase 3B1 adds production-backed staff memberships, single-use organization invitations, per-organization roles, and authenticated organization switching. Invitation links expire after seven days and only purpose-separated, peppered hashes are stored. Phase 3A is complete and was manually accepted in staging.
+Phase 3B1 adds production-backed staff memberships, single-use organization invitations, per-organization roles, and authenticated organization switching. Invitation links expire after seven days and only purpose-separated, peppered hashes are stored. Staging verification covered administrator Staff-page access, invitation creation, email submission and receipt, invitation acceptance, membership creation, and Teacher / Mentor route restrictions. Final Phase 3B1 mutation acceptance remains pending. Production remains untouched.
 
-Phase 3B2 will add groups/classes, teacher assignments, rosters, enrollments, and server-enforced teacher visibility. Phase 3C will add approved default curriculum and program administration. Phase 3D will add new-organization onboarding.
+Authentication remains passwordless magic-link authentication. Username/password authentication is a separate planned enhancement and is not part of Phase 3B1. Students initially remain non-login records. Phase 3B2—groups/classes, teacher assignments, rosters, enrollments, and server-enforced teacher visibility—remains the next domain phase after the authentication-enhancement decision is implemented. Phase 3C will add approved default curriculum and program administration, and Phase 3D will add new-organization onboarding.
