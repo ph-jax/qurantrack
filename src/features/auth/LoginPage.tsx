@@ -29,6 +29,8 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [method, setMethod] = useState<'password' | 'magic-link'>('password');
   const [token, setToken] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [requested, setRequested] = useState(false);
@@ -87,14 +89,21 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
     setSubmitting(true);
     setServiceError(false);
     try {
-      const response = await fetch('/api/v1/auth/magic-link/request', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, organizationSlug: slug, turnstileToken: token }),
-        cache: 'no-store',
-      });
+      const response = await fetch(
+        method === 'password' ? '/api/v1/auth/password/login' : '/api/v1/auth/magic-link/request',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email, password, organizationSlug: slug, turnstileToken: token }),
+          cache: 'no-store',
+        },
+      );
       if (!response.ok) throw new Error();
-      setRequested(true);
+      if (method === 'magic-link') setRequested(true);
+      else {
+        await refresh();
+        navigate('/app', { replace: true });
+      }
     } catch {
       setServiceError(true);
     } finally {
@@ -171,6 +180,23 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
               aria-describedby="email-description"
             />
           </FormField>
+          {method === 'password' && (
+            <FormField
+              id="password"
+              label={t('auth.password')}
+              required
+              requiredLabel={t('common.required')}
+            >
+              <Input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </FormField>
+          )}
           <Card className="bg-muted p-3 shadow-none">
             <div ref={widget} />
             {turnstile === 'loading' && (
@@ -187,9 +213,27 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
             {preview && <p className="text-xs text-text-muted">{t('auth.turnstilePreview')}</p>}
           </Card>
           <Button className="w-full" loading={submitting} disabled={!preview && !token}>
-            {t('auth.send')}
+            {method === 'password' ? t('auth.signIn') : t('auth.send')}
           </Button>
         </form>
+        <div className="mt-4 flex flex-wrap justify-between gap-3 text-sm">
+          <button
+            className="text-brand underline-offset-4 hover:underline"
+            type="button"
+            onClick={() => setMethod(method === 'password' ? 'magic-link' : 'password')}
+          >
+            {method === 'password' ? t('auth.useMagicLink') : t('auth.usePassword')}
+          </button>
+          {method === 'password' && (
+            <button
+              className="text-brand underline-offset-4 hover:underline"
+              type="button"
+              onClick={() => navigate('/auth/forgot-password')}
+            >
+              {t('auth.forgot')}
+            </button>
+          )}
+        </div>
         {preview && (
           <button
             className="mt-6 text-sm text-brand underline-offset-4 hover:underline"

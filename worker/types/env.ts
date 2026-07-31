@@ -4,6 +4,7 @@ export interface Env {
   ENVIRONMENT?: string;
   APP_BASE_URL?: string;
   TOKEN_HASH_PEPPER?: string;
+  PASSWORD_HASH_PEPPER?: string;
   TURNSTILE_SITE_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
   TURNSTILE_LOCAL_BYPASS?: string;

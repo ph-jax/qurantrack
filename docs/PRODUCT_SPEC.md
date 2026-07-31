@@ -3349,3 +3349,7 @@ Begin now by:
 5. Implementing Phase 0.
 6. Running lint, type checking, tests, and build.
 7. Fixing all failures before proceeding.
+
+## Phase 2.7 authentication decision
+
+Email/password is the primary staff and administrator login; secure magic links remain available. Existing users create a first password after magic-link authentication and new invitees will create one during acceptance. Forgot/reset is single-use and expires after 30 minutes. Parent login and guardian linking are deferred. Students are non-login records.

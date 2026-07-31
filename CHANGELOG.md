@@ -90,3 +90,9 @@ All notable changes to QuranTrack will be documented in this file.
 - Added secure seven-day, single-use invitation acceptance and session establishment.
 - Enhanced organization switching to show each membership role and discard prior tenant UI state.
 - Marked Phase 3A complete and manually accepted in staging.
+
+## Unreleased — Phase 2.7
+
+- Added PBKDF2 staff password credentials, password login/management/reset APIs, D1 authentication throttling, and English/Turkish account-security UI.
+- Preserved secure magic-link login as an alternative. Phase 2.7 is implemented in code and awaiting review/staging deployment; it is not deployed.
+- Marked Phase 3B1 complete following staging acceptance.

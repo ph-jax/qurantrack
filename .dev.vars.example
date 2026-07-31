@@ -17,3 +17,6 @@ ENABLE_BOOTSTRAP_ADMIN=false
 BOOTSTRAP_SECRET=replace-with-one-time-bootstrap-secret
 # Frontend build variable for the Turnstile widget, usually set in .env.local or deployment build env.
 VITE_TURNSTILE_SITE_KEY=1x00000000000000000000AA
+
+# Independent secret used only for PBKDF2 password derivation (never reuse TOKEN_HASH_PEPPER).
+PASSWORD_HASH_PEPPER="replace-with-an-independent-random-secret"

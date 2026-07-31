@@ -130,3 +130,7 @@ Phase 2.6 authentication, Turnstile, session, organization switching, and email 
 Phase 3B1 adds production-backed staff memberships, single-use organization invitations, per-organization roles, and authenticated organization switching. Invitation links expire after seven days and only purpose-separated, peppered hashes are stored. Staging verification covered administrator Staff-page access, invitation creation, email submission and receipt, invitation acceptance, membership creation, and Teacher / Mentor route restrictions. Final Phase 3B1 mutation acceptance remains pending. Production remains untouched.
 
 Authentication remains passwordless magic-link authentication. Username/password authentication is a separate planned enhancement and is not part of Phase 3B1. Students initially remain non-login records. Phase 3B2—groups/classes, teacher assignments, rosters, enrollments, and server-enforced teacher visibility—remains the next domain phase after the authentication-enhancement decision is implemented. Phase 3C will add approved default curriculum and program administration, and Phase 3D will add new-organization onboarding.
+
+### Staff authentication
+
+Staff use email/password by default and may alternatively request a secure magic link. Existing accounts can create their first password under **Account Security**. Configure the independent `PASSWORD_HASH_PEPPER` Worker secret before exercising password flows. Phase 2.7 is awaiting review/staging deployment; production has not been changed.

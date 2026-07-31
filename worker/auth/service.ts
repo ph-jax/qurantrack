@@ -15,7 +15,7 @@ export interface AuthContext {
   role: Role;
   sessionId: string;
 }
-interface User {
+export interface User {
   id: string;
   email: string;
   display_name: string;
@@ -71,12 +71,52 @@ export async function requestMagicLink(
   });
 }
 
-async function activeMemberships(env: Env, userId: string, slug?: string): Promise<Membership[]> {
+export async function activeMemberships(
+  env: Env,
+  userId: string,
+  slug?: string,
+): Promise<Membership[]> {
   const sql = `SELECT m.organization_id, m.role, m.active, o.active AS org_active, o.name AS org_name, o.slug AS org_slug, o.email_sender_name, o.email_reply_to, o.email_sender_alias FROM organization_memberships m JOIN organizations o ON o.id = m.organization_id WHERE m.user_id = ? AND m.active = 1 AND o.active = 1 ${slug ? 'AND o.slug = ?' : ''} ORDER BY o.name ASC`;
   const result = await (
     slug ? env.DB.prepare(sql).bind(userId, slug) : env.DB.prepare(sql).bind(userId)
   ).all<Membership>();
   return result.results ?? [];
+}
+
+export async function createSession(
+  env: Env,
+  user: User,
+  organizationId: string,
+  request: Request,
+) {
+  const now = new Date();
+  const sessionToken = randomToken(32);
+  const sessionHash = await hashSecret(
+    sessionToken,
+    requireSecret(env.TOKEN_HASH_PEPPER, 'TOKEN_HASH_PEPPER'),
+  );
+  const expires = new Date(now.getTime() + SESSION_IDLE_HOURS * 3600_000);
+  const absolute = new Date(now.getTime() + SESSION_ABSOLUTE_DAYS * 24 * 3600_000);
+  await env.DB.prepare(
+    'INSERT INTO sessions (id,user_id,token_hash,active_organization_id,expires_at,absolute_expires_at,last_seen_at,created_at,user_agent_hash,ip_hash) VALUES (?,?,?,?,?,?,?,?,?,?)',
+  )
+    .bind(
+      crypto.randomUUID(),
+      user.id,
+      sessionHash,
+      organizationId,
+      expires.toISOString(),
+      absolute.toISOString(),
+      now.toISOString(),
+      now.toISOString(),
+      await sha256Hex(request.headers.get('user-agent') ?? 'unknown'),
+      await sha256Hex(request.headers.get('cf-connecting-ip') ?? 'unknown'),
+    )
+    .run();
+  await env.DB.prepare('UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?')
+    .bind(now.toISOString(), now.toISOString(), user.id)
+    .run();
+  return { sessionToken, expires };
 }
 
 export async function consumeMagicLink(env: Env, token: string, request: Request) {
