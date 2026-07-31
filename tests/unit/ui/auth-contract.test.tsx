@@ -411,6 +411,57 @@ describe('initial login presentation', () => {
     expect(screen.getByRole('button', { name: i18n.t('auth.retry') })).toBeInTheDocument();
     expect(screen.queryByLabelText(i18n.t('auth.email'))).not.toBeInTheDocument();
   });
+  it('shows password controls, reports generic credentials, and resets Turnstile for retry', async () => {
+    let verify: ((token: string) => void) | undefined;
+    const reset = vi.fn();
+    window.turnstile = {
+      render: vi.fn((_element, options) => {
+        verify = options.callback;
+        return 'widget-1';
+      }),
+      reset,
+    };
+    const fetch = vi.fn((url: RequestInfo | URL) =>
+      Promise.resolve(
+        String(url) === '/api/v1/me'
+          ? response({}, 401)
+          : response(
+              {
+                error: {
+                  code: 'INVALID_CREDENTIALS',
+                  message: 'The email or password is incorrect, or this account cannot sign in.',
+                },
+              },
+              401,
+            ),
+      ),
+    );
+    vi.stubGlobal('fetch', fetch);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={['/login']}>
+          <SessionProvider>
+            <LoginPage turnstileSiteKey="test-site-key" />
+          </SessionProvider>
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+    await screen.findByLabelText(/Email address/);
+    await waitFor(() => expect(verify).toBeTypeOf('function'));
+    verify?.('first-token');
+    await userEvent.type(screen.getByLabelText(/Email address/), 'staff@example.test');
+    await userEvent.type(screen.getByLabelText(/^Password/), 'wrong secure password');
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('security.show') }));
+    expect(screen.getByLabelText(/^Password/)).toHaveAttribute('type', 'text');
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('auth.signIn') }));
+    expect(await screen.findByText(i18n.t('auth.invalidCredentials'))).toBeInTheDocument();
+    expect(reset).toHaveBeenCalledWith('widget-1');
+    expect(screen.getByRole('button', { name: i18n.t('auth.signIn') })).toBeDisabled();
+    verify?.('retry-token');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: i18n.t('auth.signIn') })).toBeEnabled(),
+    );
+  });
 });
 
 describe('complete Turkish interface resources', () => {

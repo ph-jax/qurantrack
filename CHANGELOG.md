@@ -83,7 +83,7 @@ All notable changes to QuranTrack will be documented in this file.
 
 ## Phase 3B1
 
-- Implemented and deployed Phase 3B1 to staging; final mutation acceptance remains pending and production remains untouched.
+- Completed Phase 3B1 following staging acceptance.
 - Clarified invitation lifecycle versus relay-submission status, removed the obsolete live-layout preview notice, and corrected Staff-page secondary-text contrast.
 - Made staging deployment preserve dashboard variables and documented the exact connected-build configuration.
 - Added tenant-scoped staff membership administration and organization-aware invitations.
@@ -94,5 +94,6 @@ All notable changes to QuranTrack will be documented in this file.
 ## Unreleased — Phase 2.7
 
 - Added PBKDF2 staff password credentials, password login/management/reset APIs, D1 authentication throttling, and English/Turkish account-security UI.
-- Preserved secure magic-link login as an alternative. Phase 2.7 is implemented in code and awaiting review/staging deployment; it is not deployed.
+- Integrated display-name/password onboarding into atomic invitation acceptance, made password rotation and reset race claims transactional, counted password-login failures only, and added safe successful-login auditing.
+- Preserved secure magic-link login as an alternative. Phase 2.7 is implemented in code and awaiting review and an explicitly approved staging deployment.
 - Marked Phase 3B1 complete following staging acceptance.

@@ -27,6 +27,22 @@ CREATE INDEX idx_password_reset_user_active
   WHERE consumed_at IS NULL AND invalidated_at IS NULL;
 CREATE INDEX idx_password_reset_expiry ON password_reset_tokens(expires_at);
 
+CREATE TABLE password_reset_consumptions (
+  token_id TEXT PRIMARY KEY REFERENCES password_reset_tokens(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  consumed_at TEXT NOT NULL
+);
+
+CREATE TRIGGER validate_password_reset_consumption
+BEFORE INSERT ON password_reset_consumptions
+FOR EACH ROW BEGIN
+  SELECT (CASE WHEN NOT EXISTS (
+    SELECT 1 FROM password_reset_tokens r JOIN users u ON u.id=r.user_id
+    WHERE r.id=NEW.token_id AND r.user_id=NEW.user_id AND r.consumed_at IS NULL
+      AND r.invalidated_at IS NULL AND r.expires_at>NEW.consumed_at AND u.active=1
+  ) THEN RAISE(ABORT, 'password_reset_not_usable') END);
+END;
+
 CREATE TABLE authentication_rate_limits (
   purpose TEXT NOT NULL,
   subject_hash TEXT NOT NULL,

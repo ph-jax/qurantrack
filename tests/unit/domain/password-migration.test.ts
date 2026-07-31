@@ -12,16 +12,35 @@ describe('password authentication migration', () => {
     const db = new DatabaseSync(':memory:');
     for (const file of migrations) db.exec(readFileSync(`migrations/${file}`, 'utf8'));
     const objects = db
-      .prepare("SELECT name FROM sqlite_master WHERE type IN ('table','index')")
+      .prepare("SELECT name FROM sqlite_master WHERE type IN ('table','index','trigger')")
       .all()
-      .map((r: any) => r.name);
+      .map((row) => (row as { name: string }).name);
     expect(objects).toContain('user_password_credentials');
     expect(objects).toContain('password_reset_tokens');
+    expect(objects).toContain('password_reset_consumptions');
+    expect(objects).toContain('validate_password_reset_consumption');
     expect(objects).toContain('authentication_rate_limits');
     expect(objects).toContain('idx_password_reset_user_active');
     expect(db.prepare("PRAGMA foreign_key_list('user_password_credentials')").all()).toHaveLength(
       1,
     );
+  });
+  it('upgrades a database already containing migrations 0001 through 0003', () => {
+    const db = new DatabaseSync(':memory:');
+    for (const file of migrations.slice(0, 3)) db.exec(readFileSync(`migrations/${file}`, 'utf8'));
+    expect(
+      db.prepare("SELECT 1 FROM sqlite_master WHERE name='user_password_credentials'").get(),
+    ).toBeUndefined();
+    db.exec(readFileSync('migrations/0004_password_authentication.sql', 'utf8'));
+    expect(
+      db.prepare("SELECT type FROM sqlite_master WHERE name='user_password_credentials'").get(),
+    ).toEqual({ type: 'table' });
+    expect(
+      db
+        .prepare("SELECT type FROM sqlite_master WHERE name='validate_password_reset_consumption'")
+        .get(),
+    ).toEqual({ type: 'trigger' });
+    db.close();
   });
   it('enforces credential uniqueness, algorithm, work factor, and reset token uniqueness', () => {
     const db = new DatabaseSync(':memory:');

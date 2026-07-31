@@ -8,7 +8,7 @@ import {
   verifyPassword,
   type PasswordCredential,
 } from './password';
-import { clearRateLimit, rateLimit } from './rate-limit';
+import { clearRateLimit, isRateLimited, rateLimit, recordFailedAttempt } from './rate-limit';
 import { hashSecret, randomToken, sha256Hex } from '../../shared/auth/crypto';
 import { resolveSender } from '../email/sender';
 import { sendRelayMail } from '../email/relay';
@@ -25,8 +25,9 @@ export async function passwordLogin(
   request: Request,
 ) {
   const ip = request.headers.get('cf-connecting-ip') ?? 'unknown';
-  const accountAllowed = await rateLimit(env, 'password_account', email, 5);
-  const ipAllowed = await rateLimit(env, 'password_ip', ip, 25);
+  const blocked =
+    (await isRateLimited(env, 'password_account', email, 5)) ||
+    (await isRateLimited(env, 'password_ip', ip, 25));
   const user = await env.DB.prepare('SELECT * FROM users WHERE email=? COLLATE NOCASE LIMIT 1')
     .bind(email)
     .first<User>();
@@ -37,10 +38,21 @@ export async function passwordLogin(
     ? await verifyPassword(password, pepper(env), credential)
     : (await dummyPasswordVerification(password, pepper(env)), false);
   const memberships = user?.active ? await activeMemberships(env, user.id, slug) : [];
-  if (!accountAllowed || !ipAllowed || !user?.active || !validPassword || memberships.length === 0)
+  if (blocked || !user?.active || !validPassword || memberships.length === 0) {
+    await Promise.all([
+      recordFailedAttempt(env, 'password_account', email),
+      recordFailedAttempt(env, 'password_ip', ip),
+    ]);
     return null;
+  }
   await clearRateLimit(env, 'password_account', email);
-  return createSession(env, user, memberships[0].organization_id, request);
+  return createSession(
+    env,
+    user,
+    memberships[0].organization_id,
+    request,
+    'password_login_succeeded',
+  );
 }
 
 export async function hasPassword(env: Env, userId: string) {
@@ -71,17 +83,21 @@ export async function setPassword(
   }
   const next = await hashPassword(newPassword, pepper(env));
   const now = new Date().toISOString();
-  if (existing) {
-    await env.DB.prepare(
-      'UPDATE user_password_credentials SET algorithm=?,work_factor=?,salt=?,password_hash=?,updated_at=?,password_changed_at=? WHERE user_id=?',
-    )
-      .bind(next.algorithm, next.work_factor, next.salt, next.password_hash, now, now, user.userId)
-      .run();
-  } else {
-    const result = await env.DB.prepare(
-      'INSERT OR IGNORE INTO user_password_credentials (user_id,algorithm,work_factor,salt,password_hash,created_at,updated_at,password_changed_at) VALUES (?,?,?,?,?,?,?,?)',
-    )
-      .bind(
+  const sessionToken = randomToken(32);
+  const sessionHash = await hashSecret(
+    sessionToken,
+    requireSecret(env.TOKEN_HASH_PEPPER, 'TOKEN_HASH_PEPPER'),
+  );
+  const expires = new Date(Date.now() + 12 * 3_600_000);
+  const absolute = new Date(Date.now() + 30 * 86_400_000);
+  const sessionId = crypto.randomUUID();
+  const credentialStatement = existing
+    ? env.DB.prepare(
+        'UPDATE user_password_credentials SET algorithm=?,work_factor=?,salt=?,password_hash=?,updated_at=?,password_changed_at=? WHERE user_id=?',
+      ).bind(next.algorithm, next.work_factor, next.salt, next.password_hash, now, now, user.userId)
+    : env.DB.prepare(
+        'INSERT INTO user_password_credentials (user_id,algorithm,work_factor,salt,password_hash,created_at,updated_at,password_changed_at) VALUES (?,?,?,?,?,?,?,?)',
+      ).bind(
         user.userId,
         next.algorithm,
         next.work_factor,
@@ -90,38 +106,53 @@ export async function setPassword(
         now,
         now,
         now,
-      )
-      .run();
-    if (((result.meta as { changes?: number }).changes ?? 0) !== 1)
-      return { error: 'PASSWORD_ALREADY_EXISTS' } as const;
-  }
-  await env.DB.prepare('UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL')
-    .bind(now, user.userId)
-    .run();
-  const dbUser = await env.DB.prepare('SELECT * FROM users WHERE id=?')
-    .bind(user.userId)
-    .first<User>();
-  if (!dbUser) return { error: 'INVALID_SESSION' } as const;
+      );
   const memberships = await activeMemberships(env, user.userId);
   const active =
     memberships.find((m) => m.organization_id === user.organizationId) ?? memberships[0];
   if (!active) return { error: 'INVALID_SESSION' } as const;
-  const session = await createSession(env, dbUser, active.organization_id, request);
-  await env.DB.prepare(
-    'INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,created_at) VALUES (?,?,?,?,?,?,?,?)',
-  )
-    .bind(
-      crypto.randomUUID(),
-      active.organization_id,
-      user.userId,
-      existing ? 'password_changed' : 'password_created',
-      'user',
-      user.userId,
-      existing ? 'password changed' : 'password created',
-      now,
-    )
-    .run();
-  return { session, created: !existing } as const;
+  try {
+    await env.DB.batch([
+      credentialStatement,
+      env.DB.prepare(
+        'UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL',
+      ).bind(now, user.userId),
+      env.DB.prepare(
+        'INSERT INTO sessions (id,user_id,token_hash,active_organization_id,expires_at,absolute_expires_at,last_seen_at,created_at,user_agent_hash,ip_hash) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      ).bind(
+        sessionId,
+        user.userId,
+        sessionHash,
+        active.organization_id,
+        expires.toISOString(),
+        absolute.toISOString(),
+        now,
+        now,
+        await sha256Hex(request.headers.get('user-agent') ?? 'unknown'),
+        await sha256Hex(request.headers.get('cf-connecting-ip') ?? 'unknown'),
+      ),
+      env.DB.prepare('UPDATE users SET last_login_at=?,updated_at=? WHERE id=?').bind(
+        now,
+        now,
+        user.userId,
+      ),
+      env.DB.prepare(
+        'INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,created_at) VALUES (?,?,?,?,?,?,?,?)',
+      ).bind(
+        crypto.randomUUID(),
+        active.organization_id,
+        user.userId,
+        existing ? 'password_changed' : 'password_created',
+        'user',
+        user.userId,
+        existing ? 'password changed' : 'password created',
+        now,
+      ),
+    ]);
+  } catch {
+    return { error: existing ? 'PASSWORD_CHANGE_FAILED' : 'PASSWORD_ALREADY_EXISTS' } as const;
+  }
+  return { session: { sessionToken, expires }, created: !existing } as const;
 }
 
 export async function requestPasswordReset(env: Env, email: string, request: Request) {
@@ -154,7 +185,10 @@ export async function requestPasswordReset(env: Env, email: string, request: Req
       user.id,
       tokenHash,
       new Date(now.getTime() + 30 * 60_000).toISOString(),
-      await sha256Hex(`password-reset-ip:${ip}`),
+      await hashSecret(
+        `password-reset-ip:${ip}`,
+        requireSecret(env.TOKEN_HASH_PEPPER, 'TOKEN_HASH_PEPPER'),
+      ),
       now.toISOString(),
     ),
   ]);
@@ -186,6 +220,9 @@ export async function consumePasswordReset(env: Env, token: string, newPassword:
   const next = await hashPassword(newPassword, pepper(env));
   try {
     const results = await env.DB.batch([
+      env.DB.prepare(
+        'INSERT INTO password_reset_consumptions (token_id,user_id,consumed_at) VALUES (?,?,?)',
+      ).bind(row.id, row.user_id, now),
       env.DB.prepare(
         `UPDATE user_password_credentials SET algorithm=?,work_factor=?,salt=?,password_hash=?,updated_at=?,password_changed_at=?
          WHERE user_id=? AND EXISTS (SELECT 1 FROM password_reset_tokens WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL AND expires_at>?)`,
@@ -221,7 +258,7 @@ export async function consumePasswordReset(env: Env, token: string, newPassword:
         now,
       ),
     ]);
-    const consumed = (results[1].meta as { changes?: number }).changes ?? 0;
+    const consumed = (results[2].meta as { changes?: number }).changes ?? 0;
     if (consumed !== 1) return 'INVALID' as const;
   } catch {
     return 'INVALID' as const;

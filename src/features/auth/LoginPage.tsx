@@ -3,6 +3,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Alert, Button, Card, FormField, Input, Select, Spinner } from '../../components/ui';
 import { useSession } from './SessionProvider';
+import { PasswordInput } from './PasswordPages';
 type TurnstileStatus = 'missing-key' | 'loading' | 'ready' | 'verified' | 'failed';
 type TurnstileApi = {
   render: (
@@ -14,6 +15,7 @@ type TurnstileApi = {
       'expired-callback': () => void;
     },
   ) => string;
+  reset: (widgetId?: string) => void;
 };
 declare global {
   interface Window {
@@ -23,7 +25,13 @@ declare global {
 const siteKey = (import.meta as ImportMeta & { env: { readonly VITE_TURNSTILE_SITE_KEY?: string } })
   .env.VITE_TURNSTILE_SITE_KEY;
 
-export function LoginPage({ preview = false }: { preview?: boolean }) {
+export function LoginPage({
+  preview = false,
+  turnstileSiteKey = siteKey,
+}: {
+  preview?: boolean;
+  turnstileSiteKey?: string;
+}) {
   const { t, i18n } = useTranslation();
   const { status, refresh } = useSession();
   const location = useLocation();
@@ -35,22 +43,24 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
   const [submitting, setSubmitting] = useState(false);
   const [requested, setRequested] = useState(false);
   const [serviceError, setServiceError] = useState(false);
+  const [credentialError, setCredentialError] = useState(false);
   const [turnstile, setTurnstile] = useState<TurnstileStatus>(
-    preview ? 'verified' : siteKey ? 'loading' : 'missing-key',
+    preview ? 'verified' : turnstileSiteKey ? 'loading' : 'missing-key',
   );
   const widget = useRef<HTMLDivElement>(null);
   const rendered = useRef(false);
+  const widgetId = useRef<string | undefined>(undefined);
   const slug = useMemo(
     () => location.pathname.match(/^\/o\/([^/]+)\/login/)?.[1],
     [location.pathname],
   );
   useEffect(() => {
-    if (preview || !siteKey || rendered.current) return;
+    if (preview || !turnstileSiteKey || rendered.current) return;
     const render = () => {
       if (!widget.current || !window.turnstile || rendered.current) return;
       rendered.current = true;
-      window.turnstile.render(widget.current, {
-        sitekey: siteKey,
+      widgetId.current = window.turnstile.render(widget.current, {
+        sitekey: turnstileSiteKey,
         callback: (v) => {
           setToken(v);
           setTurnstile('verified');
@@ -77,7 +87,7 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
     script.onload = render;
     script.onerror = () => setTurnstile('failed');
     document.head.appendChild(script);
-  }, [preview]);
+  }, [preview, turnstileSiteKey, status]);
   if (status === 'authenticated' && !preview) return <Navigate to="/app" replace />;
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,9 +95,10 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
       setRequested(true);
       return;
     }
-    if (!token) return setTurnstile(siteKey ? 'failed' : 'missing-key');
+    if (!token) return setTurnstile(turnstileSiteKey ? 'failed' : 'missing-key');
     setSubmitting(true);
     setServiceError(false);
+    setCredentialError(false);
     try {
       const response = await fetch(
         method === 'password' ? '/api/v1/auth/password/login' : '/api/v1/auth/magic-link/request',
@@ -98,7 +109,14 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
           cache: 'no-store',
         },
       );
-      if (!response.ok) throw new Error();
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: { code?: string };
+        } | null;
+        if (body?.error?.code === 'INVALID_CREDENTIALS') setCredentialError(true);
+        else setServiceError(true);
+        return;
+      }
       if (method === 'magic-link') setRequested(true);
       else {
         await refresh();
@@ -107,6 +125,11 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
     } catch {
       setServiceError(true);
     } finally {
+      if (method === 'password') {
+        setToken('');
+        setTurnstile('ready');
+        window.turnstile?.reset(widgetId.current);
+      }
       setSubmitting(false);
     }
   };
@@ -161,6 +184,7 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
           {invalid && <Alert tone="error" title={t('auth.invalid')} />}{' '}
           {requested && <Alert tone="success" title={t('auth.generic')} />}{' '}
           {serviceError && <Alert tone="error" title={t('auth.service')} />}
+          {credentialError && <Alert tone="error" title={t('auth.invalidCredentials')} />}
         </div>
         <form className="mt-6 space-y-5" onSubmit={submit}>
           <FormField
@@ -181,21 +205,13 @@ export function LoginPage({ preview = false }: { preview?: boolean }) {
             />
           </FormField>
           {method === 'password' && (
-            <FormField
+            <PasswordInput
               id="password"
               label={t('auth.password')}
-              required
-              requiredLabel={t('common.required')}
-            >
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </FormField>
+              value={password}
+              onChange={setPassword}
+              autocomplete="current-password"
+            />
           )}
           <Card className="bg-muted p-3 shadow-none">
             <div ref={widget} />

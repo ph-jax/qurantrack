@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Alert, Button, Card, Spinner } from '../../components/ui';
+import { Alert, Button, Card, FormField, Input, Spinner } from '../../components/ui';
+import { PasswordInput } from './PasswordPages';
 type State =
   'loading' | 'pending' | 'expired' | 'revoked' | 'used' | 'invalid' | 'network' | 'success';
 type Invitation = {
@@ -9,6 +10,8 @@ type Invitation = {
   locale: 'en' | 'tr';
   role: string;
   state: Exclude<State, 'loading' | 'invalid' | 'network' | 'success'>;
+  requiresDisplayName?: boolean;
+  requiresPassword?: boolean;
 };
 export function InvitationPage() {
   const { t, i18n } = useTranslation();
@@ -17,7 +20,11 @@ export function InvitationPage() {
     token = params.get('token') ?? '';
   const [state, setState] = useState<State>('loading'),
     [invitation, setInvitation] = useState<Invitation | null>(null),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [displayName, setDisplayName] = useState(''),
+    [password, setPassword] = useState(''),
+    [confirmation, setConfirmation] = useState(''),
+    [formError, setFormError] = useState('');
   const inspectedToken = useRef('');
   const inspect = useCallback(async () => {
     setState('loading');
@@ -44,19 +51,41 @@ export function InvitationPage() {
     const timer = window.setTimeout(() => void inspect(), 0);
     return () => window.clearTimeout(timer);
   }, [inspect, token]);
-  const accept = async () => {
+  const accept = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (busy) return;
+    setFormError('');
+    if (invitation?.requiresPassword && password !== confirmation) {
+      setFormError(t('invitation.passwordMismatch'));
+      return;
+    }
     setBusy(true);
     try {
       const response = await fetch('/api/v1/invitations/accept', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({
+          token,
+          displayName: invitation?.requiresDisplayName ? displayName : undefined,
+          password: invitation?.requiresPassword ? password : undefined,
+          passwordConfirmation: invitation?.requiresPassword ? confirmation : undefined,
+        }),
       });
       if (!response.ok) {
         const json = (await response.json().catch(() => null)) as {
           error?: { code?: string };
         } | null;
+        if (
+          json?.error?.code === 'PASSWORD_POLICY' ||
+          json?.error?.code === 'PASSWORD_CONFIRMATION'
+        ) {
+          setFormError(
+            json.error.code === 'PASSWORD_CONFIRMATION'
+              ? t('invitation.passwordMismatch')
+              : t('invitation.passwordPolicy'),
+          );
+          return;
+        }
         setState(
           json?.error?.code === 'INVITATION_USED'
             ? 'used'
@@ -94,9 +123,49 @@ export function InvitationPage() {
                 role: t(`roles.${invitation.role}`),
               })}
             </p>
-            <Button loading={busy} disabled={busy} onClick={() => void accept()}>
-              {t('invitation.accept')}
-            </Button>
+            <form className="space-y-4" onSubmit={accept}>
+              {invitation.requiresDisplayName && (
+                <FormField
+                  id="display-name"
+                  label={t('invitation.displayName')}
+                  required
+                  requiredLabel={t('common.required')}
+                >
+                  <Input
+                    id="display-name"
+                    autoComplete="name"
+                    required
+                    value={displayName}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                  />
+                </FormField>
+              )}
+              {invitation.requiresPassword && (
+                <>
+                  <p className="text-sm text-text-secondary">{t('security.policy')}</p>
+                  <PasswordInput
+                    id="invitation-password"
+                    label={t('security.new')}
+                    value={password}
+                    onChange={setPassword}
+                  />
+                  <PasswordInput
+                    id="invitation-password-confirmation"
+                    label={t('security.confirm')}
+                    value={confirmation}
+                    onChange={setConfirmation}
+                  />
+                </>
+              )}
+              {formError && (
+                <p role="alert" className="text-sm text-error">
+                  {formError}
+                </p>
+              )}
+              <Button loading={busy} disabled={busy}>
+                {t('invitation.accept')}
+              </Button>
+            </form>
           </>
         ) : state === 'success' ? (
           <Alert tone="success" title={t('invitation.success')} />

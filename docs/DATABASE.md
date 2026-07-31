@@ -33,4 +33,4 @@ Phase 3B1 review corrections are verified with a real in-memory SQLite database 
 
 ## Migration 0004 — password authentication
 
-`user_password_credentials` stores one global credential per user with algorithm and work-factor upgrade metadata. `password_reset_tokens` stores unique hashes and lifecycle timestamps. `authentication_rate_limits` atomically upserts purpose-separated hashed subjects; requests opportunistically delete up to 100 expired rows. Migration 0004 is additive and applies after 0001–0003.
+`user_password_credentials` stores one global credential per user with algorithm and work-factor upgrade metadata. `password_reset_tokens` stores unique hashes and lifecycle timestamps. `password_reset_consumptions` plus its validation trigger provides a unique transactional claim so racing reset requests cannot both change a password. `authentication_rate_limits` atomically upserts purpose-separated hashed subjects; requests opportunistically delete up to 100 expired rows. Migration 0004 is additive and applies after 0001–0003.

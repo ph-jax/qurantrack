@@ -10,6 +10,7 @@ export default {
     useMagicLink: 'Email me a secure sign-in link',
     usePassword: 'Sign in with a password',
     forgot: 'Forgot password?',
+    invalidCredentials: 'The email or password is incorrect, or this account cannot sign in.',
     send: 'Send secure sign-in link',
     generic: 'If this email is eligible, a QuranTrack sign-in link will be sent.',
     invalid: 'This sign-in link is invalid or expired. Request a new link.',
@@ -53,6 +54,10 @@ export default {
     network: 'The invitation service could not be reached. Your invitation has not been changed.',
     retry: 'Try again',
     success: 'Invitation accepted. Opening QuranTrack…',
+    displayName: 'Display name',
+    passwordMismatch: 'The passwords do not match.',
+    passwordPolicy:
+      'Choose a password that meets the stated requirements and is not your email address.',
   },
   roles: {
     system_admin: 'System administrator',
@@ -149,6 +154,7 @@ export default {
     resetSuccess: 'Your password was reset. All sessions were signed out.',
     resetInvalid: 'This reset link is invalid, expired, or already used.',
     signInAgain: 'Sign in again',
+    passwordMismatch: 'The passwords do not match.',
   },
   dashboard: {
     title: 'Learning overview',

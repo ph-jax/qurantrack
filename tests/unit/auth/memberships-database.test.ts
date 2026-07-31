@@ -10,6 +10,7 @@ import {
 } from '../../../worker/organizations/memberships';
 import { listOrganizations, switchOrganization } from '../../../worker/auth/service';
 import { hashSecret } from '../../../shared/auth/crypto';
+import { hashPassword, verifyPassword } from '../../../worker/auth/password';
 import {
   SqliteD1,
   base,
@@ -21,10 +22,12 @@ import {
 } from '../../helpers/sqliteD1';
 const token = 'a'.repeat(43);
 const request = new Request('https://app.test/invitations/accept');
+const onboarding = { displayName: 'New Staff', password: 'a secure staff password' };
 const env = (db: SqliteD1) =>
   ({
     DB: db,
     TOKEN_HASH_PEPPER: 'pepper',
+    PASSWORD_HASH_PEPPER: 'password-pepper',
     APP_BASE_URL: 'https://app.test',
     MAIL_RELAY_URL: 'https://relay.test',
     MAIL_RELAY_SECRET: 'relay-secret',
@@ -173,8 +176,9 @@ describe('real SQLite/D1 membership security', () => {
     const db = new SqliteD1();
     base(db);
     await invitation(db, 'i1', 'org-a', 'new@example.test', 'teacher', token);
-    expect(await acceptInvitation(env(db), token, request)).toBeTruthy();
+    expect(await acceptInvitation(env(db), token, request, undefined, onboarding)).toBeTruthy();
     expect(db.count('users')).toBe(2);
+    expect(db.count('user_password_credentials')).toBe(1);
     expect(db.count('organization_memberships')).toBe(3);
     expect(db.count('organization_invitation_acceptances')).toBe(1);
     expect(db.count('sessions')).toBe(1);
@@ -188,14 +192,14 @@ describe('real SQLite/D1 membership security', () => {
     ).not.toBeNull();
     db.close();
   });
-  it.each([2, 3, 4, 5, 6])(
+  it.each([2, 3, 4, 5, 6, 7])(
     'rolls back actual SQL transaction at batch write %s',
     async (failAt) => {
       const db = new SqliteD1();
       base(db);
       await invitation(db, 'i1', 'org-a', 'new@example.test', 'teacher', token);
       db.failBatchAt = failAt;
-      expect(await acceptInvitation(env(db), token, request)).toBeNull();
+      expect(await acceptInvitation(env(db), token, request, undefined, onboarding)).toBeNull();
       expect(db.count('users')).toBe(1);
       expect(db.count('organization_memberships')).toBe(2);
       expect(db.count('organization_invitation_acceptances')).toBe(0);
@@ -209,8 +213,8 @@ describe('real SQLite/D1 membership security', () => {
     base(db);
     await invitation(db, 'i1', 'org-a', 'new@example.test', 'teacher', token);
     const results = await Promise.all([
-      acceptInvitation(env(db), token, request),
-      acceptInvitation(env(db), token, request),
+      acceptInvitation(env(db), token, request, undefined, onboarding),
+      acceptInvitation(env(db), token, request, undefined, onboarding),
     ]);
     expect(results.filter(Boolean)).toHaveLength(1);
     expect(db.count('users')).toBe(2);
@@ -225,7 +229,7 @@ describe('real SQLite/D1 membership security', () => {
     membership(db, 'existing-a', 'org-a', 'existing', 'read_only', 0);
     membership(db, 'existing-b', 'org-b', 'existing', 'organization_admin', 1);
     await invitation(db, 'i1', 'org-a', 'existing@example.test', 'teacher', token);
-    expect(await acceptInvitation(env(db), token, request)).toBeTruthy();
+    expect(await acceptInvitation(env(db), token, request, undefined, onboarding)).toBeTruthy();
     const rows = db.db
       .prepare(
         'SELECT organization_id,role,active FROM organization_memberships WHERE user_id=? ORDER BY organization_id',
@@ -236,6 +240,60 @@ describe('real SQLite/D1 membership security', () => {
       { organization_id: 'org-b', role: 'organization_admin', active: 1 },
     ]);
     expect(db.count('users')).toBe(2);
+    expect(db.count('user_password_credentials')).toBe(1);
+    expect(db.db.prepare('SELECT display_name FROM users WHERE id=?').get('existing')).toEqual({
+      display_name: 'existing',
+    });
+    db.close();
+  });
+  it('creates a named new user and password in the same acceptance transaction', async () => {
+    const db = new SqliteD1();
+    base(db);
+    await invitation(db, 'i1', 'org-a', 'new@example.test', 'teacher', token);
+    expect(await acceptInvitation(env(db), token, request, undefined, onboarding)).toBeTruthy();
+    expect(
+      db.db.prepare('SELECT display_name FROM users WHERE email=?').get('new@example.test'),
+    ).toEqual({ display_name: 'New Staff' });
+    const stored = db.db
+      .prepare(
+        'SELECT algorithm,work_factor,salt,password_hash FROM user_password_credentials pc JOIN users u ON u.id=pc.user_id WHERE u.email=?',
+      )
+      .get('new@example.test') as never;
+    expect(await verifyPassword(onboarding.password, 'password-pepper', stored)).toBe(true);
+    db.close();
+  });
+  it('preserves an existing password credential during invitation acceptance', async () => {
+    const db = new SqliteD1();
+    base(db);
+    user(db, 'existing', 'existing@example.test');
+    const stored = await hashPassword('existing secure password', 'password-pepper');
+    db.db
+      .prepare(
+        'INSERT INTO user_password_credentials(user_id,algorithm,work_factor,salt,password_hash,created_at,updated_at,password_changed_at) VALUES(?,?,?,?,?,?,?,?)',
+      )
+      .run(
+        'existing',
+        stored.algorithm,
+        stored.work_factor,
+        stored.salt,
+        stored.password_hash,
+        now,
+        now,
+        now,
+      );
+    await invitation(db, 'i1', 'org-a', 'existing@example.test', 'teacher', token);
+    expect(
+      await acceptInvitation(env(db), token, request, undefined, {
+        password: 'replacement must be ignored',
+      }),
+    ).toBeTruthy();
+    const after = db.db
+      .prepare(
+        'SELECT algorithm,work_factor,salt,password_hash FROM user_password_credentials WHERE user_id=?',
+      )
+      .get('existing') as never;
+    expect(after).toEqual(stored);
+    expect(await verifyPassword('existing secure password', 'password-pepper', after)).toBe(true);
     db.close();
   });
   it('rejects active memberships and globally inactive users without overwriting or sessions', async () => {
@@ -245,7 +303,7 @@ describe('real SQLite/D1 membership security', () => {
       user(db, 'existing', 'existing@example.test', kind === 'active' ? 1 : 0);
       if (kind === 'active') membership(db, 'existing-a', 'org-a', 'existing', 'read_only');
       await invitation(db, 'i1', 'org-a', 'existing@example.test', 'teacher', token);
-      expect(await acceptInvitation(env(db), token, request)).toBeNull();
+      expect(await acceptInvitation(env(db), token, request, undefined, onboarding)).toBeNull();
       expect(db.count('sessions')).toBe(0);
       if (kind === 'active')
         expect(
@@ -410,7 +468,7 @@ describe('real SQLite/D1 membership security', () => {
       .run('old', 'admin', hash, 'org-a', '2999-01-01', '2999-01-01', now, now);
     await invitation(db, 'i1', 'org-a', 'new@example.test', 'teacher', token);
     db.failBatchAt = 3;
-    expect(await acceptInvitation(env(db), token, request, 'old')).toBeNull();
+    expect(await acceptInvitation(env(db), token, request, 'old', onboarding)).toBeNull();
     expect(
       (
         db.db.prepare('SELECT revoked_at FROM sessions WHERE id=?').get('old') as {
@@ -419,7 +477,7 @@ describe('real SQLite/D1 membership security', () => {
       ).revoked_at,
     ).toBeNull();
     db.failBatchAt = 0;
-    expect(await acceptInvitation(env(db), token, request, 'old')).toBeTruthy();
+    expect(await acceptInvitation(env(db), token, request, 'old', onboarding)).toBeTruthy();
     expect(
       (
         db.db.prepare('SELECT revoked_at FROM sessions WHERE id=?').get('old') as {

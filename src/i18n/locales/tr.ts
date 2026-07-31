@@ -10,6 +10,7 @@ export default {
     useMagicLink: 'Güvenli giriş bağlantısını e-postayla gönder',
     usePassword: 'Parolayla giriş yap',
     forgot: 'Parolanızı mı unuttunuz?',
+    invalidCredentials: 'E-posta veya parola yanlış ya da bu hesap giriş yapamıyor.',
     send: 'Güvenli giriş bağlantısı gönder',
     generic: 'Bu e-posta uygunsa QuranTrack giriş bağlantısı gönderilecektir.',
     invalid: 'Bu giriş bağlantısı geçersiz veya süresi dolmuş. Yeni bağlantı isteyin.',
@@ -53,6 +54,10 @@ export default {
     network: 'Davet hizmetine ulaşılamadı. Davetiniz değiştirilmedi.',
     retry: 'Yeniden dene',
     success: 'Davet kabul edildi. QuranTrack açılıyor…',
+    displayName: 'Görünen ad',
+    passwordMismatch: 'Parolalar eşleşmiyor.',
+    passwordPolicy:
+      'Belirtilen koşulları karşılayan ve e-posta adresiniz olmayan bir parola seçin.',
   },
   roles: {
     system_admin: 'Sistem yöneticisi',
@@ -150,6 +155,7 @@ export default {
     resetSuccess: 'Parolanız sıfırlandı. Tüm oturumlar kapatıldı.',
     resetInvalid: 'Bu sıfırlama bağlantısı geçersiz, süresi dolmuş veya kullanılmış.',
     signInAgain: 'Yeniden giriş yap',
+    passwordMismatch: 'Parolalar eşleşmiyor.',
   },
   dashboard: {
     title: 'Öğrenme genel görünümü',

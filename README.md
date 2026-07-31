@@ -8,7 +8,7 @@ Kur'an Öğrenme ve Gelişim Platformu
 
 QuranTrack is a full-stack Cloudflare Worker application. Phase 1 established its tenant-scoped D1 domain model, and Phase 2 completed secure staff magic-link authentication, Turnstile verification, server-controlled organization context, role authorization, session restoration, logout, and the Apps Script email relay.
 
-Phase 3A added production-backed settings for the active organization. Phase 3B1 adds production-backed staff memberships, invitations, roles, and organization switching. Phase 3B1 is implemented and deployed to staging; final Phase 3B1 mutation acceptance remains pending. Production remains untouched.
+Phase 3A added production-backed settings for the active organization. Phase 3B1 adds production-backed staff memberships, invitations, roles, and organization switching. Phase 3B1 is complete following staging acceptance. Phase 2.7 password authentication is implemented in code and awaiting review and an explicitly approved staging deployment.
 
 Uploaded logos are resized/compressed in the browser and stored in D1 as validated PNG, JPEG, or WebP data URLs with a 200 KB encoded limit. HTTPS-hosted logos are also supported. SVG and signature/type mismatches are rejected.
 
@@ -127,9 +127,9 @@ Phase 2.6 authentication, Turnstile, session, organization switching, and email 
 
 ## Phase 3B1 staff access
 
-Phase 3B1 adds production-backed staff memberships, single-use organization invitations, per-organization roles, and authenticated organization switching. Invitation links expire after seven days and only purpose-separated, peppered hashes are stored. Staging verification covered administrator Staff-page access, invitation creation, email submission and receipt, invitation acceptance, membership creation, and Teacher / Mentor route restrictions. Final Phase 3B1 mutation acceptance remains pending. Production remains untouched.
+Phase 3B1 adds production-backed staff memberships, single-use organization invitations, per-organization roles, and authenticated organization switching. Invitation links expire after seven days and only purpose-separated, peppered hashes are stored. Staging verification covered administrator Staff-page access, invitation creation, email submission and receipt, invitation acceptance, membership creation, and Teacher / Mentor route restrictions; Phase 3B1 is complete.
 
-Authentication remains passwordless magic-link authentication. Username/password authentication is a separate planned enhancement and is not part of Phase 3B1. Students initially remain non-login records. Phase 3B2—groups/classes, teacher assignments, rosters, enrollments, and server-enforced teacher visibility—remains the next domain phase after the authentication-enhancement decision is implemented. Phase 3C will add approved default curriculum and program administration, and Phase 3D will add new-organization onboarding.
+Email/password is the primary staff authentication method and secure magic-link authentication remains an alternative. New users create a password during invitation acceptance, while existing passwordless users can create one after magic-link authentication. Students initially remain non-login records. Phase 3B2—groups/classes, teacher assignments, rosters, enrollments, and server-enforced teacher visibility—remains the next domain phase after the authentication-enhancement decision is implemented. Phase 3C will add approved default curriculum and program administration, and Phase 3D will add new-organization onboarding.
 
 ### Staff authentication
 

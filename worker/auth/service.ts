@@ -88,6 +88,7 @@ export async function createSession(
   user: User,
   organizationId: string,
   request: Request,
+  auditAction?: string,
 ) {
   const now = new Date();
   const sessionToken = randomToken(32);
@@ -97,11 +98,12 @@ export async function createSession(
   );
   const expires = new Date(now.getTime() + SESSION_IDLE_HOURS * 3600_000);
   const absolute = new Date(now.getTime() + SESSION_ABSOLUTE_DAYS * 24 * 3600_000);
-  await env.DB.prepare(
-    'INSERT INTO sessions (id,user_id,token_hash,active_organization_id,expires_at,absolute_expires_at,last_seen_at,created_at,user_agent_hash,ip_hash) VALUES (?,?,?,?,?,?,?,?,?,?)',
-  )
-    .bind(
-      crypto.randomUUID(),
+  const sessionId = crypto.randomUUID();
+  const statements = [
+    env.DB.prepare(
+      'INSERT INTO sessions (id,user_id,token_hash,active_organization_id,expires_at,absolute_expires_at,last_seen_at,created_at,user_agent_hash,ip_hash) VALUES (?,?,?,?,?,?,?,?,?,?)',
+    ).bind(
+      sessionId,
       user.id,
       sessionHash,
       organizationId,
@@ -111,11 +113,29 @@ export async function createSession(
       now.toISOString(),
       await sha256Hex(request.headers.get('user-agent') ?? 'unknown'),
       await sha256Hex(request.headers.get('cf-connecting-ip') ?? 'unknown'),
-    )
-    .run();
-  await env.DB.prepare('UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?')
-    .bind(now.toISOString(), now.toISOString(), user.id)
-    .run();
+    ),
+    env.DB.prepare('UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?').bind(
+      now.toISOString(),
+      now.toISOString(),
+      user.id,
+    ),
+  ];
+  if (auditAction)
+    statements.push(
+      env.DB.prepare(
+        'INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,created_at) VALUES (?,?,?,?,?,?,?,?)',
+      ).bind(
+        crypto.randomUUID(),
+        organizationId,
+        user.id,
+        auditAction,
+        'session',
+        sessionId,
+        'password login succeeded',
+        now.toISOString(),
+      ),
+    );
+  await env.DB.batch(statements);
   return { sessionToken, expires };
 }
 

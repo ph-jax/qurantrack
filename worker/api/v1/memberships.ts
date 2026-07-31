@@ -34,6 +34,11 @@ const update = z
   .refine((v) => v.role !== undefined || v.active !== undefined);
 const mutationContext = z.object({ expectedOrganizationId: z.string().min(1) });
 const token = z.object({ token: z.string().min(40).max(100) });
+const acceptance = token.extend({
+  displayName: z.string().max(100).optional(),
+  password: z.string().max(128).optional(),
+  passwordConfirmation: z.string().max(128).optional(),
+});
 const failure = (c: Ctx, code: string, message: string, status: 400 | 403 | 404 | 409 | 502) =>
   c.json({ ok: false, error: { code, message } }, status);
 const stale = (c: Ctx, expectedOrganizationId: string) =>
@@ -135,7 +140,7 @@ export async function invitationInspect(c: Ctx) {
     : failure(c, 'INVALID_INVITATION', 'This invitation is invalid or no longer usable.', 404);
 }
 export async function invitationAccept(c: Ctx) {
-  const parsed = token.safeParse(await c.req.json().catch(() => null));
+  const parsed = acceptance.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success)
     return failure(c, 'INVALID_INVITATION', 'This invitation is invalid or no longer usable.', 400);
   const inspected = await inspectInvitation(c.env, parsed.data.token);
@@ -150,13 +155,29 @@ export async function invitationAccept(c: Ctx) {
             : 'INVALID_INVITATION';
     return failure(c, code, 'This invitation is invalid or no longer usable.', 400);
   }
+  if (inspected.requiresDisplayName && !parsed.data.displayName?.trim())
+    return failure(c, 'DISPLAY_NAME_REQUIRED', 'Enter your display name.', 400);
+  if (inspected.requiresPassword) {
+    if (!parsed.data.password || parsed.data.password !== parsed.data.passwordConfirmation)
+      return failure(c, 'PASSWORD_CONFIRMATION', 'The password confirmation does not match.', 400);
+  }
   const current = readCookie(c.req.header('cookie'), SESSION_COOKIE);
   let priorSessionId: string | undefined;
   if (current) {
     const auth = await validateSessionForRecovery(c.env, current);
     priorSessionId = auth?.sessionId;
   }
-  const session = await acceptInvitation(c.env, parsed.data.token, c.req.raw, priorSessionId);
+  const session = await acceptInvitation(c.env, parsed.data.token, c.req.raw, priorSessionId, {
+    displayName: parsed.data.displayName,
+    password: parsed.data.password,
+  });
+  if (session && 'error' in session)
+    return failure(
+      c,
+      session.error ?? 'PASSWORD_POLICY',
+      'Choose a password between 15 and 128 characters that is not your email address.',
+      400,
+    );
   if (!session)
     return failure(c, 'INVALID_INVITATION', 'This invitation is invalid or no longer usable.', 400);
   c.header('Set-Cookie', buildSessionCookie(session.sessionToken, session.expires, c.env));

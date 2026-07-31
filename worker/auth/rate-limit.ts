@@ -55,3 +55,31 @@ export async function clearRateLimit(env: Env, purpose: RatePurpose, subject: st
     .bind(purpose, hash)
     .run();
 }
+
+export async function isRateLimited(
+  env: Env,
+  purpose: RatePurpose,
+  subject: string,
+  limit: number,
+) {
+  const hash = await hashSecret(
+    `rate-limit:${purpose}:${subject}`,
+    requireSecret(env.TOKEN_HASH_PEPPER, 'TOKEN_HASH_PEPPER'),
+  );
+  const row = await env.DB.prepare(
+    'SELECT attempt_count,expires_at FROM authentication_rate_limits WHERE purpose=? AND subject_hash=?',
+  )
+    .bind(purpose, hash)
+    .first<{ attempt_count: number; expires_at: string }>();
+  return Boolean(row && row.expires_at > new Date().toISOString() && row.attempt_count >= limit);
+}
+
+/** Atomically records one failure. Successful authentication must never call this function. */
+export async function recordFailedAttempt(
+  env: Env,
+  purpose: RatePurpose,
+  subject: string,
+  windowMinutes = 15,
+) {
+  await rateLimit(env, purpose, subject, Number.MAX_SAFE_INTEGER, windowMinutes);
+}

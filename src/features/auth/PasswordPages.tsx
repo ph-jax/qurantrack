@@ -3,7 +3,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Alert, Button, Card, FormField, Input, Spinner } from '../../components/ui';
 
-function PasswordInput({
+export function PasswordInput({
   id,
   label,
   value,
@@ -49,18 +49,20 @@ export function SecurityPage() {
     [next, setNext] = useState(''),
     [confirm, setConfirm] = useState(''),
     [busy, setBusy] = useState(false),
-    [result, setResult] = useState<'ok' | 'error' | null>(null);
+    [result, setResult] = useState<'ok' | 'error' | null>(null),
+    [confirmationError, setConfirmationError] = useState(false);
   useEffect(() => {
     void fetch('/api/v1/me/authentication-methods', { cache: 'no-store' })
       .then((r) => r.json())
-      .then((j) => setHasPassword(Boolean(j.hasPassword)))
+      .then((j: unknown) => setHasPassword(Boolean((j as { hasPassword?: boolean }).hasPassword)))
       .finally(() => setLoading(false));
   }, []);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setResult(null);
+    setConfirmationError(false);
     if (next !== confirm) {
-      setResult('error');
+      setConfirmationError(true);
       return;
     }
     setBusy(true);
@@ -117,6 +119,11 @@ export function SecurityPage() {
           value={confirm}
           onChange={setConfirm}
         />
+        {confirmationError && (
+          <p role="alert" className="text-sm text-error">
+            {t('security.passwordMismatch')}
+          </p>
+        )}
         <Button loading={busy} disabled={busy}>
           {hasPassword ? t('security.change') : t('security.create')}
         </Button>
@@ -129,10 +136,13 @@ export function ForgotPasswordPage() {
   const [email, setEmail] = useState(''),
     [done, setDone] = useState(false),
     [busy, setBusy] = useState(false),
-    [turnstileToken, setTurnstileToken] = useState('');
+    [turnstileToken, setTurnstileToken] = useState(''),
+    [serviceError, setServiceError] = useState(false);
   const widget = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const sitekey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+    const sitekey = (
+      import.meta as ImportMeta & { env: { readonly VITE_TURNSTILE_SITE_KEY?: string } }
+    ).env.VITE_TURNSTILE_SITE_KEY;
     if (!sitekey) return;
     const render = () => {
       if (widget.current && window.turnstile)
@@ -155,18 +165,26 @@ export function ForgotPasswordPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
-    await fetch('/api/v1/auth/password/reset/request', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, turnstileToken }),
-    }).catch(() => undefined);
-    setDone(true);
-    setBusy(false);
+    setServiceError(false);
+    try {
+      const response = await fetch('/api/v1/auth/password/reset/request', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, turnstileToken }),
+      });
+      if (!response.ok) throw new Error();
+      setDone(true);
+    } catch {
+      setServiceError(true);
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <main className="auth-page">
       <Card className="mx-auto max-w-lg">
         <h1 className="text-2xl font-bold">{t('security.forgotTitle')}</h1>
+        {serviceError && <Alert tone="error" title={t('auth.service')} />}
         {done ? (
           <Alert tone="success" title={t('security.resetGeneric')} />
         ) : (
@@ -206,18 +224,30 @@ export function ResetPasswordPage() {
   const [next, setNext] = useState(''),
     [confirm, setConfirm] = useState(''),
     [state, setState] = useState<'form' | 'success' | 'invalid'>('form'),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [confirmationError, setConfirmationError] = useState(false),
+    [serviceError, setServiceError] = useState(false);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (next !== confirm) return;
+    setConfirmationError(false);
+    setServiceError(false);
+    if (next !== confirm) {
+      setConfirmationError(true);
+      return;
+    }
     setBusy(true);
-    const r = await fetch('/api/v1/auth/password/reset/consume', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token: params.get('token'), newPassword: next }),
-    });
-    setState(r.ok ? 'success' : 'invalid');
-    setBusy(false);
+    try {
+      const r = await fetch('/api/v1/auth/password/reset/consume', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: params.get('token'), newPassword: next }),
+      });
+      setState(r.ok ? 'success' : 'invalid');
+    } catch {
+      setServiceError(true);
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <main className="auth-page">
@@ -232,6 +262,7 @@ export function ResetPasswordPage() {
           <Alert tone="error" title={t('security.resetInvalid')} />
         ) : (
           <form className="mt-6 space-y-4" onSubmit={submit}>
+            {serviceError && <Alert tone="error" title={t('auth.service')} />}
             <PasswordInput
               id="reset-password"
               label={t('security.new')}
@@ -244,6 +275,11 @@ export function ResetPasswordPage() {
               value={confirm}
               onChange={setConfirm}
             />
+            {confirmationError && (
+              <p role="alert" className="text-sm text-error">
+                {t('security.passwordMismatch')}
+              </p>
+            )}
             <Button loading={busy}>{t('security.reset')}</Button>
           </form>
         )}

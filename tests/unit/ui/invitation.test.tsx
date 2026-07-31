@@ -77,4 +77,61 @@ describe('public invitation states', () => {
     );
     expect(await screen.findByText(message)).toBeInTheDocument();
   });
+  it('requires display name and matching visible password confirmation for a new user', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            invitation: {
+              organizationName: 'Org',
+              locale: 'en',
+              role: 'teacher',
+              state: 'pending',
+              requiresDisplayName: true,
+              requiresPassword: true,
+            },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    renderPage();
+    await userEvent.type(await screen.findByLabelText(/display name/i), 'New Staff');
+    const password = screen.getByLabelText(/^New password/);
+    await userEvent.type(password, 'a secure invitation password');
+    await userEvent.type(
+      screen.getByLabelText(/^Confirm new password/),
+      'different password value',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Accept invitation' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('The passwords do not match.');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Show password' })[0]);
+    expect(password).toHaveAttribute('type', 'text');
+  });
+  it('does not render password setup for an existing credential', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            invitation: {
+              organizationName: 'Org',
+              locale: 'en',
+              role: 'teacher',
+              state: 'pending',
+              requiresDisplayName: false,
+              requiresPassword: false,
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    renderPage();
+    await screen.findByRole('button', { name: 'Accept invitation' });
+    expect(screen.queryByLabelText(/^New password/)).not.toBeInTheDocument();
+  });
 });
