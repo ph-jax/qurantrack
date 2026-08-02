@@ -156,6 +156,9 @@ export default {
     resetInvalid: 'Bu sıfırlama bağlantısı geçersiz, süresi dolmuş veya kullanılmış.',
     signInAgain: 'Yeniden giriş yap',
     passwordMismatch: 'Parolalar eşleşmiyor.',
+    passwordTooShort: 'Yeni parolanız için en az 15 karakter kullanın.',
+    passwordTooLong: 'Yeni parolanız için en fazla 128 karakter kullanın.',
+    passwordEqualsEmail: 'Parolanız e-posta adresinizle aynı olamaz.',
   },
   dashboard: {
     title: 'Öğrenme genel görünümü',

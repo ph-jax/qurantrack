@@ -85,6 +85,26 @@ describe('password authentication API', () => {
     expect(response.status).toBe(400);
     expect(mocks.passwordLogin).not.toHaveBeenCalled();
   });
+  it('accepts 128 Unicode code points even when they occupy 256 UTF-16 code units', async () => {
+    mocks.passwordLogin.mockResolvedValue({
+      sessionToken: 'opaque',
+      expires: new Date('2999-01-01'),
+    });
+    const password = '🔐'.repeat(128);
+    const response = await post('/api/v1/auth/password/login', {
+      email: 'staff@example.test',
+      password,
+      turnstileToken: 'valid',
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.passwordLogin).toHaveBeenCalledWith(
+      expect.anything(),
+      'staff@example.test',
+      password,
+      undefined,
+      expect.any(Request),
+    );
+  });
   it('requires authentication and same origin for password mutations', async () => {
     mocks.validateSession.mockResolvedValue(null);
     expect((await post('/api/v1/me/password', { newPassword: 'new secure password' })).status).toBe(

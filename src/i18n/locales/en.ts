@@ -155,6 +155,9 @@ export default {
     resetInvalid: 'This reset link is invalid, expired, or already used.',
     signInAgain: 'Sign in again',
     passwordMismatch: 'The passwords do not match.',
+    passwordTooShort: 'Use at least 15 characters for your new password.',
+    passwordTooLong: 'Use no more than 128 characters for your new password.',
+    passwordEqualsEmail: 'Your password cannot be the same as your email address.',
   },
   dashboard: {
     title: 'Learning overview',

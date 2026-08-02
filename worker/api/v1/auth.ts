@@ -137,15 +137,16 @@ export async function switchOrg(c: Ctx) {
       );
 }
 
+const boundedPassword = z.string().refine((value) => Array.from(value).length <= 128);
 const passwordLoginSchema = z.object({
   email: z.email().trim().toLowerCase(),
-  password: z.string().max(128),
+  password: boundedPassword,
   turnstileToken: z.string().min(1),
   organizationSlug: z.string().min(2).max(64).optional(),
 });
 const passwordSetSchema = z.object({
-  currentPassword: z.string().max(128).optional(),
-  newPassword: z.string().max(128),
+  currentPassword: boundedPassword.optional(),
+  newPassword: z.string(),
 });
 const resetRequestSchema = z.object({
   email: z.email().trim().toLowerCase(),
@@ -153,7 +154,7 @@ const resetRequestSchema = z.object({
 });
 const resetConsumeSchema = z.object({
   token: z.string().min(32).max(100),
-  newPassword: z.string().max(128),
+  newPassword: z.string(),
 });
 const invalidCredentials = {
   ok: false,

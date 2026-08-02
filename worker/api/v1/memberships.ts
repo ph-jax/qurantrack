@@ -36,8 +36,8 @@ const mutationContext = z.object({ expectedOrganizationId: z.string().min(1) });
 const token = z.object({ token: z.string().min(40).max(100) });
 const acceptance = token.extend({
   displayName: z.string().max(100).optional(),
-  password: z.string().max(128).optional(),
-  passwordConfirmation: z.string().max(128).optional(),
+  password: z.string().optional(),
+  passwordConfirmation: z.string().optional(),
 });
 const failure = (c: Ctx, code: string, message: string, status: 400 | 403 | 404 | 409 | 502) =>
   c.json({ ok: false, error: { code, message } }, status);

@@ -38,5 +38,7 @@ describe('password authentication primitives', () => {
     expect(validatePasswordPolicy('staff@example.com', 'staff@example.com')).toBe(
       'PASSWORD_EQUALS_EMAIL',
     );
+    expect(validatePasswordPolicy('🔐'.repeat(128), 'staff@example.com')).toBeNull();
+    expect(validatePasswordPolicy('🔐'.repeat(129), 'staff@example.com')).toBe('PASSWORD_TOO_LONG');
   });
 });

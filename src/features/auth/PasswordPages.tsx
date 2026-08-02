@@ -131,27 +131,50 @@ export function SecurityPage() {
     </Card>
   );
 }
-export function ForgotPasswordPage() {
+type TurnstileStatus = 'missing-key' | 'loading' | 'ready' | 'verified' | 'failed';
+
+const configuredTurnstileSiteKey = (
+  import.meta as ImportMeta & { env: { readonly VITE_TURNSTILE_SITE_KEY?: string } }
+).env.VITE_TURNSTILE_SITE_KEY;
+
+export function ForgotPasswordPage({
+  turnstileSiteKey = configuredTurnstileSiteKey,
+}: {
+  turnstileSiteKey?: string;
+}) {
   const { t } = useTranslation();
   const [email, setEmail] = useState(''),
     [done, setDone] = useState(false),
     [busy, setBusy] = useState(false),
     [turnstileToken, setTurnstileToken] = useState(''),
-    [serviceError, setServiceError] = useState(false);
+    [serviceError, setServiceError] = useState(false),
+    [turnstileStatus, setTurnstileStatus] = useState<TurnstileStatus>(
+      turnstileSiteKey ? 'loading' : 'missing-key',
+    );
   const widget = useRef<HTMLDivElement>(null);
+  const widgetId = useRef<string | undefined>(undefined);
+  const rendered = useRef(false);
   useEffect(() => {
-    const sitekey = (
-      import.meta as ImportMeta & { env: { readonly VITE_TURNSTILE_SITE_KEY?: string } }
-    ).env.VITE_TURNSTILE_SITE_KEY;
-    if (!sitekey) return;
+    if (!turnstileSiteKey || rendered.current) return;
     const render = () => {
-      if (widget.current && window.turnstile)
-        window.turnstile.render(widget.current, {
-          sitekey,
-          callback: setTurnstileToken,
-          'error-callback': () => setTurnstileToken(''),
-          'expired-callback': () => setTurnstileToken(''),
-        });
+      if (!widget.current || !window.turnstile || rendered.current) return;
+      rendered.current = true;
+      widgetId.current = window.turnstile.render(widget.current, {
+        sitekey: turnstileSiteKey,
+        callback: (token) => {
+          setTurnstileToken(token);
+          setTurnstileStatus('verified');
+        },
+        'error-callback': () => {
+          setTurnstileToken('');
+          setTurnstileStatus('failed');
+        },
+        'expired-callback': () => {
+          setTurnstileToken('');
+          setTurnstileStatus('ready');
+        },
+      });
+      setTurnstileStatus('ready');
     };
     if (window.turnstile) render();
     else {
@@ -159,13 +182,15 @@ export function ForgotPasswordPage() {
       script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
       script.async = true;
       script.onload = render;
+      script.onerror = () => setTurnstileStatus('failed');
       document.head.appendChild(script);
     }
-  }, []);
+  }, [turnstileSiteKey]);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setServiceError(false);
+    let accepted = false;
     try {
       const response = await fetch('/api/v1/auth/password/reset/request', {
         method: 'POST',
@@ -173,10 +198,16 @@ export function ForgotPasswordPage() {
         body: JSON.stringify({ email, turnstileToken }),
       });
       if (!response.ok) throw new Error();
+      accepted = true;
       setDone(true);
     } catch {
       setServiceError(true);
     } finally {
+      if (!accepted) {
+        setTurnstileToken('');
+        setTurnstileStatus('ready');
+        window.turnstile?.reset(widgetId.current);
+      }
       setBusy(false);
     }
   };
@@ -204,8 +235,25 @@ export function ForgotPasswordPage() {
                 onChange={(e) => setEmail(e.target.value)}
               />
             </FormField>
-            <div ref={widget} />
-            <p className="text-sm text-text-secondary">{t('security.turnstileRequired')}</p>
+            <Card className="bg-muted p-3 shadow-none">
+              <div ref={widget} />
+              {turnstileStatus === 'loading' && (
+                <p className="text-sm text-text-secondary">{t('auth.turnstileLoading')}</p>
+              )}
+              {turnstileStatus === 'missing-key' && (
+                <p role="alert" className="text-sm text-warning-strong">
+                  {t('auth.turnstileMissing')}
+                </p>
+              )}
+              {turnstileStatus === 'failed' && (
+                <p role="alert" className="text-sm text-error">
+                  {t('auth.turnstileFailed')}
+                </p>
+              )}
+              {turnstileStatus === 'ready' && (
+                <p className="text-sm text-text-secondary">{t('security.turnstileRequired')}</p>
+              )}
+            </Card>
             <Button loading={busy} disabled={!turnstileToken}>
               {t('security.sendReset')}
             </Button>
@@ -226,11 +274,15 @@ export function ResetPasswordPage() {
     [state, setState] = useState<'form' | 'success' | 'invalid'>('form'),
     [busy, setBusy] = useState(false),
     [confirmationError, setConfirmationError] = useState(false),
-    [serviceError, setServiceError] = useState(false);
+    [serviceError, setServiceError] = useState(false),
+    [policyError, setPolicyError] = useState<
+      'PASSWORD_TOO_SHORT' | 'PASSWORD_TOO_LONG' | 'PASSWORD_EQUALS_EMAIL' | null
+    >(null);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setConfirmationError(false);
     setServiceError(false);
+    setPolicyError(null);
     if (next !== confirm) {
       setConfirmationError(true);
       return;
@@ -242,7 +294,20 @@ export function ResetPasswordPage() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ token: params.get('token'), newPassword: next }),
       });
-      setState(r.ok ? 'success' : 'invalid');
+      if (r.ok) {
+        setState('success');
+      } else {
+        const body = (await r.json().catch(() => null)) as { error?: { code?: string } } | null;
+        const code = body?.error?.code;
+        if (code === 'INVALID' || code === 'INVALID_RESET') setState('invalid');
+        else if (
+          code === 'PASSWORD_TOO_SHORT' ||
+          code === 'PASSWORD_TOO_LONG' ||
+          code === 'PASSWORD_EQUALS_EMAIL'
+        )
+          setPolicyError(code);
+        else setServiceError(true);
+      }
     } catch {
       setServiceError(true);
     } finally {
@@ -263,6 +328,18 @@ export function ResetPasswordPage() {
         ) : (
           <form className="mt-6 space-y-4" onSubmit={submit}>
             {serviceError && <Alert tone="error" title={t('auth.service')} />}
+            {policyError && (
+              <Alert
+                tone="error"
+                title={t(
+                  policyError === 'PASSWORD_TOO_SHORT'
+                    ? 'security.passwordTooShort'
+                    : policyError === 'PASSWORD_TOO_LONG'
+                      ? 'security.passwordTooLong'
+                      : 'security.passwordEqualsEmail',
+                )}
+              />
+            )}
             <PasswordInput
               id="reset-password"
               label={t('security.new')}
