@@ -99,6 +99,7 @@ export function LoginPage({
     setSubmitting(true);
     setServiceError(false);
     setCredentialError(false);
+    let succeeded = false;
     try {
       const response = await fetch(
         method === 'password' ? '/api/v1/auth/password/login' : '/api/v1/auth/magic-link/request',
@@ -117,6 +118,7 @@ export function LoginPage({
         else setServiceError(true);
         return;
       }
+      succeeded = true;
       if (method === 'magic-link') setRequested(true);
       else {
         await refresh();
@@ -125,7 +127,7 @@ export function LoginPage({
     } catch {
       setServiceError(true);
     } finally {
-      if (method === 'password') {
+      if (method === 'password' || !succeeded) {
         setToken('');
         setTurnstile('ready');
         window.turnstile?.reset(widgetId.current);

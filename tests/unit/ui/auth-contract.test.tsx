@@ -462,6 +462,66 @@ describe('initial login presentation', () => {
       expect(screen.getByRole('button', { name: i18n.t('auth.signIn') })).toBeEnabled(),
     );
   });
+  it('requires a fresh Turnstile token after a failed magic-link submission', async () => {
+    let verify: ((token: string) => void) | undefined;
+    const reset = vi.fn();
+    window.turnstile = {
+      render: vi.fn((_element, options) => {
+        verify = options.callback;
+        return 'magic-widget';
+      }),
+      reset,
+    };
+    let magicAttempts = 0;
+    const fetch = vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
+      void init;
+      if (String(url) !== '/api/v1/auth/magic-link/request')
+        return Promise.resolve(response({}, 401));
+      magicAttempts += 1;
+      return Promise.resolve(
+        magicAttempts === 1
+          ? response({ error: { code: 'SERVICE_ERROR' } }, 503)
+          : response({ ok: true }),
+      );
+    });
+    vi.stubGlobal('fetch', fetch);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={['/login']}>
+          <SessionProvider>
+            <LoginPage turnstileSiteKey="test-site-key" />
+          </SessionProvider>
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+    await screen.findByLabelText(/Email address/);
+    await waitFor(() => expect(verify).toBeTypeOf('function'));
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('auth.useMagicLink') }));
+    await userEvent.type(screen.getByLabelText(/Email address/), 'staff@example.test');
+    verify?.('failed-attempt-token');
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('auth.send') }));
+    expect(await screen.findByText(i18n.t('auth.service'))).toBeInTheDocument();
+    expect(reset).toHaveBeenCalledWith('magic-widget');
+    expect(screen.getByRole('button', { name: i18n.t('auth.send') })).toBeDisabled();
+    const magicCalls = fetch.mock.calls.filter(
+      ([url]) => String(url) === '/api/v1/auth/magic-link/request',
+    );
+    expect(JSON.parse(String(magicCalls[0][1]?.body))).toMatchObject({
+      turnstileToken: 'failed-attempt-token',
+    });
+    verify?.('fresh-retry-token');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: i18n.t('auth.send') })).toBeEnabled(),
+    );
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('auth.send') }));
+    expect(await screen.findByText(i18n.t('auth.generic'))).toBeInTheDocument();
+    const retriedMagicCalls = fetch.mock.calls.filter(
+      ([url]) => String(url) === '/api/v1/auth/magic-link/request',
+    );
+    expect(JSON.parse(String(retriedMagicCalls[1][1]?.body))).toMatchObject({
+      turnstileToken: 'fresh-retry-token',
+    });
+  });
 });
 
 describe('complete Turkish interface resources', () => {
