@@ -41,6 +41,7 @@ export class SqliteD1 {
       '0001_core_schema.sql',
       '0002_organization_email_sender_alias.sql',
       '0003_organization_invitations.sql',
+      '0004_password_authentication.sql',
     ])
       this.db.exec(readFileSync(`migrations/${migration}`, 'utf8'));
   }

@@ -4,6 +4,7 @@ import { appBaseUrl, requireSecret } from '../auth/config';
 import { hashSecret, randomToken, sha256Hex } from '../../shared/auth/crypto';
 import { sendRelayMail } from '../email/relay';
 import { resolveSender } from '../email/sender';
+import { hashPassword, validatePasswordPolicy } from '../auth/password';
 
 export const ASSIGNABLE_ROLES = ['organization_admin', 'teacher', 'read_only'] as const;
 export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
@@ -346,8 +347,12 @@ export async function inspectInvitation(env: Env, token: string) {
   const hash = await invitationHash(env, token);
   const row = await env.DB.prepare(
     `SELECT o.name organizationName,o.default_locale locale,i.role,i.expires_at expiresAt,
-      i.accepted_at acceptedAt,i.revoked_at revokedAt,o.active organizationActive
+      i.accepted_at acceptedAt,i.revoked_at revokedAt,o.active organizationActive,
+      CASE WHEN u.id IS NULL THEN 1 ELSE 0 END requiresDisplayName,
+      CASE WHEN pc.user_id IS NULL THEN 1 ELSE 0 END requiresPassword
      FROM organization_invitations i JOIN organizations o ON o.id=i.organization_id
+     LEFT JOIN users u ON u.email=i.normalized_email COLLATE NOCASE
+     LEFT JOIN user_password_credentials pc ON pc.user_id=u.id
      WHERE i.token_hash=?`,
   )
     .bind(hash)
@@ -359,6 +364,8 @@ export async function inspectInvitation(env: Env, token: string) {
       acceptedAt: string | null;
       revokedAt: string | null;
       organizationActive: number;
+      requiresDisplayName: number;
+      requiresPassword: number;
     }>();
   if (!row) return null;
   const state: InvitationPublicState = row.acceptedAt
@@ -374,7 +381,18 @@ export async function inspectInvitation(env: Env, token: string) {
     role: row.role,
     expiresAt: row.expiresAt,
     state,
+    ...(state === 'pending'
+      ? {
+          requiresDisplayName: Boolean(row.requiresDisplayName),
+          requiresPassword: Boolean(row.requiresPassword),
+        }
+      : {}),
   };
+}
+
+export interface InvitationOnboarding {
+  displayName?: string;
+  password?: string;
 }
 
 export async function acceptInvitation(
@@ -382,6 +400,7 @@ export async function acceptInvitation(
   token: string,
   request: Request,
   priorSessionId?: string,
+  onboarding: InvitationOnboarding = {},
 ) {
   if (!/^[A-Za-z0-9_-]{40,60}$/.test(token)) return null;
   const hash = await invitationHash(env, token);
@@ -401,6 +420,35 @@ export async function acceptInvitation(
     .bind(invite.normalized_email)
     .first<{ id: string; active: number }>();
   if (user && !user.active) return null;
+  if (
+    user &&
+    (await env.DB.prepare(
+      'SELECT 1 present FROM organization_memberships WHERE user_id=? AND organization_id=? AND active=1',
+    )
+      .bind(user.id, invite.organization_id)
+      .first())
+  )
+    return null;
+  const existingCredential = user
+    ? await env.DB.prepare('SELECT 1 present FROM user_password_credentials WHERE user_id=?')
+        .bind(user.id)
+        .first()
+    : null;
+  const requiresPassword = !existingCredential;
+  const displayName = onboarding.displayName?.trim();
+  if (!user && (!displayName || displayName.length > 100)) return null;
+  if (
+    requiresPassword &&
+    (!onboarding.password ||
+      validatePasswordPolicy(onboarding.password, invite.normalized_email) !== null)
+  )
+    return { error: 'PASSWORD_POLICY' } as const;
+  const credential = requiresPassword
+    ? await hashPassword(
+        onboarding.password!,
+        requireSecret(env.PASSWORD_HASH_PEPPER, 'PASSWORD_HASH_PEPPER'),
+      )
+    : null;
   const userId = user?.id ?? crypto.randomUUID();
   const sessionId = crypto.randomUUID();
   const sessionToken = randomToken(32),
@@ -416,11 +464,19 @@ export async function acceptInvitation(
     statements.push(
       env.DB.prepare(
         'INSERT INTO users (id,email,display_name,active,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+      ).bind(userId, invite.normalized_email, displayName, 1, timestamp, timestamp),
+    );
+  if (credential)
+    statements.push(
+      env.DB.prepare(
+        'INSERT INTO user_password_credentials (user_id,algorithm,work_factor,salt,password_hash,created_at,updated_at,password_changed_at) VALUES (?,?,?,?,?,?,?,?)',
       ).bind(
         userId,
-        invite.normalized_email,
-        invite.normalized_email.split('@')[0],
-        1,
+        credential.algorithm,
+        credential.work_factor,
+        credential.salt,
+        credential.password_hash,
+        timestamp,
         timestamp,
         timestamp,
       ),
@@ -447,8 +503,8 @@ export async function acceptInvitation(
       `INSERT INTO organization_memberships (id,organization_id,user_id,role,active,created_at,updated_at) VALUES (?,?,?,?,1,?,?) ON CONFLICT(organization_id,user_id) DO UPDATE SET role=excluded.role,active=1,updated_at=excluded.updated_at`,
     ).bind(crypto.randomUUID(), invite.organization_id, userId, invite.role, timestamp, timestamp),
     env.DB.prepare(
-      'UPDATE organization_invitations SET accepted_at=?,updated_at=? WHERE id=?',
-    ).bind(timestamp, timestamp, invite.id),
+      'UPDATE organization_invitations SET accepted_at=?,updated_at=? WHERE id=? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>?',
+    ).bind(timestamp, timestamp, invite.id, timestamp),
     env.DB.prepare(
       'INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
     ).bind(

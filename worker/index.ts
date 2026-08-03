@@ -1,7 +1,19 @@
 import { Hono } from 'hono';
 
 import { healthHandler } from './api/v1/health';
-import { consumeLogin, logout, me, organizations, requestLogin, switchOrg } from './api/v1/auth';
+import {
+  authMethods,
+  consumeLogin,
+  logout,
+  me,
+  organizations,
+  passwordLoginHandler,
+  passwordResetConsume,
+  passwordResetRequest,
+  passwordSet,
+  requestLogin,
+  switchOrg,
+} from './api/v1/auth';
 import { bootstrapAdmin } from './api/v1/bootstrap';
 import {
   patchOrganizationSettings,
@@ -34,11 +46,16 @@ app.use('/api/v1/*', noStore);
 app.get('/api/v1/health', healthHandler);
 app.post('/api/v1/auth/magic-link/request', requestLogin);
 app.post('/api/v1/auth/magic-link/consume', consumeLogin);
+app.post('/api/v1/auth/password/login', passwordLoginHandler);
+app.post('/api/v1/auth/password/reset/request', passwordResetRequest);
+app.post('/api/v1/auth/password/reset/consume', passwordResetConsume);
 app.post('/api/v1/auth/bootstrap/system-admin', bootstrapAdmin);
 app.get('/api/v1/invitations/inspect', invitationInspect);
 app.post('/api/v1/invitations/accept', invitationAccept);
 app.post('/api/v1/auth/logout', requireAuth(), logout);
 app.get('/api/v1/me', requireAuth(), me);
+app.get('/api/v1/me/authentication-methods', requireAuth(), authMethods);
+app.post('/api/v1/me/password', requireAuth(), passwordSet);
 app.get('/api/v1/me/organizations', requireRecoverySession(), organizations);
 app.post('/api/v1/me/organizations/switch', requireRecoverySession(), switchOrg);
 app.get(

@@ -140,6 +140,15 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
             }
           >
             <MenuItem>{displaySession.user.email}</MenuItem>
+            {!preview && (
+              <MenuItem
+                onSelect={() => {
+                  window.location.href = '/app/security';
+                }}
+              >
+                {t('shell.security')}
+              </MenuItem>
+            )}
             {preview ? (
               <MenuItem>{t('shell.previewAccountAction')}</MenuItem>
             ) : (

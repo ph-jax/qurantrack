@@ -30,3 +30,7 @@ Phase 2.6 adds nullable `organizations.email_sender_alias` in `0002_organization
 Migration 0003 also creates `organization_invitation_acceptances` and a validation trigger. A unique claim serializes concurrent acceptance and all acceptance writes execute in one atomic D1 batch. Final-administrator changes use one conditional update whose `EXISTS` guard is evaluated with the write, avoiding a count/update race.
 
 Phase 3B1 review corrections are verified with a real in-memory SQLite database (`node:sqlite`) that executes migrations 0001, 0002, and 0003 unchanged. The D1-compatible adapter executes `batch()` inside `BEGIN IMMEDIATE`/`COMMIT` and uses actual SQLite rollback, triggers, foreign keys, partial indexes, and unique constraints; failure injection throws between real SQL statements and verifies the transaction returns to its pre-acceptance state.
+
+## Migration 0004 — password authentication
+
+`user_password_credentials` stores one global credential per user with algorithm and work-factor upgrade metadata. `password_reset_tokens` stores unique hashes and lifecycle timestamps. `password_reset_consumptions` plus its validation trigger provides a unique transactional claim so racing reset requests cannot both change a password. `authentication_rate_limits` atomically upserts purpose-separated hashed subjects; requests opportunistically delete up to 100 expired rows. Migration 0004 is additive and applies after 0001–0003.
