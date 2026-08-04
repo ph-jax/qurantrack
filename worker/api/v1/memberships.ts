@@ -41,6 +41,14 @@ const acceptance = token.extend({
 });
 const failure = (c: Ctx, code: string, message: string, status: 400 | 403 | 404 | 409 | 502) =>
   c.json({ ok: false, error: { code, message } }, status);
+const passwordPolicyMessage = (code: string | undefined) =>
+  code === 'PASSWORD_TOO_SHORT'
+    ? 'Password must contain at least 8 characters.'
+    : code === 'PASSWORD_TOO_LONG'
+      ? 'Password cannot exceed 128 characters.'
+      : code === 'PASSWORD_EQUALS_EMAIL'
+        ? 'Password cannot be the same as your email address.'
+        : 'The password could not be set.';
 const stale = (c: Ctx, expectedOrganizationId: string) =>
   expectedOrganizationId !== c.get('auth').organizationId
     ? failure(
@@ -175,7 +183,7 @@ export async function invitationAccept(c: Ctx) {
     return failure(
       c,
       session.error ?? 'PASSWORD_POLICY',
-      'Choose a password between 15 and 128 characters that is not your email address.',
+      passwordPolicyMessage(session.error),
       400,
     );
   if (!session)

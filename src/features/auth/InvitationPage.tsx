@@ -2,7 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Card, FormField, Input, Spinner } from '../../components/ui';
-import { PasswordInput } from './PasswordPages';
+import { PasswordInput, PasswordRules } from './PasswordPages';
+import {
+  passwordPolicyTranslationKey,
+  validatePasswordPolicy,
+} from '../../../shared/auth/password-policy';
 type State =
   'loading' | 'pending' | 'expired' | 'revoked' | 'used' | 'invalid' | 'network' | 'success';
 type Invitation = {
@@ -59,6 +63,13 @@ export function InvitationPage() {
       setFormError(t('invitation.passwordMismatch'));
       return;
     }
+    if (invitation?.requiresPassword) {
+      const policy = validatePasswordPolicy(password);
+      if (policy) {
+        setFormError(t(passwordPolicyTranslationKey(policy)));
+        return;
+      }
+    }
     setBusy(true);
     try {
       const response = await fetch('/api/v1/invitations/accept', {
@@ -76,13 +87,15 @@ export function InvitationPage() {
           error?: { code?: string };
         } | null;
         if (
-          json?.error?.code === 'PASSWORD_POLICY' ||
+          json?.error?.code === 'PASSWORD_TOO_SHORT' ||
+          json?.error?.code === 'PASSWORD_TOO_LONG' ||
+          json?.error?.code === 'PASSWORD_EQUALS_EMAIL' ||
           json?.error?.code === 'PASSWORD_CONFIRMATION'
         ) {
           setFormError(
             json.error.code === 'PASSWORD_CONFIRMATION'
               ? t('invitation.passwordMismatch')
-              : t('invitation.passwordPolicy'),
+              : t(passwordPolicyTranslationKey(json.error.code)),
           );
           return;
         }
@@ -142,7 +155,7 @@ export function InvitationPage() {
               )}
               {invitation.requiresPassword && (
                 <>
-                  <p className="text-sm text-text-secondary">{t('security.policy')}</p>
+                  <PasswordRules />
                   <PasswordInput
                     id="invitation-password"
                     label={t('security.new')}

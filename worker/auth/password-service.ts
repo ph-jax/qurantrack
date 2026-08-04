@@ -4,10 +4,10 @@ import { activeMemberships, createSession, type User } from './service';
 import {
   dummyPasswordVerification,
   hashPassword,
-  validatePasswordPolicy,
   verifyPassword,
   type PasswordCredential,
 } from './password';
+import { validatePasswordPolicy } from '../../shared/auth/password-policy';
 import { clearRateLimit, isRateLimited, rateLimit, recordFailedAttempt } from './rate-limit';
 import { hashSecret, randomToken, sha256Hex } from '../../shared/auth/crypto';
 import { resolveSender } from '../email/sender';

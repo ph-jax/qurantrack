@@ -28,12 +28,12 @@ describe('localized password reset policy errors', () => {
   beforeEach(() => vi.restoreAllMocks());
   afterEach(() => vi.unstubAllGlobals());
   it.each([
-    ['en', 'PASSWORD_TOO_SHORT', 'Use at least 15 characters for your new password.'],
-    ['en', 'PASSWORD_TOO_LONG', 'Use no more than 128 characters for your new password.'],
-    ['en', 'PASSWORD_EQUALS_EMAIL', 'Your password cannot be the same as your email address.'],
-    ['tr', 'PASSWORD_TOO_SHORT', 'Yeni parolanız için en az 15 karakter kullanın.'],
-    ['tr', 'PASSWORD_TOO_LONG', 'Yeni parolanız için en fazla 128 karakter kullanın.'],
-    ['tr', 'PASSWORD_EQUALS_EMAIL', 'Parolanız e-posta adresinizle aynı olamaz.'],
+    ['en', 'PASSWORD_TOO_SHORT', 'Password must contain at least 8 characters.'],
+    ['en', 'PASSWORD_TOO_LONG', 'Password cannot exceed 128 characters.'],
+    ['en', 'PASSWORD_EQUALS_EMAIL', 'Password cannot be the same as your email address.'],
+    ['tr', 'PASSWORD_TOO_SHORT', 'Parola en az 8 karakter içermelidir.'],
+    ['tr', 'PASSWORD_TOO_LONG', 'Parola 128 karakteri aşamaz.'],
+    ['tr', 'PASSWORD_EQUALS_EMAIL', 'Parola e-posta adresinizle aynı olamaz.'],
   ])('keeps the %s reset form open for %s', async (locale, code, message) => {
     await i18n.changeLanguage(locale);
     vi.stubGlobal(

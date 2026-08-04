@@ -106,7 +106,7 @@ describe('public invitation states', () => {
       'different password value',
     );
     await userEvent.click(screen.getByRole('button', { name: 'Accept invitation' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('The passwords do not match.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Passwords do not match.');
     expect(fetch).toHaveBeenCalledTimes(1);
     await userEvent.click(screen.getAllByRole('button', { name: 'Show password' })[0]);
     expect(password).toHaveAttribute('type', 'text');
