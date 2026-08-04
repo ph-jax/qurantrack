@@ -85,7 +85,13 @@ export function InvitationPage() {
       if (!response.ok) {
         const json = (await response.json().catch(() => null)) as {
           error?: { code?: string };
+          requestId?: string;
         } | null;
+        if (response.status === 500) {
+          const requestId = json?.requestId ?? response.headers.get('x-request-id');
+          setFormError(requestId ? t('security.serverError', { requestId }) : t('security.error'));
+          return;
+        }
         if (
           json?.error?.code === 'PASSWORD_TOO_SHORT' ||
           json?.error?.code === 'PASSWORD_TOO_LONG' ||

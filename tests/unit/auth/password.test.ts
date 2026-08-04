@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   constantTimeEqual,
   hashPassword,
@@ -13,11 +13,41 @@ describe('password authentication primitives', () => {
     const a = await hashPassword('a secure Unicode passphrase 🔐', 'pepper');
     const b = await hashPassword('a secure Unicode passphrase 🔐', 'pepper');
     expect(a.algorithm).toBe(PASSWORD_ALGORITHM);
-    expect(a.work_factor).toBe(600_000);
-    expect(PASSWORD_WORK_FACTOR).toBe(600_000);
+    expect(a.work_factor).toBe(100_000);
+    expect(PASSWORD_WORK_FACTOR).toBe(100_000);
     expect(a.salt).not.toBe(b.salt);
     expect(await verifyPassword('a secure Unicode passphrase 🔐', 'pepper', a)).toBe(true);
     expect(await verifyPassword('incorrect password here', 'pepper', a)).toBe(false);
+  });
+  it('uses the credential work factor during verification instead of the creation default', async () => {
+    const deriveBits = vi.spyOn(crypto.subtle, 'deriveBits');
+    const credential = await hashPassword('stored factor password', 'pepper');
+    credential.work_factor = 1;
+    expect(await verifyPassword('stored factor password', 'pepper', credential)).toBe(false);
+    expect(deriveBits).toHaveBeenLastCalledWith(
+      expect.objectContaining({ iterations: 1 }),
+      expect.anything(),
+      expect.anything(),
+    );
+    deriveBits.mockRestore();
+  });
+  it('never asks Web Crypto for more than the Cloudflare Workers maximum', async () => {
+    const deriveBits = vi.spyOn(crypto.subtle, 'deriveBits');
+    await hashPassword('cloudflare compatible password', 'pepper');
+    expect(deriveBits).toHaveBeenCalledWith(
+      expect.objectContaining({ iterations: 100_000 }),
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(
+      deriveBits.mock.calls.every(
+        ([algorithm]) =>
+          typeof algorithm === 'string' ||
+          !('iterations' in algorithm) ||
+          algorithm.iterations <= 100_000,
+      ),
+    ).toBe(true);
+    deriveBits.mockRestore();
   });
   it('preserves spaces and Unicode', async () => {
     const value = '  uzun güvenli parola 🔐  ';

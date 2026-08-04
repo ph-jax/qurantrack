@@ -165,4 +165,34 @@ describe('password authentication API', () => {
       message: expect.stringMatching(/^If this email is eligible/),
     });
   });
+  it.each([
+    ['/api/v1/me/password', { newPassword: 'valid client-side value' }],
+    [
+      '/api/v1/auth/password/reset/consume',
+      { token: 'r'.repeat(43), newPassword: 'valid client-side value' },
+    ],
+  ])('returns a safe correlated 500 when hashing fails at %s', async (path, body) => {
+    const failure = Object.assign(new Error('Pbkdf2 failed: secret runtime details'), {
+      name: 'NotSupportedError',
+    });
+    mocks.setPassword.mockRejectedValue(failure);
+    mocks.consumePasswordReset.mockRejectedValue(failure);
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const response = await post(path, body, {
+      cookie: 'qurantrack_session=opaque',
+      origin: 'https://app.test',
+    });
+    const json = (await response.json()) as {
+      error: { code: string; message: string };
+      requestId: string;
+    };
+    expect(response.status).toBe(500);
+    expect(json).toMatchObject({ error: { code: 'INTERNAL_SERVER_ERROR' } });
+    expect(JSON.stringify(json)).not.toContain('Pbkdf2');
+    expect(logged).toHaveBeenCalledWith(
+      'Unexpected request failure',
+      expect.objectContaining({ requestId: json.requestId, error: failure }),
+    );
+    logged.mockRestore();
+  });
 });

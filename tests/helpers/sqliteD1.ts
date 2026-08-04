@@ -42,6 +42,7 @@ export class SqliteD1 {
       '0002_organization_email_sender_alias.sql',
       '0003_organization_invitations.sql',
       '0004_password_authentication.sql',
+      '0005_cloudflare_password_work_factor.sql',
     ])
       this.db.exec(readFileSync(`migrations/${migration}`, 'utf8'));
   }

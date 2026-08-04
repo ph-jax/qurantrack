@@ -33,6 +33,20 @@ import type { Env, Variables } from './types/env';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+app.onError((error, c) => {
+  const requestId = c.get('requestId') ?? crypto.randomUUID();
+  // Keep the exception in server logs while returning only an opaque correlation identifier.
+  console.error('Unexpected request failure', { requestId, error });
+  return c.json(
+    {
+      ok: false,
+      error: { code: 'INTERNAL_SERVER_ERROR', message: 'The request could not be completed.' },
+      requestId,
+    },
+    500,
+  );
+});
+
 app.use('*', async (c, next) => {
   const requestId = crypto.randomUUID();
   c.set('requestId', requestId);

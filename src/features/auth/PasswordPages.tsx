@@ -69,6 +69,7 @@ export function SecurityPage() {
     [confirm, setConfirm] = useState(''),
     [busy, setBusy] = useState(false),
     [result, setResult] = useState<'ok' | 'error' | null>(null),
+    [serverReference, setServerReference] = useState<string | null>(null),
     [policyError, setPolicyError] = useState<PasswordPolicyError | null>(null),
     [confirmationError, setConfirmationError] = useState(false);
   useEffect(() => {
@@ -80,6 +81,7 @@ export function SecurityPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setResult(null);
+    setServerReference(null);
     setPolicyError(null);
     setConfirmationError(false);
     if (next !== confirm) {
@@ -102,7 +104,15 @@ export function SecurityPage() {
         }),
       });
       if (!r.ok) {
-        const body = (await r.json().catch(() => null)) as { error?: { code?: string } } | null;
+        const body = (await r.json().catch(() => null)) as {
+          error?: { code?: string };
+          requestId?: string;
+        } | null;
+        if (r.status === 500) {
+          setServerReference(body?.requestId ?? r.headers.get('x-request-id'));
+          setResult('error');
+          return;
+        }
         const code = body?.error?.code;
         if (
           code === 'PASSWORD_TOO_SHORT' ||
@@ -134,7 +144,14 @@ export function SecurityPage() {
       </div>
       {result && (
         <div className="mt-4" aria-live="polite">
-          <Alert tone={result === 'ok' ? 'success' : 'error'} title={t(`security.${result}`)} />
+          <Alert
+            tone={result === 'ok' ? 'success' : 'error'}
+            title={
+              serverReference
+                ? t('security.serverError', { requestId: serverReference })
+                : t(`security.${result}`)
+            }
+          />
         </div>
       )}
       {policyError && <Alert tone="error" title={t(passwordPolicyTranslationKey(policyError))} />}
@@ -316,11 +333,13 @@ export function ResetPasswordPage() {
     [busy, setBusy] = useState(false),
     [confirmationError, setConfirmationError] = useState(false),
     [serviceError, setServiceError] = useState(false),
+    [serverReference, setServerReference] = useState<string | null>(null),
     [policyError, setPolicyError] = useState<PasswordPolicyError | null>(null);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setConfirmationError(false);
     setServiceError(false);
+    setServerReference(null);
     setPolicyError(null);
     if (next !== confirm) {
       setConfirmationError(true);
@@ -341,7 +360,15 @@ export function ResetPasswordPage() {
       if (r.ok) {
         setState('success');
       } else {
-        const body = (await r.json().catch(() => null)) as { error?: { code?: string } } | null;
+        const body = (await r.json().catch(() => null)) as {
+          error?: { code?: string };
+          requestId?: string;
+        } | null;
+        if (r.status === 500) {
+          setServerReference(body?.requestId ?? r.headers.get('x-request-id'));
+          setServiceError(true);
+          return;
+        }
         const code = body?.error?.code;
         if (code === 'INVALID' || code === 'INVALID_RESET') setState('invalid');
         else if (
@@ -371,7 +398,16 @@ export function ResetPasswordPage() {
           <Alert tone="error" title={t('security.resetInvalid')} />
         ) : (
           <form className="mt-6 space-y-4" onSubmit={submit}>
-            {serviceError && <Alert tone="error" title={t('auth.service')} />}
+            {serviceError && (
+              <Alert
+                tone="error"
+                title={
+                  serverReference
+                    ? t('security.serverError', { requestId: serverReference })
+                    : t('auth.service')
+                }
+              />
+            )}
             {policyError && (
               <Alert tone="error" title={t(passwordPolicyTranslationKey(policyError))} />
             )}

@@ -147,7 +147,9 @@ export default {
     show: 'Show password',
     hide: 'Hide password',
     ok: 'Your password was saved and your other sessions were signed out.',
-    error: 'Check the password details and try again.',
+    error: 'The password could not be saved. Please try again.',
+    serverError:
+      'The password could not be saved because of a server problem. Reference: {{requestId}}',
     forgotTitle: 'Forgot password?',
     resetGeneric: 'If this email is eligible, password reset instructions will be sent.',
     sendReset: 'Send reset instructions',
