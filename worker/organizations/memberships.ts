@@ -437,12 +437,10 @@ export async function acceptInvitation(
   const requiresPassword = !existingCredential;
   const displayName = onboarding.displayName?.trim();
   if (!user && (!displayName || displayName.length > 100)) return null;
-  if (
-    requiresPassword &&
-    (!onboarding.password ||
-      validatePasswordPolicy(onboarding.password, invite.normalized_email) !== null)
-  )
-    return { error: 'PASSWORD_POLICY' } as const;
+  const passwordPolicy = requiresPassword
+    ? validatePasswordPolicy(onboarding.password ?? '', invite.normalized_email)
+    : null;
+  if (passwordPolicy) return { error: passwordPolicy } as const;
   const credential = requiresPassword
     ? await hashPassword(
         onboarding.password!,

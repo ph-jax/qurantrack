@@ -192,6 +192,38 @@ describe('real SQLite/D1 membership security', () => {
     ).not.toBeNull();
     db.close();
   });
+  it.each([
+    ['seven code points', 'a'.repeat(7), 'PASSWORD_TOO_SHORT'],
+    ['129 code points', 'a'.repeat(129), 'PASSWORD_TOO_LONG'],
+    ['the invited email', 'new@example.test', 'PASSWORD_EQUALS_EMAIL'],
+  ])('preserves the exact invitation policy result for %s', async (_case, password, error) => {
+    const db = new SqliteD1();
+    base(db);
+    await invitation(db, 'i1', 'org-a', 'new@example.test', 'teacher', token);
+    await expect(
+      acceptInvitation(env(db), token, request, undefined, {
+        displayName: 'New Staff',
+        password,
+      }),
+    ).resolves.toEqual({ error });
+    expect(db.count('organization_invitation_acceptances')).toBe(0);
+    db.close();
+  });
+  it.each([
+    ['eight code points', 'a'.repeat(8)],
+    ['128 Unicode code points', '🔐'.repeat(128)],
+  ])('accepts an invitation password containing %s', async (_case, password) => {
+    const db = new SqliteD1();
+    base(db);
+    await invitation(db, 'i1', 'org-a', 'new@example.test', 'teacher', token);
+    const result = await acceptInvitation(env(db), token, request, undefined, {
+      displayName: 'New Staff',
+      password,
+    });
+    expect(result && !('error' in result)).toBe(true);
+    expect(db.count('organization_invitation_acceptances')).toBe(1);
+    db.close();
+  });
   it.each([2, 3, 4, 5, 6, 7])(
     'rolls back actual SQL transaction at batch write %s',
     async (failAt) => {

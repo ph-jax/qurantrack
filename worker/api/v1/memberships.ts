@@ -179,13 +179,11 @@ export async function invitationAccept(c: Ctx) {
     displayName: parsed.data.displayName,
     password: parsed.data.password,
   });
-  if (session && 'error' in session)
-    return failure(
-      c,
-      session.error ?? 'PASSWORD_POLICY',
-      passwordPolicyMessage(session.error),
-      400,
-    );
+  if (session && 'error' in session) {
+    if (!session.error)
+      return failure(c, 'INVALID_INVITATION', 'This invitation could not be accepted.', 400);
+    return failure(c, session.error, passwordPolicyMessage(session.error), 400);
+  }
   if (!session)
     return failure(c, 'INVALID_INVITATION', 'This invitation is invalid or no longer usable.', 400);
   c.header('Set-Cookie', buildSessionCookie(session.sessionToken, session.expires, c.env));
