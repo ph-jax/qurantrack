@@ -156,6 +156,14 @@ const resetConsumeSchema = z.object({
   token: z.string().min(32).max(100),
   newPassword: z.string(),
 });
+const passwordPolicyMessage = (code: string | undefined) =>
+  code === 'PASSWORD_TOO_SHORT'
+    ? 'Password must contain at least 8 characters.'
+    : code === 'PASSWORD_TOO_LONG'
+      ? 'Password cannot exceed 128 characters.'
+      : code === 'PASSWORD_EQUALS_EMAIL'
+        ? 'Password cannot be the same as your email address.'
+        : null;
 const invalidCredentials = {
   ok: false,
   error: {
@@ -211,7 +219,7 @@ export async function passwordSet(c: Ctx) {
         ok: false,
         error: {
           code: 'INVALID_PASSWORD',
-          message: 'Choose a password between 15 and 128 characters.',
+          message: 'The password request is invalid.',
         },
       },
       400,
@@ -232,9 +240,12 @@ export async function passwordSet(c: Ctx) {
         error: {
           code: result.error,
           message:
-            result.error === 'INVALID_CURRENT_PASSWORD'
+            passwordPolicyMessage(result.error) ??
+            (result.error === 'INVALID_CURRENT_PASSWORD'
               ? 'The current password is incorrect.'
-              : 'The password does not meet the requirements.',
+              : result.error === 'PASSWORD_REUSED'
+                ? 'The new password must be different from the current password.'
+                : 'The password could not be changed.'),
         },
       },
       400,
@@ -292,7 +303,7 @@ export async function passwordResetConsume(c: Ctx) {
           message:
             result === 'INVALID'
               ? 'This password reset link is invalid or expired.'
-              : 'The password does not meet the requirements.',
+              : (passwordPolicyMessage(result) ?? 'The password could not be reset.'),
         },
       },
       400,

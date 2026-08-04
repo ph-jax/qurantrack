@@ -106,11 +106,120 @@ describe('public invitation states', () => {
       'different password value',
     );
     await userEvent.click(screen.getByRole('button', { name: 'Accept invitation' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('The passwords do not match.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Passwords do not match.');
     expect(fetch).toHaveBeenCalledTimes(1);
     await userEvent.click(screen.getAllByRole('button', { name: 'Show password' })[0]);
     expect(password).toHaveAttribute('type', 'text');
   });
+  it.each([
+    ['en', 'PASSWORD_TOO_SHORT', 'Password must contain at least 8 characters.'],
+    ['en', 'PASSWORD_TOO_LONG', 'Password cannot exceed 128 characters.'],
+    ['en', 'PASSWORD_EQUALS_EMAIL', 'Password cannot be the same as your email address.'],
+    ['tr', 'PASSWORD_TOO_SHORT', 'Parola en az 8 karakter içermelidir.'],
+    ['tr', 'PASSWORD_TOO_LONG', 'Parola 128 karakteri aşamaz.'],
+    ['tr', 'PASSWORD_EQUALS_EMAIL', 'Parola e-posta adresinizle aynı olamaz.'],
+  ])('keeps the %s form open for server response %s', async (locale, code, message) => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            invitation: {
+              organizationName: 'Org',
+              locale,
+              role: 'teacher',
+              state: 'pending',
+              requiresDisplayName: true,
+              requiresPassword: true,
+            },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code } }), { status: 400 }));
+    vi.stubGlobal('fetch', fetch);
+    renderPage();
+    await userEvent.type(
+      await screen.findByLabelText(locale === 'tr' ? /görünen ad/i : /display name/i),
+      'New Staff',
+    );
+    await userEvent.type(document.getElementById('invitation-password')!, 'valid password');
+    await userEvent.type(
+      document.getElementById('invitation-password-confirmation')!,
+      'valid password',
+    );
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: locale === 'tr' ? 'Daveti kabul et' : 'Accept invitation',
+      }),
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(document.getElementById('invitation-password')).toBeInTheDocument();
+    expect(
+      screen.queryByText(locale === 'tr' ? /geçersiz veya artık/ : /invalid or no longer/),
+    ).not.toBeInTheDocument();
+  });
+  it.each([
+    ['8 code points', 'a'.repeat(8)],
+    ['128 Unicode code points', '🔐'.repeat(128)],
+  ])('submits an invitation password with %s', async (_case, password) => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            invitation: {
+              organizationName: 'Org',
+              locale: 'en',
+              role: 'teacher',
+              state: 'pending',
+              requiresDisplayName: true,
+              requiresPassword: true,
+            },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    renderPage();
+    await userEvent.type(await screen.findByLabelText(/display name/i), 'New Staff');
+    await userEvent.type(screen.getByLabelText(/^New password/), password);
+    await userEvent.type(screen.getByLabelText(/^Confirm new password/), password);
+    await userEvent.click(screen.getByRole('button', { name: 'Accept invitation' }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(String(fetch.mock.calls[1][1]?.body))).toMatchObject({ password });
+  });
+  it.each([
+    ['7 code points', 'a'.repeat(7), 'Password must contain at least 8 characters.'],
+    ['129 code points', 'a'.repeat(129), 'Password cannot exceed 128 characters.'],
+  ])(
+    'keeps the invitation form open for a client-side %s rejection',
+    async (_case, password, message) => {
+      const fetch = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            invitation: {
+              organizationName: 'Org',
+              locale: 'en',
+              role: 'teacher',
+              state: 'pending',
+              requiresPassword: true,
+            },
+          }),
+          { status: 200 },
+        ),
+      );
+      vi.stubGlobal('fetch', fetch);
+      renderPage();
+      await userEvent.type(await screen.findByLabelText(/^New password/), password);
+      await userEvent.type(screen.getByLabelText(/^Confirm new password/), password);
+      await userEvent.click(screen.getByRole('button', { name: 'Accept invitation' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(message);
+      expect(document.getElementById('invitation-password')).toBeInTheDocument();
+      expect(fetch).toHaveBeenCalledTimes(1);
+    },
+  );
   it('does not render password setup for an existing credential', async () => {
     vi.stubGlobal(
       'fetch',

@@ -127,6 +127,32 @@ describe('password authentication API', () => {
       ).status,
     ).toBe(403);
   });
+  it.each([
+    ['PASSWORD_TOO_SHORT', 'Password must contain at least 8 characters.'],
+    ['PASSWORD_TOO_LONG', 'Password cannot exceed 128 characters.'],
+    ['PASSWORD_EQUALS_EMAIL', 'Password cannot be the same as your email address.'],
+  ])('returns the exact password mutation error for %s', async (code, message) => {
+    mocks.setPassword.mockResolvedValue({ error: code });
+    const response = await post(
+      '/api/v1/me/password',
+      { newPassword: 'valid client-side value' },
+      { cookie: 'qurantrack_session=opaque', origin: 'https://app.test' },
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code, message } });
+  });
+  it.each([
+    ['PASSWORD_TOO_SHORT', 'Password must contain at least 8 characters.'],
+    ['PASSWORD_TOO_LONG', 'Password cannot exceed 128 characters.'],
+    ['PASSWORD_EQUALS_EMAIL', 'Password cannot be the same as your email address.'],
+  ])('keeps reset policy error %s distinct from an invalid link', async (code, message) => {
+    mocks.consumePasswordReset.mockResolvedValue(code);
+    const response = await post('/api/v1/auth/password/reset/consume', {
+      token: 'r'.repeat(43),
+      newPassword: 'valid client-side value',
+    });
+    expect(await response.json()).toMatchObject({ error: { code, message } });
+  });
   it('keeps reset request generic when the relay/service fails', async () => {
     mocks.requestPasswordReset.mockRejectedValue(new Error('relay'));
     const response = await post('/api/v1/auth/password/reset/request', {

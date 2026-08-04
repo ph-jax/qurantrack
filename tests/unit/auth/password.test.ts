@@ -31,8 +31,8 @@ describe('password authentication primitives', () => {
     expect(constantTimeEqual(new Uint8Array([1]), new Uint8Array([1, 0]))).toBe(false);
   });
   it('enforces policy boundaries and normalized email rejection', () => {
-    expect(validatePasswordPolicy('a'.repeat(14), 'staff@example.com')).toBe('PASSWORD_TOO_SHORT');
-    expect(validatePasswordPolicy('a'.repeat(15), 'staff@example.com')).toBeNull();
+    expect(validatePasswordPolicy('a'.repeat(7), 'staff@example.com')).toBe('PASSWORD_TOO_SHORT');
+    expect(validatePasswordPolicy('a'.repeat(8), 'staff@example.com')).toBeNull();
     expect(validatePasswordPolicy('a'.repeat(128), 'staff@example.com')).toBeNull();
     expect(validatePasswordPolicy('a'.repeat(129), 'staff@example.com')).toBe('PASSWORD_TOO_LONG');
     expect(validatePasswordPolicy('staff@example.com', 'staff@example.com')).toBe(
@@ -40,5 +40,6 @@ describe('password authentication primitives', () => {
     );
     expect(validatePasswordPolicy('🔐'.repeat(128), 'staff@example.com')).toBeNull();
     expect(validatePasswordPolicy('🔐'.repeat(129), 'staff@example.com')).toBe('PASSWORD_TOO_LONG');
+    expect(validatePasswordPolicy(' şifre  ', 'staff@example.com')).toBeNull();
   });
 });

@@ -2,6 +2,25 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Alert, Button, Card, FormField, Input, Spinner } from '../../components/ui';
+import {
+  passwordPolicyTranslationKey,
+  validatePasswordPolicy,
+  type PasswordPolicyError,
+} from '../../../shared/auth/password-policy';
+
+export function PasswordRules() {
+  const { t } = useTranslation();
+  return (
+    <div className="text-sm text-text-secondary">
+      <p>{t('security.policyIntro')}</p>
+      <ul className="ml-5 list-disc">
+        <li>{t('security.policyLength')}</li>
+        <li>{t('security.policyEmail')}</li>
+        <li>{t('security.policyComplexity')}</li>
+      </ul>
+    </div>
+  );
+}
 
 export function PasswordInput({
   id,
@@ -50,6 +69,7 @@ export function SecurityPage() {
     [confirm, setConfirm] = useState(''),
     [busy, setBusy] = useState(false),
     [result, setResult] = useState<'ok' | 'error' | null>(null),
+    [policyError, setPolicyError] = useState<PasswordPolicyError | null>(null),
     [confirmationError, setConfirmationError] = useState(false);
   useEffect(() => {
     void fetch('/api/v1/me/authentication-methods', { cache: 'no-store' })
@@ -60,9 +80,15 @@ export function SecurityPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setResult(null);
+    setPolicyError(null);
     setConfirmationError(false);
     if (next !== confirm) {
       setConfirmationError(true);
+      return;
+    }
+    const localPolicy = validatePasswordPolicy(next);
+    if (localPolicy) {
+      setPolicyError(localPolicy);
       return;
     }
     setBusy(true);
@@ -75,7 +101,19 @@ export function SecurityPage() {
           newPassword: next,
         }),
       });
-      if (!r.ok) throw new Error();
+      if (!r.ok) {
+        const body = (await r.json().catch(() => null)) as { error?: { code?: string } } | null;
+        const code = body?.error?.code;
+        if (
+          code === 'PASSWORD_TOO_SHORT' ||
+          code === 'PASSWORD_TOO_LONG' ||
+          code === 'PASSWORD_EQUALS_EMAIL'
+        ) {
+          setPolicyError(code);
+          return;
+        }
+        throw new Error();
+      }
       setHasPassword(true);
       setCurrent('');
       setNext('');
@@ -91,12 +129,15 @@ export function SecurityPage() {
   return (
     <Card className="max-w-xl">
       <h2 className="text-2xl font-bold">{t('security.title')}</h2>
-      <p className="mt-2 text-text-secondary">{t('security.policy')}</p>
+      <div className="mt-2">
+        <PasswordRules />
+      </div>
       {result && (
         <div className="mt-4" aria-live="polite">
           <Alert tone={result === 'ok' ? 'success' : 'error'} title={t(`security.${result}`)} />
         </div>
       )}
+      {policyError && <Alert tone="error" title={t(passwordPolicyTranslationKey(policyError))} />}
       <form className="mt-6 space-y-4" onSubmit={submit}>
         {hasPassword && (
           <PasswordInput
@@ -275,9 +316,7 @@ export function ResetPasswordPage() {
     [busy, setBusy] = useState(false),
     [confirmationError, setConfirmationError] = useState(false),
     [serviceError, setServiceError] = useState(false),
-    [policyError, setPolicyError] = useState<
-      'PASSWORD_TOO_SHORT' | 'PASSWORD_TOO_LONG' | 'PASSWORD_EQUALS_EMAIL' | null
-    >(null);
+    [policyError, setPolicyError] = useState<PasswordPolicyError | null>(null);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setConfirmationError(false);
@@ -285,6 +324,11 @@ export function ResetPasswordPage() {
     setPolicyError(null);
     if (next !== confirm) {
       setConfirmationError(true);
+      return;
+    }
+    const localPolicy = validatePasswordPolicy(next);
+    if (localPolicy) {
+      setPolicyError(localPolicy);
       return;
     }
     setBusy(true);
@@ -329,17 +373,9 @@ export function ResetPasswordPage() {
           <form className="mt-6 space-y-4" onSubmit={submit}>
             {serviceError && <Alert tone="error" title={t('auth.service')} />}
             {policyError && (
-              <Alert
-                tone="error"
-                title={t(
-                  policyError === 'PASSWORD_TOO_SHORT'
-                    ? 'security.passwordTooShort'
-                    : policyError === 'PASSWORD_TOO_LONG'
-                      ? 'security.passwordTooLong'
-                      : 'security.passwordEqualsEmail',
-                )}
-              />
+              <Alert tone="error" title={t(passwordPolicyTranslationKey(policyError))} />
             )}
+            <PasswordRules />
             <PasswordInput
               id="reset-password"
               label={t('security.new')}

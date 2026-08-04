@@ -2,6 +2,13 @@ export const PASSWORD_ALGORITHM = 'PBKDF2-HMAC-SHA-256' as const;
 export const PASSWORD_WORK_FACTOR = 600_000;
 export const PASSWORD_SALT_BYTES = 16;
 export const PASSWORD_HASH_BYTES = 32;
+export {
+  PASSWORD_MAX_CODE_POINTS,
+  PASSWORD_MIN_CODE_POINTS,
+  passwordCodePointLength,
+  validatePasswordPolicy,
+  type PasswordPolicyError,
+} from '../../shared/auth/password-policy';
 
 export interface PasswordCredential {
   algorithm: string;
@@ -66,17 +73,4 @@ export async function verifyPassword(
 /** Runs the production KDF when no credential is available, reducing enumeration timing signals. */
 export async function dummyPasswordVerification(password: string, pepper: string): Promise<void> {
   await derive(password, pepper, new Uint8Array(PASSWORD_SALT_BYTES), PASSWORD_WORK_FACTOR);
-}
-
-export type PasswordPolicyError =
-  'PASSWORD_TOO_SHORT' | 'PASSWORD_TOO_LONG' | 'PASSWORD_EQUALS_EMAIL';
-export function validatePasswordPolicy(
-  password: string,
-  normalizedEmail: string,
-): PasswordPolicyError | null {
-  const length = Array.from(password).length;
-  if (length < 15) return 'PASSWORD_TOO_SHORT';
-  if (length > 128) return 'PASSWORD_TOO_LONG';
-  if (password === normalizedEmail) return 'PASSWORD_EQUALS_EMAIL';
-  return null;
 }
