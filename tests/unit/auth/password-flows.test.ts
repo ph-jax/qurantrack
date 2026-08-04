@@ -183,6 +183,7 @@ describe('atomic password management', () => {
       request,
     );
     expect('session' in result).toBe(true);
+    expect(credential(db).work_factor).toBe(100_000);
     expect(
       (
         db.db.prepare('SELECT revoked_at FROM sessions WHERE id=?').get('old') as {
@@ -250,6 +251,7 @@ describe('password reset race protection', () => {
       consumePasswordReset(env(db), token, 'second replacement password'),
     ]);
     expect(results.sort()).toEqual(['INVALID', 'OK']);
+    expect(credential(db).work_factor).toBe(100_000);
     expect(db.count('password_reset_consumptions')).toBe(1);
     expect(
       (

@@ -291,6 +291,7 @@ describe('real SQLite/D1 membership security', () => {
         'SELECT algorithm,work_factor,salt,password_hash FROM user_password_credentials pc JOIN users u ON u.id=pc.user_id WHERE u.email=?',
       )
       .get('new@example.test') as never;
+    expect((stored as { work_factor: number }).work_factor).toBe(100_000);
     expect(await verifyPassword(onboarding.password, 'password-pepper', stored)).toBe(true);
     db.close();
   });

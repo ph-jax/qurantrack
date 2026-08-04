@@ -3,7 +3,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE user_password_credentials (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
   algorithm TEXT NOT NULL CHECK (algorithm IN ('PBKDF2-HMAC-SHA-256')),
-  work_factor INTEGER NOT NULL CHECK (work_factor >= 600000),
+  work_factor INTEGER NOT NULL CHECK (work_factor >= 100000),
   salt TEXT NOT NULL CHECK (length(salt) >= 22),
   password_hash TEXT NOT NULL CHECK (length(password_hash) >= 43),
   created_at TEXT NOT NULL,

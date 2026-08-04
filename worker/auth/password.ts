@@ -1,5 +1,6 @@
 export const PASSWORD_ALGORITHM = 'PBKDF2-HMAC-SHA-256' as const;
-export const PASSWORD_WORK_FACTOR = 600_000;
+/** Maximum PBKDF2 iteration count supported by the deployed Cloudflare Workers runtime. */
+export const PASSWORD_WORK_FACTOR = 100_000;
 export const PASSWORD_SALT_BYTES = 16;
 export const PASSWORD_HASH_BYTES = 32;
 export {

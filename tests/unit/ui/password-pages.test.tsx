@@ -78,6 +78,37 @@ describe('localized password reset policy errors', () => {
       expect(screen.queryByLabelText(/^New password/)).not.toBeInTheDocument();
     },
   );
+  it.each([
+    ['en', 'The password could not be saved because of a server problem. Reference: req-500'],
+    ['tr', 'Sunucu sorunu nedeniyle parola kaydedilemedi. Referans: req-500'],
+  ])(
+    'shows the correlated %s server error without blaming password details',
+    async (locale, message) => {
+      await i18n.changeLanguage(locale);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              error: { code: 'INTERNAL_SERVER_ERROR' },
+              requestId: 'req-500',
+            }),
+            { status: 500 },
+          ),
+        ),
+      );
+      renderReset();
+      await userEvent.type(document.getElementById('reset-password')!, 'a policy test password');
+      await userEvent.type(document.getElementById('reset-confirm')!, 'a policy test password');
+      await userEvent.click(
+        screen.getByRole('button', {
+          name: locale === 'tr' ? 'Parolayı sıfırla' : 'Reset password',
+        }),
+      );
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(screen.queryByText(/password details/i)).not.toBeInTheDocument();
+    },
+  );
 });
 
 describe('forgot-password Turnstile retry', () => {
