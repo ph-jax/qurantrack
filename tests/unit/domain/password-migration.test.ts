@@ -6,6 +6,7 @@ const migrations = [
   '0002_organization_email_sender_alias.sql',
   '0003_organization_invitations.sql',
   '0004_password_authentication.sql',
+  '0005_cloudflare_password_work_factor.sql',
 ];
 describe('password authentication migration', () => {
   it('applies after all existing migrations with foreign keys and indexes', () => {
@@ -70,5 +71,70 @@ describe('password authentication migration', () => {
         )
         .run(),
     ).toThrow();
+  });
+  it('preserves credentials while upgrading the work-factor constraint after 0004', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec('PRAGMA foreign_keys=ON');
+    for (const file of migrations.slice(0, 4)) db.exec(readFileSync(`migrations/${file}`, 'utf8'));
+    db.prepare(
+      "INSERT INTO users(id,email,display_name,created_at,updated_at) VALUES('u','u@example.test','U','n','n')",
+    ).run();
+    const insert = db.prepare('INSERT INTO user_password_credentials VALUES(?,?,?,?,?,?,?,?)');
+    expect(() =>
+      insert.run(
+        'u',
+        'PBKDF2-HMAC-SHA-256',
+        100_000,
+        's'.repeat(22),
+        'h'.repeat(43),
+        'created',
+        'updated',
+        'changed',
+      ),
+    ).toThrow();
+    insert.run(
+      'u',
+      'PBKDF2-HMAC-SHA-256',
+      600_000,
+      's'.repeat(22),
+      'h'.repeat(43),
+      'created',
+      'updated',
+      'changed',
+    );
+
+    db.exec(readFileSync('migrations/0005_cloudflare_password_work_factor.sql', 'utf8'));
+
+    expect(db.prepare('SELECT * FROM user_password_credentials WHERE user_id=?').get('u')).toEqual({
+      user_id: 'u',
+      algorithm: 'PBKDF2-HMAC-SHA-256',
+      work_factor: 600_000,
+      salt: 's'.repeat(22),
+      password_hash: 'h'.repeat(43),
+      created_at: 'created',
+      updated_at: 'updated',
+      password_changed_at: 'changed',
+    });
+    db.prepare(
+      "INSERT INTO users(id,email,display_name,created_at,updated_at) VALUES('u2','u2@example.test','U2','n','n')",
+    ).run();
+    insert.run(
+      'u2',
+      'PBKDF2-HMAC-SHA-256',
+      100_000,
+      's'.repeat(22),
+      'h'.repeat(43),
+      'created',
+      'updated',
+      'changed',
+    );
+    expect(() =>
+      db
+        .prepare('UPDATE user_password_credentials SET work_factor=? WHERE user_id=?')
+        .run(99_999, 'u2'),
+    ).toThrow();
+    expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    expect(db.prepare('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 });
+    db.close();
   });
 });

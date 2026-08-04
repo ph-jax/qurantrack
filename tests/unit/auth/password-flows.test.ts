@@ -168,6 +168,28 @@ describe('password login failures and sessions', () => {
 });
 
 describe('atomic password management', () => {
+  it('creates and persists a 100000-iteration credential after all migrations', async () => {
+    const db = new SqliteD1();
+    organization(db, 'org-a', 'Org A');
+    user(db, 'staff', 'staff@example.test');
+    membership(db, 'm', 'org-a', 'staff', 'teacher');
+
+    const result = await setPassword(
+      env(db),
+      { userId: 'staff', email: 'staff@example.test', organizationId: 'org-a' },
+      undefined,
+      'a newly created secure password',
+      request,
+    );
+
+    expect('session' in result).toBe(true);
+    const stored = credential(db);
+    expect(stored.work_factor).toBe(100_000);
+    expect(await verifyPassword('a newly created secure password', 'password-pepper', stored)).toBe(
+      true,
+    );
+    db.close();
+  });
   it('rotates every session, preserves the active organization, and audits in one batch', async () => {
     const db = await fixture();
     db.db
