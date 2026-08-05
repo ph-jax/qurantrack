@@ -110,7 +110,7 @@ Further phases continue exactly as defined in `docs/PRODUCT_SPEC.md`.
 
 ### Phase 3A — Organization settings and branding
 
-Status: Complete in code; awaiting review.
+Status: Complete.
 
 - Added authenticated GET and administrator-only PATCH APIs using the active organization from the validated server session.
 - Added prepared-statement persistence for all existing organization settings fields; no migration was required.
@@ -154,8 +154,18 @@ Status: Complete in code; awaiting review.
 
 Status: Complete following staging acceptance.
 
-Staging verification covered administrator Staff-page access, invitation creation, email submission and receipt, invitation acceptance, membership creation, and Teacher / Mentor route restrictions. Staff authentication is now email/password by default with secure magic links retained as an alternative. Students initially remain non-login records. Groups/classes, teacher assignments, rosters, enrollments, and server-enforced teacher visibility remain Phase 3B2 after the authentication-enhancement decision is implemented; approved curriculum is Phase 3C; new-organization onboarding is Phase 3D.
+Staging verification covered administrator Staff-page access, invitation creation, email submission and receipt, invitation acceptance, membership creation, and Teacher / Mentor route restrictions. Staff authentication is now email/password by default with secure magic links retained as an alternative. Students initially remain non-login records. Groups/classes, students, teacher assignments, enrollments/rosters, and server-enforced teacher visibility remain Phase 3B2; approved curriculum is Phase 3C; new-organization onboarding is Phase 3D.
 
-### Phase 2.7 — Password authentication
+### Phase 2.7 — Staff password authentication
 
-Implemented in code; awaiting review and an explicitly approved staging migration/deployment. Phase 3B1 is complete based on staging acceptance. Phase 3B2 remains out of scope.
+Status: Complete following staging acceptance.
+
+Implementation is merged. Migration `0005_cloudflare_password_work_factor.sql` was applied to the remote `qurantrack-staging` D1 database, the `qurantrack-staging` Worker was deployed with `PASSWORD_HASH_PEPPER`, and all Phase 2.7 staging acceptance tests passed. Acceptance covered password creation, password login, password change, password reset, invitation acceptance, first-password creation, magic-link fallback, validation boundaries, and organization/role context. Automated coverage remains the local regression suite; Playwright E2E is separate from the completed manual staging acceptance. Production was not deployed, migrated, or modified as part of this closeout.
+
+Final password policy: passwords must be 8–128 Unicode code points and must not equal the user's email address. Passwords use PBKDF2-HMAC-SHA-256 with 100,000 iterations for Cloudflare Workers compatibility.
+
+### Phase 3B2 — Groups, students, rosters, and teacher visibility
+
+Status: Next incomplete planned phase.
+
+Phase 3B2 will add groups/classes, student records, teacher assignments, enrollments/rosters, and server-enforced teacher visibility. No Phase 3B2 functionality is implemented by the Phase 2.7 closeout.

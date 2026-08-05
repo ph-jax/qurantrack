@@ -4,11 +4,11 @@ QuranTrack — Quran Learning & Progress Platform
 
 Kur'an Öğrenme ve Gelişim Platformu
 
-## Current status — Phase 3B1 staff access deployed to staging
+## Current status — Phase 2.7 staff authentication verified in staging
 
 QuranTrack is a full-stack Cloudflare Worker application. Phase 1 established its tenant-scoped D1 domain model, and Phase 2 completed secure staff magic-link authentication, Turnstile verification, server-controlled organization context, role authorization, session restoration, logout, and the Apps Script email relay.
 
-Phase 3A added production-backed settings for the active organization. Phase 3B1 adds production-backed staff memberships, invitations, roles, and organization switching. Phase 3B1 is complete following staging acceptance. Phase 2.7 password authentication is implemented in code and awaiting review and an explicitly approved staging deployment.
+Phase 3A added production-backed settings for the active organization. Phase 3B1 added production-backed staff memberships, invitations, roles, and organization switching. Phase 2.7 staff email/password authentication is complete: implementation is merged, migration `0005_cloudflare_password_work_factor.sql` was applied to the staging D1 database, the staging Worker was deployed with `PASSWORD_HASH_PEPPER`, and all Phase 2.7 staging acceptance tests passed. Production was not deployed or modified as part of the Phase 2.7 closeout.
 
 Uploaded logos are resized/compressed in the browser and stored in D1 as validated PNG, JPEG, or WebP data URLs with a 200 KB encoded limit. HTTPS-hosted logos are also supported. SVG and signature/type mismatches are rejected.
 
@@ -79,6 +79,7 @@ Secrets or local-only variables documented in `.dev.vars.example`:
 - `MAIL_RELAY_SECRET`
 - `MAIL_DEFAULT_FROM_ALIAS` (verified deployment default; do not commit a real address)
 - `MAIL_APPROVED_FROM_ALIASES` (comma-separated verified allowlist including the default)
+- `PASSWORD_HASH_PEPPER`
 - `TURNSTILE_SITE_KEY`
 - `TURNSTILE_SECRET_KEY`
 - `APP_BASE_URL`
@@ -129,8 +130,8 @@ Phase 2.6 authentication, Turnstile, session, organization switching, and email 
 
 Phase 3B1 adds production-backed staff memberships, single-use organization invitations, per-organization roles, and authenticated organization switching. Invitation links expire after seven days and only purpose-separated, peppered hashes are stored. Staging verification covered administrator Staff-page access, invitation creation, email submission and receipt, invitation acceptance, membership creation, and Teacher / Mentor route restrictions; Phase 3B1 is complete.
 
-Email/password is the primary staff authentication method and secure magic-link authentication remains an alternative. New users create a password during invitation acceptance, while existing passwordless users can create one after magic-link authentication. Students initially remain non-login records. Phase 3B2—groups/classes, teacher assignments, rosters, enrollments, and server-enforced teacher visibility—remains the next domain phase after the authentication-enhancement decision is implemented. Phase 3C will add approved default curriculum and program administration, and Phase 3D will add new-organization onboarding.
+Email/password is the primary staff authentication method and secure magic-link authentication remains an alternative. New users create a password during invitation acceptance, while existing passwordless users can create one after magic-link authentication. Students initially remain non-login records. Phase 2.7 is complete, and Phase 3B2—groups/classes, students, teacher assignments, enrollments/rosters, and server-enforced teacher visibility—is the next incomplete planned phase. Phase 3C will add approved default curriculum and program administration, and Phase 3D will add new-organization onboarding.
 
 ### Staff authentication
 
-Staff use email/password by default and may alternatively request a secure magic link. Existing accounts can create their first password under **Account Security**. Configure the independent `PASSWORD_HASH_PEPPER` Worker secret before exercising password flows. Phase 2.7 is awaiting review/staging deployment; production has not been changed.
+Staff use email/password by default and may alternatively request a secure magic link. Existing accounts can create their first password under **Account Security**. Passwords must be 8–128 Unicode code points and must not equal the account email address. Password hashing uses PBKDF2-HMAC-SHA-256 with 100,000 iterations for Cloudflare Workers compatibility and the independent `PASSWORD_HASH_PEPPER` Worker secret. Staging acceptance covered password creation, password login, password change, password reset, invitation acceptance, first-password creation, magic-link fallback, validation boundaries, and organization/role context. Production has not been deployed or modified for Phase 2.7.

@@ -31,6 +31,8 @@ Migration 0003 also creates `organization_invitation_acceptances` and a validati
 
 Phase 3B1 review corrections are verified with a real in-memory SQLite database (`node:sqlite`) that executes migrations 0001, 0002, and 0003 unchanged. The D1-compatible adapter executes `batch()` inside `BEGIN IMMEDIATE`/`COMMIT` and uses actual SQLite rollback, triggers, foreign keys, partial indexes, and unique constraints; failure injection throws between real SQL statements and verifies the transaction returns to its pre-acceptance state.
 
-## Migration 0004 — password authentication
+## Password authentication migrations
 
-`user_password_credentials` stores one global credential per user with algorithm and work-factor upgrade metadata. `password_reset_tokens` stores unique hashes and lifecycle timestamps. `password_reset_consumptions` plus its validation trigger provides a unique transactional claim so racing reset requests cannot both change a password. `authentication_rate_limits` atomically upserts purpose-separated hashed subjects; requests opportunistically delete up to 100 expired rows. Migration 0004 is additive and applies after 0001–0003.
+`0004_password_authentication.sql` adds password authentication storage. `user_password_credentials` stores one global credential per user with algorithm and work-factor upgrade metadata. `password_reset_tokens` stores unique hashes and lifecycle timestamps. `password_reset_consumptions` plus its validation trigger provides a unique transactional claim so racing reset requests cannot both change a password. `authentication_rate_limits` atomically upserts purpose-separated hashed subjects; requests opportunistically delete up to 100 expired rows. Migration 0004 is additive and applies after 0001–0003.
+
+`0005_cloudflare_password_work_factor.sql` rebuilds the credential table with the Cloudflare-compatible PBKDF2 work-factor constraint so new 100,000-iteration credentials can be stored. It has been applied to the remote staging D1 database `qurantrack-staging` (`bf824e5e-a67b-4592-950b-16d01cbd5689`) as part of Phase 2.7 staging verification. Production was not migrated as part of the Phase 2.7 closeout.
