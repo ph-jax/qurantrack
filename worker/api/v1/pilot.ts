@@ -1085,20 +1085,20 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
     )
       .bind(org, dedup, recipient.guardian_id, progressId)
       .first<{ id: string; status: string }>();
-    if (retry && prior?.status !== 'failed') {
-      results.push({
-        guardianId: recipient.guardian_id,
-        guardianName: recipient.guardian_name,
-        status: 'not_retryable',
-      });
-      continue;
-    }
     if (prior?.status === 'sent') {
       results.push({
         guardianId: recipient.guardian_id,
         guardianName: recipient.guardian_name,
         status: 'submitted',
         already: true,
+      });
+      continue;
+    }
+    if (retry && !prior) {
+      results.push({
+        guardianId: recipient.guardian_id,
+        guardianName: recipient.guardian_name,
+        status: 'not_retryable',
       });
       continue;
     }

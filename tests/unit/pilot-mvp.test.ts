@@ -483,11 +483,19 @@ describe('Pilot MVP API', () => {
     ]);
     expect(submitRelayMail).toHaveBeenCalledTimes(1);
     expect(submitRelayMail.mock.calls[0][1].text).toContain('Needs practice');
-    await Promise.all([
+    const alreadySubmittedRetries = await Promise.all([
       app.fetch(req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'), env(db)),
       app.fetch(req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'), env(db)),
     ]);
     expect(submitRelayMail).toHaveBeenCalledTimes(1);
+    for (const response of alreadySubmittedRetries) {
+      const body = (await response.json()) as any;
+      expect(body.results[0]).toMatchObject({ status: 'submitted', already: true });
+      expect(body.aggregate).toMatchObject({
+        code: 'already_notified',
+        counts: { submitted: 0, alreadySubmitted: 1 },
+      });
+    }
   });
   it('does not retry a failed submission without an explicit retry flag', async () => {
     auth();
@@ -831,8 +839,12 @@ describe('Pilot MVP API', () => {
     });
     db.failBatchAt = 0;
     await app.fetch(req(`/api/v1/progress-updates/${first.id}/notify`, 'POST'), env(db));
-    await app.fetch(req(`/api/v1/progress-updates/${first.id}/notify?retry=1`, 'POST'), env(db));
+    const retry = (await (
+      await app.fetch(req(`/api/v1/progress-updates/${first.id}/notify?retry=1`, 'POST'), env(db))
+    ).json()) as any;
     expect(submitRelayMail).toHaveBeenCalledTimes(1);
+    expect(retry.results[0]).toMatchObject({ status: 'ambiguous' });
+    expect(retry.aggregate.code).toBe('notification_ambiguous');
   });
   it('reports publish-only and no-recipient outcomes accurately', async () => {
     auth('teacher', 'org-a', 'teacher');
@@ -1000,5 +1012,83 @@ describe('Pilot MVP API', () => {
       'failed',
       'submitted',
     ]);
+
+    submitRelayMail.mockResolvedValueOnce({ status: 'accepted' });
+    const retry = (await (
+      await app.fetch(
+        req(`/api/v1/progress-updates/${response.id}/notify?retry=1`, 'POST'),
+        env(db),
+      )
+    ).json()) as any;
+    expect(submitRelayMail).toHaveBeenCalledTimes(3);
+    expect(retry.aggregate).toMatchObject({
+      code: 'notifications_submitted',
+      counts: { total: 2, submitted: 1, alreadySubmitted: 1 },
+    });
+    expect(retry.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: 'submitted', already: true }),
+        expect.objectContaining({ status: 'submitted' }),
+      ]),
+    );
+    expect(db.count('notification_attempts')).toBe(3);
+    expect(
+      db.db.prepare("SELECT count(*) count FROM notification_attempts WHERE status='failed'").get(),
+    ).toMatchObject({ count: 1 });
+  });
+
+  it('reports a submitted guardian plus a definitively rejected retry as partial', async () => {
+    auth();
+    for (const [name, email] of [
+      ['Existing Submitted Guardian', 'existing-submitted@example.com'],
+      ['Retry Rejected Guardian', 'retry-rejected@example.com'],
+    ]) {
+      const guardian = (await (
+        await app.fetch(req('/api/v1/guardians', 'POST', { name, email, active: true }), env(db))
+      ).json()) as any;
+      await app.fetch(
+        req('/api/v1/student-guardians', 'POST', {
+          student_id: 'stu-a',
+          guardian_id: guardian.id,
+          receive_notifications: true,
+        }),
+        env(db),
+      );
+    }
+    submitRelayMail
+      .mockResolvedValueOnce({ status: 'accepted' })
+      .mockResolvedValueOnce({ status: 'rejected_before_send' });
+    auth('teacher', 'org-a', 'teacher');
+    const published = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          operation_key: 'mixed-retry-rejected',
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          status: 'published',
+          notify: true,
+          items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    submitRelayMail.mockResolvedValueOnce({ status: 'rejected_before_send' });
+    const retry = (await (
+      await app.fetch(
+        req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'),
+        env(db),
+      )
+    ).json()) as any;
+    expect(submitRelayMail).toHaveBeenCalledTimes(3);
+    expect(retry.aggregate).toMatchObject({
+      code: 'notification_partial',
+      counts: { total: 2, submitted: 0, alreadySubmitted: 1, failed: 1 },
+    });
+    expect(retry.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: 'submitted', already: true }),
+        expect.objectContaining({ status: 'failed', retryAvailable: true }),
+      ]),
+    );
   });
 });
