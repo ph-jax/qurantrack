@@ -5,7 +5,10 @@ import { I18nextProvider } from 'react-i18next';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClassesPage, ProgressForm } from '../../../src/pages/PilotPages';
-import { pilotResultPresentation } from '../../../src/features/pilot/results';
+import {
+  pilotResultPresentation,
+  requestNotificationAction,
+} from '../../../src/features/pilot/results';
 import { i18n } from '../../../src/i18n';
 
 vi.mock('../../../src/features/auth/SessionProvider', () => ({
@@ -154,6 +157,45 @@ describe('Pilot progress result lifecycle', () => {
     expect(pilotResultPresentation('notification_failed').tone).toBe('error');
     expect(pilotResultPresentation('notification_ambiguous').tone).toBe('warning');
     expect(pilotResultPresentation('notification_preparation_failed').tone).toBe('error');
+    expect(pilotResultPresentation('notification_partial').tone).toBe('warning');
+    expect(pilotResultPresentation('notification_request_failed').tone).toBe('error');
+  });
+
+  it('returns a visible safe error for standalone HTTP, network, and parsing failures', async () => {
+    await expect(
+      requestNotificationAction(
+        '/notify',
+        vi.fn(async () => new Response('{}', { status: 500 })) as never,
+      ),
+    ).resolves.toBe('notification_request_failed');
+    await expect(
+      requestNotificationAction(
+        '/notify',
+        vi.fn(async () => Promise.reject(new Error('network'))) as never,
+      ),
+    ).resolves.toBe('notification_request_failed');
+    await expect(
+      requestNotificationAction('/notify', vi.fn(async () => new Response('not-json')) as never),
+    ).resolves.toBe('notification_request_failed');
+  });
+
+  it('uses the server aggregate for standalone success and ambiguous results', async () => {
+    await expect(
+      requestNotificationAction(
+        '/notify',
+        vi.fn(async () =>
+          Response.json({ ok: true, aggregate: { code: 'notifications_submitted' } }),
+        ) as never,
+      ),
+    ).resolves.toBe('notifications_submitted');
+    await expect(
+      requestNotificationAction(
+        '/notify',
+        vi.fn(async () =>
+          Response.json({ ok: true, aggregate: { code: 'notification_ambiguous' } }),
+        ) as never,
+      ),
+    ).resolves.toBe('notification_ambiguous');
   });
 
   it('keeps a successful result visible after the editable form remounts', async () => {

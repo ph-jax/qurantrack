@@ -800,8 +800,10 @@ export async function saveProgress(c: Ctx) {
       ok: true,
       id: existing.id,
       idempotent: true,
-      publication: b.notify === true ? notificationSummary(notification) : 'already_published',
+      publication:
+        b.notify === true ? aggregateNotificationResults(notification).code : 'already_published',
       notification,
+      notificationAggregate: b.notify === true ? aggregateNotificationResults(notification) : null,
     });
   }
 
@@ -974,23 +976,46 @@ export async function saveProgress(c: Ctx) {
     publication:
       requestedStatus === 'published'
         ? b.notify === true
-          ? notificationSummary(notification)
+          ? aggregateNotificationResults(notification).code
           : 'published_only'
         : 'draft_saved',
     notification,
+    notificationAggregate:
+      requestedStatus === 'published' && b.notify === true
+        ? aggregateNotificationResults(notification)
+        : null,
   });
 }
 
-function notificationSummary(results: AnyNotificationResult[] | null) {
-  if (!results?.length) return 'no_recipients';
-  if (results.some((result) => result.status === 'not_reserved'))
-    return 'notification_preparation_failed';
-  if (results.some((result) => result.status === 'ambiguous')) return 'notification_ambiguous';
-  if (results.some((result) => result.status === 'failed')) return 'notification_failed';
-  if (results.every((result) => result.status === 'submitted' && result.already))
-    return 'already_notified';
-  if (results.some((result) => result.status === 'submitted')) return 'notifications_submitted';
-  return 'already_notified';
+export function aggregateNotificationResults(results: AnyNotificationResult[] | null) {
+  const counts = {
+    total: results?.length ?? 0,
+    submitted: 0,
+    alreadySubmitted: 0,
+    failed: 0,
+    ambiguous: 0,
+    notReserved: 0,
+    notRetryable: 0,
+    skipped: 0,
+  };
+  for (const result of results ?? []) {
+    if (result.status === 'submitted') counts[result.already ? 'alreadySubmitted' : 'submitted']++;
+    else if (result.status === 'failed') counts.failed++;
+    else if (result.status === 'ambiguous') counts.ambiguous++;
+    else if (result.status === 'not_reserved') counts.notReserved++;
+    else if (result.status === 'not_retryable') counts.notRetryable++;
+    else counts.skipped++;
+  }
+  let code = 'notification_partial';
+  if (!counts.total) code = 'no_recipients';
+  else if (counts.ambiguous === counts.total) code = 'notification_ambiguous';
+  else if (counts.failed === counts.total) code = 'notification_failed';
+  else if (counts.notReserved === counts.total) code = 'notification_preparation_failed';
+  else if (counts.notRetryable === counts.total) code = 'notification_not_retryable';
+  else if (counts.alreadySubmitted === counts.total) code = 'already_notified';
+  else if (counts.submitted + counts.alreadySubmitted === counts.total)
+    code = 'notifications_submitted';
+  return { code, counts };
 }
 
 const outcomeLabels: Record<string, Record<string, string>> = {
@@ -1027,7 +1052,7 @@ function emailHtml(locale: string, data: any) {
 export async function notifyProgress(c: Ctx) {
   const results = await submitNotifications(c, param(c, 'id'), c.req.query('retry') === '1');
   if (results instanceof Response) return results;
-  return c.json({ ok: true, results });
+  return c.json({ ok: true, results, aggregate: aggregateNotificationResults(results) });
 }
 async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
   const org = c.get('auth').organizationId;
@@ -1056,10 +1081,18 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
   for (const recipient of recipients) {
     const dedup = `progress:${progressId}:guardian:${recipient.guardian_id}`;
     const prior = await c.env.DB.prepare(
-      'SELECT id,status FROM notification_log WHERE organization_id=? AND deduplication_key=?',
+      "SELECT id,status FROM notification_log WHERE organization_id=? AND deduplication_key=? AND guardian_id=? AND progress_update_id=? AND notification_type='progress_update'",
     )
-      .bind(org, dedup)
+      .bind(org, dedup, recipient.guardian_id, progressId)
       .first<{ id: string; status: string }>();
+    if (retry && prior?.status !== 'failed') {
+      results.push({
+        guardianId: recipient.guardian_id,
+        guardianName: recipient.guardian_name,
+        status: 'not_retryable',
+      });
+      continue;
+    }
     if (prior?.status === 'sent') {
       results.push({
         guardianId: recipient.guardian_id,
@@ -1234,7 +1267,7 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
       });
       continue;
     }
-    if (relayResult.status === 'rejected') {
+    if (relayResult.status === 'rejected_before_send') {
       const completed = now();
       const safeMessage = `Email relay submission failed. Reference ${c.get('requestId')}`;
       try {
@@ -1310,7 +1343,7 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
   }
   return results;
 }
-type AnyNotificationResult = {
+export type AnyNotificationResult = {
   guardianId: string;
   guardianName?: string;
   status: string;

@@ -54,7 +54,7 @@ describe('mail relay protocol', () => {
   it('treats JSON responses other than ok true as relay failures', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => Response.json({ ok: false, error: 'replay' })),
+      vi.fn(async () => Response.json({ ok: false, error: 'invalid_recipient' })),
     );
     await expect(
       sendRelayMail(
@@ -100,9 +100,23 @@ describe('mail relay protocol', () => {
     await expect(submitRelayMail(env, message)).resolves.toEqual({ status: 'accepted' });
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => Response.json({ ok: false, error: 'replay' })),
+      vi.fn(async () => Response.json({ ok: false, error: 'invalid_recipient' })),
     );
-    await expect(submitRelayMail(env, message)).resolves.toEqual({ status: 'rejected' });
+    await expect(submitRelayMail(env, message)).resolves.toEqual({
+      status: 'rejected_before_send',
+    });
+    for (const error of ['relay_unavailable', 'replay', 'unknown_code']) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => Response.json({ ok: false, error })),
+      );
+      await expect(submitRelayMail(env, message)).resolves.toEqual({ status: 'ambiguous' });
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ ok: false, error: 'invalid_recipient' }, { status: 500 })),
+    );
+    await expect(submitRelayMail(env, message)).resolves.toEqual({ status: 'ambiguous' });
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('not-json', { status: 200 })),

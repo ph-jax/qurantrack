@@ -14,6 +14,7 @@ vi.mock('../../worker/email/relay', async (orig) => ({
   submitRelayMail,
 }));
 import app from '../../worker/index';
+import { aggregateNotificationResults } from '../../worker/api/v1/pilot';
 const env = (db: SqliteD1) => ({
   DB: db as unknown as D1Database,
   MAIL_DEFAULT_FROM_ALIAS: 'noreply@example.com',
@@ -247,7 +248,7 @@ describe('Pilot MVP API', () => {
       env(db),
     );
     submitRelayMail
-      .mockResolvedValueOnce({ status: 'rejected' })
+      .mockResolvedValueOnce({ status: 'rejected_before_send' })
       .mockResolvedValue({ status: 'accepted' });
     auth('teacher', 'org-a', 'teacher');
     const res = (await (
@@ -482,10 +483,10 @@ describe('Pilot MVP API', () => {
     ]);
     expect(submitRelayMail).toHaveBeenCalledTimes(1);
     expect(submitRelayMail.mock.calls[0][1].text).toContain('Needs practice');
-    await app.fetch(
-      req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'),
-      env(db),
-    );
+    await Promise.all([
+      app.fetch(req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'), env(db)),
+      app.fetch(req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'), env(db)),
+    ]);
     expect(submitRelayMail).toHaveBeenCalledTimes(1);
   });
   it('does not retry a failed submission without an explicit retry flag', async () => {
@@ -510,7 +511,7 @@ describe('Pilot MVP API', () => {
     );
     auth('teacher', 'org-a', 'teacher');
     submitRelayMail
-      .mockResolvedValueOnce({ status: 'rejected' })
+      .mockResolvedValueOnce({ status: 'rejected_before_send' })
       .mockResolvedValue({ status: 'accepted' });
     const published = (await (
       await app.fetch(
@@ -526,10 +527,10 @@ describe('Pilot MVP API', () => {
     ).json()) as any;
     await app.fetch(req(`/api/v1/progress-updates/${published.id}/notify`, 'POST'), env(db));
     expect(submitRelayMail).toHaveBeenCalledTimes(1);
-    await app.fetch(
-      req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'),
-      env(db),
-    );
+    await Promise.all([
+      app.fetch(req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'), env(db)),
+      app.fetch(req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'), env(db)),
+    ]);
     expect(submitRelayMail).toHaveBeenCalledTimes(2);
     expect(db.count('notification_attempts')).toBe(2);
   });
@@ -871,10 +872,133 @@ describe('Pilot MVP API', () => {
       expect(locale.pilot.messages.notification_failed).toBeTruthy();
       expect(locale.pilot.messages.notification_ambiguous).toBeTruthy();
       expect(locale.pilot.messages.notification_preparation_failed).toBeTruthy();
+      expect(locale.pilot.messages.notification_partial).toBeTruthy();
+      expect(locale.pilot.messages.notification_not_retryable).toBeTruthy();
+      expect(locale.pilot.messages.notification_request_failed).toBeTruthy();
       expect(locale.pilot.messages.already_notified).toBeTruthy();
       expect(locale.pilot.messages.published_only).toBeTruthy();
       expect(locale.pilot.notification.ambiguous).toBeTruthy();
       expect(locale.pilot.notification.preparationFailed).toBeTruthy();
     }
+  });
+  it('aggregates mixed recipient outcomes without losing successful submissions', () => {
+    const result = (status: string, already = false) => ({ guardianId: status, status, already });
+    const cases = [
+      [[result('submitted')], 'notifications_submitted'],
+      [[], 'no_recipients'],
+      [[result('submitted', true)], 'already_notified'],
+      [[result('submitted'), result('failed')], 'notification_partial'],
+      [[result('submitted'), result('ambiguous')], 'notification_partial'],
+      [[result('submitted'), result('not_reserved')], 'notification_partial'],
+      [[result('submitted', true), result('failed')], 'notification_partial'],
+      [[result('failed'), result('failed')], 'notification_failed'],
+      [[result('ambiguous'), result('ambiguous')], 'notification_ambiguous'],
+      [[result('not_reserved')], 'notification_preparation_failed'],
+    ] as const;
+    for (const [results, code] of cases) {
+      const aggregate = aggregateNotificationResults([...results]);
+      expect(aggregate.code).toBe(code);
+      expect(
+        aggregate.counts.submitted +
+          aggregate.counts.alreadySubmitted +
+          aggregate.counts.failed +
+          aggregate.counts.ambiguous +
+          aggregate.counts.notReserved +
+          aggregate.counts.notRetryable +
+          aggregate.counts.skipped,
+      ).toBe(aggregate.counts.total);
+      if (results.some((item) => item.status === 'submitted') && results.length > 1)
+        expect(aggregate.code).not.toBe('notification_preparation_failed');
+    }
+  });
+  it('does not let retry initiate a first notification for a newly linked guardian', async () => {
+    auth('teacher', 'org-a', 'teacher');
+    const published = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          operation_key: 'retry-first-time',
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          status: 'published',
+          items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    auth();
+    const guardian = (await (
+      await app.fetch(
+        req('/api/v1/guardians', 'POST', {
+          name: 'Later Guardian',
+          email: 'later@example.com',
+          active: true,
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    await app.fetch(
+      req('/api/v1/student-guardians', 'POST', {
+        student_id: 'stu-a',
+        guardian_id: guardian.id,
+        receive_notifications: true,
+      }),
+      env(db),
+    );
+    auth('teacher', 'org-a', 'teacher');
+    const retry = (await (
+      await app.fetch(
+        req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'),
+        env(db),
+      )
+    ).json()) as any;
+    expect(retry.results[0].status).toBe('not_retryable');
+    expect(retry.aggregate.code).toBe('notification_not_retryable');
+    expect(submitRelayMail).not.toHaveBeenCalled();
+  });
+  it('returns truthful structured counts for mixed guardian submissions', async () => {
+    auth();
+    for (const [name, email] of [
+      ['Submitted Guardian', 'submitted@example.com'],
+      ['Rejected Guardian', 'rejected@example.com'],
+    ]) {
+      const guardian = (await (
+        await app.fetch(req('/api/v1/guardians', 'POST', { name, email, active: true }), env(db))
+      ).json()) as any;
+      await app.fetch(
+        req('/api/v1/student-guardians', 'POST', {
+          student_id: 'stu-a',
+          guardian_id: guardian.id,
+          receive_notifications: true,
+        }),
+        env(db),
+      );
+    }
+    submitRelayMail
+      .mockResolvedValueOnce({ status: 'accepted' })
+      .mockResolvedValueOnce({ status: 'rejected_before_send' });
+    auth('teacher', 'org-a', 'teacher');
+    const response = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          operation_key: 'mixed-guardians',
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          status: 'published',
+          notify: true,
+          items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    expect(response.publication).toBe('notification_partial');
+    expect(response.notificationAggregate.counts).toMatchObject({
+      total: 2,
+      submitted: 1,
+      failed: 1,
+    });
+    expect(response.notification.map((item: any) => item.status).sort()).toEqual([
+      'failed',
+      'submitted',
+    ]);
   });
 });

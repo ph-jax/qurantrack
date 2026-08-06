@@ -338,6 +338,12 @@ export default {
         'Yayınlandı. Bir veli gönderiminin durumu belirsiz ve yeniden denemeye kapatıldı.',
       notification_preparation_failed:
         'Yayınlandı ancak veli bildirimi hazırlanamadı. E-posta gönderilmedi.',
+      notification_partial:
+        'Bazı veli bildirimleri farklı sonuçlandı. Her alıcının durumunu inceleyin.',
+      notification_not_retryable:
+        'Bu bildirim yeniden gönderilmeye uygun değil. Yeni e-posta gönderilmedi.',
+      notification_request_failed:
+        'Bildirim isteği tamamlanamadı. Bağlantınızı kontrol edip yeniden deneyin.',
       already_notified: 'Zaten yayınlandı ve veli bildirimleri daha önce işlendi.',
       already_published: 'Bu ilerleme güncellemesi zaten yayınlandı.',
     },

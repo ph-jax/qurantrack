@@ -339,6 +339,12 @@ export default {
         'Published. A guardian submission is uncertain and has been blocked from retry.',
       notification_preparation_failed:
         'Published, but guardian notification preparation failed. No email was submitted.',
+      notification_partial:
+        'Published with partial guardian notification results. Review each recipient status.',
+      notification_not_retryable:
+        'This notification is not eligible for retry. No new email was submitted.',
+      notification_request_failed:
+        'The notification request could not be completed. Check your connection and try again.',
       already_notified: 'Already published and guardian notifications were already handled.',
       already_published: 'This progress update was already published.',
     },

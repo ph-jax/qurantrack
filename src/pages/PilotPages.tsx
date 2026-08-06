@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Alert, Badge, Button, Card, FormField, Input, Spinner, Textarea } from '../components/ui';
 import { useSession } from '../features/auth/SessionProvider';
-import { pilotResultPresentation } from '../features/pilot/results';
+import { pilotResultPresentation, requestNotificationAction } from '../features/pilot/results';
 
 type Any = Record<string, any>;
 async function api<T = Any>(url: string, init?: RequestInit) {
@@ -681,6 +681,7 @@ export function StudentProgressPage() {
   const [notice, setNotice] = useState('');
   const [operationResult, setOperationResult] = useState('');
   const [notificationBusy, setNotificationBusy] = useState('');
+  const notificationBusyRef = useRef(false);
   if (summary.error || program.error || (admin && setup.error))
     return <Alert tone="error" title={t('pilot.loadError')} />;
   if (!summary.data || !program.data || (admin && !setup.data))
@@ -785,14 +786,18 @@ export function StudentProgressPage() {
                   variant="secondary"
                   disabled={notificationBusy === update.id}
                   onClick={async () => {
+                    if (notificationBusyRef.current) return;
+                    notificationBusyRef.current = true;
                     setNotificationBusy(update.id);
                     try {
-                      const result = await api(`/api/v1/progress-updates/${update.id}/notify`, {
-                        method: 'POST',
-                      });
-                      setNotice(notificationNotice(result.results));
+                      setNotice(
+                        await requestNotificationAction(
+                          `/api/v1/progress-updates/${update.id}/notify`,
+                        ),
+                      );
                       await summary.reload();
                     } finally {
+                      notificationBusyRef.current = false;
                       setNotificationBusy('');
                     }
                   }}
@@ -808,15 +813,18 @@ export function StudentProgressPage() {
                     type="button"
                     disabled={notificationBusy === update.id}
                     onClick={async () => {
+                      if (notificationBusyRef.current) return;
+                      notificationBusyRef.current = true;
                       setNotificationBusy(update.id);
                       try {
-                        const result = await api(
-                          `/api/v1/progress-updates/${update.id}/notify?retry=1`,
-                          { method: 'POST' },
+                        setNotice(
+                          await requestNotificationAction(
+                            `/api/v1/progress-updates/${update.id}/notify?retry=1`,
+                          ),
                         );
-                        setNotice(notificationNotice(result.results));
                         await summary.reload();
                       } finally {
+                        notificationBusyRef.current = false;
                         setNotificationBusy('');
                       }
                     }}
@@ -848,14 +856,6 @@ export function StudentProgressPage() {
       </Card>
     </div>
   );
-}
-function notificationNotice(results: Any[]) {
-  if (!results.length) return 'noRecipients';
-  if (results.some((result) => result.status === 'not_reserved')) return 'preparationFailed';
-  if (results.some((result) => result.status === 'ambiguous')) return 'ambiguous';
-  if (results.some((result) => result.status === 'failed')) return 'failed';
-  if (results.some((result) => result.status === 'submitted')) return 'submitted';
-  return 'alreadyNotified';
 }
 function TrackLevelControl({
   studentId,
