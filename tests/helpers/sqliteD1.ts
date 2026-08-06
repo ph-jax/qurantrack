@@ -45,6 +45,8 @@ export class SqliteD1 {
       '0005_cloudflare_password_work_factor.sql',
       '0006_guardian_preferred_locale.sql',
       '0007_notification_attempts.sql',
+      '0008_progress_idempotency.sql',
+      '0009_progress_publication_claim.sql',
     ])
       this.db.exec(readFileSync(`migrations/${migration}`, 'utf8'));
   }

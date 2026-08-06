@@ -58,12 +58,14 @@ function SelectField({
   value,
   onChange,
   children,
+  disabled = false,
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
   children: ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <FormField id={id} label={label}>
@@ -71,6 +73,7 @@ function SelectField({
         id={id}
         className="settings-select"
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
       >
         {children}
@@ -101,6 +104,7 @@ function Editor({
     type?: string;
     textarea?: boolean;
     options?: { value: string; label: string }[];
+    disabled?: boolean;
   }[];
   onSave: (value: Any) => Promise<void>;
   onCancel?: () => void;
@@ -129,6 +133,7 @@ function Editor({
               id={`${title}-${field.key}`}
               label={field.label}
               value={value[field.key] ?? ''}
+              disabled={field.disabled}
               onChange={(next) => setValue({ ...value, [field.key]: next })}
             >
               <option value="">{t('pilot.select')}</option>
@@ -202,6 +207,7 @@ export function ClassesPage() {
       <Header title={t('pilot.classes.title')} description={t('pilot.classes.description')} />
       {admin && (
         <Editor
+          key={editing?.id ?? 'create-class'}
           title={editing ? t('pilot.classes.edit') : t('pilot.classes.create')}
           initial={editing ?? undefined}
           fields={[
@@ -425,6 +431,7 @@ export function StudentsPage() {
       {admin && (
         <div className="grid gap-4 lg:grid-cols-2">
           <Editor
+            key={studentEdit?.id ?? 'create-student'}
             title={studentEdit ? t('pilot.students.edit') : t('pilot.students.create')}
             initial={studentEdit ?? undefined}
             fields={[
@@ -440,6 +447,7 @@ export function StudentsPage() {
             onCancel={studentEdit ? () => setStudentEdit(null) : undefined}
           />
           <Editor
+            key={guardianEdit?.id ?? 'create-guardian'}
             title={guardianEdit ? t('pilot.guardians.edit') : t('pilot.guardians.create')}
             initial={guardianEdit ?? undefined}
             fields={[
@@ -532,6 +540,7 @@ export function ProgramPage() {
             {
               key: 'track_id',
               label: t('pilot.track'),
+              disabled: !!editing,
               options: tracks.map((x: Any) => ({ value: x.id, label: x.name })),
             },
             { key: 'code', label: t('pilot.code') },
@@ -543,6 +552,7 @@ export function ProgramPage() {
             {
               key: 'level_id',
               label: t('pilot.level'),
+              disabled: !!editing,
               options: levels.map((x: Any) => ({
                 value: x.id,
                 label: `${tracks.find((t: Any) => t.id === x.track_id)?.name} · ${x.name}`,
@@ -666,14 +676,19 @@ export function StudentProgressPage() {
   const program = useLoad('/api/v1/program');
   const setup = useLoad(admin ? '/api/v1/pilot/setup-options' : null);
   const [draft, setDraft] = useState<Any | null>(null);
+  const [formEpoch, setFormEpoch] = useState(0);
   const [notice, setNotice] = useState('');
+  const [notificationBusy, setNotificationBusy] = useState('');
   if (summary.error || program.error || (admin && setup.error))
     return <Alert tone="error" title={t('pilot.loadError')} />;
   if (!summary.data || !program.data || (admin && !setup.data))
     return <Spinner label={t('pilot.loading')} />;
-  const refresh = async () => {
+  const refresh = async (resetProgressForm = false) => {
     await Promise.all([summary.reload(), setup.reload()]);
-    setDraft(null);
+    if (resetProgressForm) {
+      setDraft(null);
+      setFormEpoch((value) => value + 1);
+    }
   };
   return (
     <div className="space-y-5">
@@ -711,7 +726,7 @@ export function StudentProgressPage() {
         {!summary.data.tracks.length && <p>{t('pilot.empty')}</p>}
       </Card>
       <ProgressForm
-        key={draft?.id ?? 'new'}
+        key={draft?.id ?? `new-${formEpoch}`}
         studentId={id!}
         summary={summary.data}
         draft={draft}
@@ -759,18 +774,18 @@ export function StudentProgressPage() {
                 <Button
                   type="button"
                   variant="secondary"
+                  disabled={notificationBusy === update.id}
                   onClick={async () => {
-                    const result = await api(`/api/v1/progress-updates/${update.id}/notify`, {
-                      method: 'POST',
-                    });
-                    setNotice(
-                      result.results.some((x: Any) => x.status === 'failed')
-                        ? 'failed'
-                        : result.results.some((x: Any) => x.status === 'sent')
-                          ? 'submitted'
-                          : 'skipped',
-                    );
-                    await summary.reload();
+                    setNotificationBusy(update.id);
+                    try {
+                      const result = await api(`/api/v1/progress-updates/${update.id}/notify`, {
+                        method: 'POST',
+                      });
+                      setNotice(notificationNotice(result.results));
+                      await summary.reload();
+                    } finally {
+                      setNotificationBusy('');
+                    }
                   }}
                 >
                   {t('pilot.sendUpdate')}
@@ -782,17 +797,19 @@ export function StudentProgressPage() {
                 ) && (
                   <Button
                     type="button"
+                    disabled={notificationBusy === update.id}
                     onClick={async () => {
-                      const result = await api(
-                        `/api/v1/progress-updates/${update.id}/notify?retry=1`,
-                        { method: 'POST' },
-                      );
-                      setNotice(
-                        result.results.some((x: Any) => x.status === 'sent')
-                          ? 'submitted'
-                          : 'failed',
-                      );
-                      await summary.reload();
+                      setNotificationBusy(update.id);
+                      try {
+                        const result = await api(
+                          `/api/v1/progress-updates/${update.id}/notify?retry=1`,
+                          { method: 'POST' },
+                        );
+                        setNotice(notificationNotice(result.results));
+                        await summary.reload();
+                      } finally {
+                        setNotificationBusy('');
+                      }
                     }}
                   >
                     {t('pilot.retry')}
@@ -822,6 +839,13 @@ export function StudentProgressPage() {
       </Card>
     </div>
   );
+}
+function notificationNotice(results: Any[]) {
+  if (!results.length) return 'noRecipients';
+  if (results.some((result) => result.status === 'ambiguous')) return 'ambiguous';
+  if (results.some((result) => result.status === 'failed')) return 'failed';
+  if (results.some((result) => result.status === 'submitted')) return 'submitted';
+  return 'alreadyNotified';
 }
 function TrackLevelControl({
   studentId,
@@ -1063,7 +1087,7 @@ function ProgressForm({
   studentId: string;
   summary: Any;
   draft: Any | null;
-  onDone: () => Promise<void>;
+  onDone: (resetProgressForm?: boolean) => Promise<void>;
 }) {
   const { t } = useTranslation();
   const [value, setValue] = useState<Any>(
@@ -1079,10 +1103,14 @@ function ProgressForm({
           class_id: summary.classes[0]?.id ?? '',
           update_date: new Date().toISOString().slice(0, 10),
           items: [{}],
+          operation_key: crypto.randomUUID(),
         },
   );
   const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
   async function save(status: string, notify = false) {
+    if (busy) return;
+    setBusy(true);
     setMessage('saving');
     try {
       const result = await api('/api/v1/progress-updates', {
@@ -1094,17 +1122,13 @@ function ProgressForm({
           items: value.items.filter((item: Any) => item.lesson_id),
         }),
       });
-      const notification = result.notification;
-      setMessage(
-        notification?.some((x: Any) => x.status === 'failed')
-          ? 'notificationFailed'
-          : status === 'draft'
-            ? 'draftSaved'
-            : 'published',
-      );
-      await onDone();
+      setValue((current: Any) => ({ ...current, id: result.id }));
+      setMessage(result.publication || (status === 'draft' ? 'draft_saved' : 'published_only'));
+      await onDone(status === 'published');
     } catch {
       setMessage('saveError');
+    } finally {
+      setBusy(false);
     }
   }
   return (
@@ -1224,21 +1248,38 @@ function ProgressForm({
           <Button
             type="button"
             variant="secondary"
-            disabled={!value.class_id}
+            disabled={!value.class_id || busy}
             onClick={() => save('draft')}
           >
             {t('pilot.saveDraft')}
           </Button>
-          <Button type="button" disabled={!value.class_id} onClick={() => save('published')}>
+          <Button
+            type="button"
+            disabled={!value.class_id || busy}
+            onClick={() => save('published')}
+          >
             {t('pilot.publish')}
           </Button>
-          <Button type="button" disabled={!value.class_id} onClick={() => save('published', true)}>
+          <Button
+            type="button"
+            disabled={!value.class_id || busy}
+            onClick={() => save('published', true)}
+          >
             {t('pilot.publishNotify')}
           </Button>
         </div>
         {message && (
           <Alert
-            tone={['saveError', 'notificationFailed'].includes(message) ? 'error' : 'success'}
+            tone={
+              [
+                'saveError',
+                'notification_failed',
+                'notification_ambiguous',
+                'not_reserved',
+              ].includes(message)
+                ? 'error'
+                : 'success'
+            }
             title={t(`pilot.messages.${message}`)}
           />
         )}

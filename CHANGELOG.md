@@ -105,3 +105,5 @@ All notable changes to QuranTrack will be documented in this file.
 - Documented that progress notification `sent` status means the mail relay accepted/submitted the message, not confirmed inbox delivery.
 - Completed production-backed administrator setup controls, editable teacher drafts, and English/Turkish localization for pilot screens and guardian-email outcome labels.
 - Tightened tenant relationship validation, made progress publication atomic, and added `0007_notification_attempts.sql` for concurrency-safe notification reservation with retained retry history.
+- Fixed shared administrator editor remounting and update SQL so selecting a different class, student, guardian, track, level, or lesson cannot retain stale form values or create an unintended duplicate.
+- Added `0008_progress_idempotency.sql` and `0009_progress_publication_claim.sql`, stable draft-to-publication idempotency, backdated lesson-state ordering, immutable level/lesson parents, honest ambiguous notification handling, accurate Publish & Notify results, and Apps Script `htmlBody` support. The Apps Script source was not deployed.

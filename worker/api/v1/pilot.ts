@@ -199,14 +199,26 @@ export async function saveClass(c: Ctx) {
       : 'INSERT INTO classes (name,description,meeting_schedule,active,updated_at,id,organization_id,created_at) VALUES (?,?,?,?,?,?,?,?)',
   )
     .bind(
-      str(b.name, 120),
-      opt(b.description),
-      opt(b.meeting_schedule),
-      bool(b.active) ? 1 : 0,
-      t,
-      cid,
-      org,
-      t,
+      ...(exists
+        ? [
+            str(b.name, 120),
+            opt(b.description),
+            opt(b.meeting_schedule),
+            bool(b.active) ? 1 : 0,
+            t,
+            cid,
+            org,
+          ]
+        : [
+            str(b.name, 120),
+            opt(b.description),
+            opt(b.meeting_schedule),
+            bool(b.active) ? 1 : 0,
+            t,
+            cid,
+            org,
+            t,
+          ]),
     )
     .run();
   await audit(c, exists ? 'class.update' : 'class.create', 'class', cid, 'Class saved');
@@ -308,16 +320,30 @@ export async function saveStudent(c: Ctx) {
       : 'INSERT INTO students (external_id,first_name,last_name,display_name,active,notes,updated_at,id,organization_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
   )
     .bind(
-      opt(b.external_id, 80),
-      opt(b.first_name, 80),
-      opt(b.last_name, 80),
-      str(b.display_name, 160),
-      bool(b.active) ? 1 : 0,
-      opt(b.notes, 1000),
-      t,
-      sid,
-      org,
-      t,
+      ...(exists
+        ? [
+            opt(b.external_id, 80),
+            opt(b.first_name, 80),
+            opt(b.last_name, 80),
+            str(b.display_name, 160),
+            bool(b.active) ? 1 : 0,
+            opt(b.notes, 1000),
+            t,
+            sid,
+            org,
+          ]
+        : [
+            opt(b.external_id, 80),
+            opt(b.first_name, 80),
+            opt(b.last_name, 80),
+            str(b.display_name, 160),
+            bool(b.active) ? 1 : 0,
+            opt(b.notes, 1000),
+            t,
+            sid,
+            org,
+            t,
+          ]),
     )
     .run();
   await audit(c, exists ? 'student.update' : 'student.create', 'student', sid, 'Student saved');
@@ -382,15 +408,28 @@ export async function saveGuardian(c: Ctx) {
       : 'INSERT INTO guardians (name,email,phone,active,preferred_locale,updated_at,id,organization_id,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
   )
     .bind(
-      str(b.name, 120),
-      str(b.email, 254).toLowerCase(),
-      opt(b.phone, 40),
-      bool(b.active) ? 1 : 0,
-      locale,
-      t,
-      gid,
-      org,
-      t,
+      ...(exists
+        ? [
+            str(b.name, 120),
+            str(b.email, 254).toLowerCase(),
+            opt(b.phone, 40),
+            bool(b.active) ? 1 : 0,
+            locale,
+            t,
+            gid,
+            org,
+          ]
+        : [
+            str(b.name, 120),
+            str(b.email, 254).toLowerCase(),
+            opt(b.phone, 40),
+            bool(b.active) ? 1 : 0,
+            locale,
+            t,
+            gid,
+            org,
+            t,
+          ]),
     )
     .run();
   await audit(c, exists ? 'guardian.update' : 'guardian.create', 'guardian', gid, 'Guardian saved');
@@ -475,15 +514,28 @@ export async function saveTrack(c: Ctx) {
       : 'INSERT INTO program_tracks (code,name,description,sort_order,active,updated_at,id,organization_id,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
   )
     .bind(
-      str(b.code, 40),
-      str(b.name, 120),
-      opt(b.description),
-      Number(b.sort_order) || 0,
-      bool(b.active) ? 1 : 0,
-      t,
-      rid,
-      org,
-      t,
+      ...(ex
+        ? [
+            str(b.code, 40),
+            str(b.name, 120),
+            opt(b.description),
+            Number(b.sort_order) || 0,
+            bool(b.active) ? 1 : 0,
+            t,
+            rid,
+            org,
+          ]
+        : [
+            str(b.code, 40),
+            str(b.name, 120),
+            opt(b.description),
+            Number(b.sort_order) || 0,
+            bool(b.active) ? 1 : 0,
+            t,
+            rid,
+            org,
+            t,
+          ]),
     )
     .run();
   return c.json({ ok: true, id: rid });
@@ -499,26 +551,40 @@ export async function saveLevel(c: Ctx) {
     .bind(str(b.track_id), org)
     .first();
   if (!ok || !str(b.code, 40) || !str(b.name, 120)) return json(c, 404);
-  const ex = await c.env.DB.prepare('SELECT 1 FROM levels WHERE id=? AND organization_id=?')
+  const ex = await c.env.DB.prepare('SELECT track_id FROM levels WHERE id=? AND organization_id=?')
     .bind(rid, org)
-    .first();
+    .first<{ track_id: string }>();
   if (str(b.id) && !ex) return json(c, 404);
+  if (ex && ex.track_id !== str(b.track_id)) return json(c, 400);
   await c.env.DB.prepare(
     ex
-      ? 'UPDATE levels SET track_id=?,code=?,name=?,description=?,sort_order=?,active=?,updated_at=? WHERE id=? AND organization_id=?'
+      ? 'UPDATE levels SET code=?,name=?,description=?,sort_order=?,active=?,updated_at=? WHERE id=? AND organization_id=?'
       : 'INSERT INTO levels (track_id,code,name,description,sort_order,active,updated_at,id,organization_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
   )
     .bind(
-      str(b.track_id),
-      str(b.code, 40),
-      str(b.name, 120),
-      opt(b.description),
-      Number(b.sort_order) || 0,
-      bool(b.active) ? 1 : 0,
-      t,
-      rid,
-      org,
-      t,
+      ...(ex
+        ? [
+            str(b.code, 40),
+            str(b.name, 120),
+            opt(b.description),
+            Number(b.sort_order) || 0,
+            bool(b.active) ? 1 : 0,
+            t,
+            rid,
+            org,
+          ]
+        : [
+            str(b.track_id),
+            str(b.code, 40),
+            str(b.name, 120),
+            opt(b.description),
+            Number(b.sort_order) || 0,
+            bool(b.active) ? 1 : 0,
+            t,
+            rid,
+            org,
+            t,
+          ]),
     )
     .run();
   return c.json({ ok: true, id: rid });
@@ -534,27 +600,43 @@ export async function saveLesson(c: Ctx) {
     .bind(str(b.level_id), org)
     .first();
   if (!ok || !str(b.code, 40) || !str(b.name, 160)) return json(c, 404);
-  const ex = await c.env.DB.prepare('SELECT 1 FROM lessons WHERE id=? AND organization_id=?')
+  const ex = await c.env.DB.prepare('SELECT level_id FROM lessons WHERE id=? AND organization_id=?')
     .bind(rid, org)
-    .first();
+    .first<{ level_id: string }>();
   if (str(b.id) && !ex) return json(c, 404);
+  if (ex && ex.level_id !== str(b.level_id)) return json(c, 400);
   await c.env.DB.prepare(
     ex
       ? 'UPDATE lessons SET level_id=?,code=?,name=?,description=?,sort_order=?,default_homework=?,active=?,updated_at=? WHERE id=? AND organization_id=?'
       : 'INSERT INTO lessons (level_id,code,name,description,sort_order,default_homework,active,updated_at,id,organization_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
   )
     .bind(
-      str(b.level_id),
-      str(b.code, 40),
-      str(b.name, 160),
-      opt(b.description),
-      Number(b.sort_order) || 0,
-      opt(b.default_homework),
-      bool(b.active) ? 1 : 0,
-      t,
-      rid,
-      org,
-      t,
+      ...(ex
+        ? [
+            str(b.level_id),
+            str(b.code, 40),
+            str(b.name, 160),
+            opt(b.description),
+            Number(b.sort_order) || 0,
+            opt(b.default_homework),
+            bool(b.active) ? 1 : 0,
+            t,
+            rid,
+            org,
+          ]
+        : [
+            str(b.level_id),
+            str(b.code, 40),
+            str(b.name, 160),
+            opt(b.description),
+            Number(b.sort_order) || 0,
+            opt(b.default_homework),
+            bool(b.active) ? 1 : 0,
+            t,
+            rid,
+            org,
+            t,
+          ]),
     )
     .run();
   return c.json({ ok: true, id: rid });
@@ -667,16 +749,16 @@ type ValidProgressItem = {
 
 export async function saveProgress(c: Ctx) {
   const b = await body(c);
-  const a = c.get('auth');
-  const org = a.organizationId;
+  const auth = c.get('auth');
+  const org = auth.organizationId;
   const studentId = str(b.student_id);
   const classId = str(b.class_id);
   const requestedStatus = str(b.status) === 'published' ? 'published' : 'draft';
+  const requestedId = str(b.id);
+  const operationKey = str(b.operation_key, 120) || (requestedId ? `record:${requestedId}` : null);
   const payloadItems = Array.isArray(b.items) ? (b.items as Record<string, unknown>[]) : [];
   if (!studentId || !classId || !payloadItems.length) return json(c, 400);
 
-  // Validate the complete tenant-owned relationship before any write. Admins do not bypass
-  // enrollment integrity; teachers additionally pass the reusable visibility policy.
   const relationship = await c.env.DB.prepare(
     `SELECT 1 FROM students s JOIN class_enrollments ce ON ce.student_id=s.id AND ce.organization_id=s.organization_id AND ce.active=1 JOIN classes cl ON cl.id=ce.class_id AND cl.organization_id=s.organization_id AND cl.active=1 WHERE s.id=? AND cl.id=? AND s.organization_id=? AND s.active=1`,
   )
@@ -684,23 +766,34 @@ export async function saveProgress(c: Ctx) {
     .first();
   if (!relationship || !(await canSeeStudent(c, studentId, classId))) return json(c, 404);
 
-  const updateId = str(b.id) || id('pu');
   const existing = await c.env.DB.prepare(
-    'SELECT student_id,class_id,status,teacher_user_id FROM progress_updates WHERE id=? AND organization_id=?',
+    `SELECT id,student_id,class_id,status,teacher_user_id,idempotency_key FROM progress_updates WHERE organization_id=? AND (${requestedId ? 'id=?' : 'idempotency_key=?'})`,
   )
-    .bind(updateId, org)
+    .bind(org, requestedId || operationKey)
     .first<{
+      id: string;
       student_id: string;
       class_id: string | null;
       status: string;
       teacher_user_id: string;
+      idempotency_key: string | null;
     }>();
-  if (str(b.id) && !existing) return json(c, 404);
-  if (existing?.status === 'published')
-    return json(c, 400, 'Published updates are historical. Create a new correction update.');
+  if (requestedId && !existing) return json(c, 404);
   if (existing && (existing.student_id !== studentId || existing.class_id !== classId))
     return json(c, 404);
-  if (existing && !admin(a) && existing.teacher_user_id !== a.userId) return json(c, 404);
+  if (existing && !admin(auth) && existing.teacher_user_id !== auth.userId) return json(c, 404);
+  if (existing?.status === 'published') {
+    const notification =
+      b.notify === true ? await submitNotifications(c, existing.id, false) : null;
+    if (notification instanceof Response) return notification;
+    return c.json({
+      ok: true,
+      id: existing.id,
+      idempotent: true,
+      publication: b.notify === true ? notificationSummary(notification) : 'already_published',
+      notification,
+    });
+  }
 
   const validItems: ValidProgressItem[] = [];
   for (const item of payloadItems) {
@@ -721,6 +814,7 @@ export async function saveProgress(c: Ctx) {
     });
   }
 
+  const updateId = existing?.id ?? id('pu');
   const timestamp = now();
   const updateDate = str(b.update_date, 10) || timestamp.slice(0, 10);
   const statements: D1PreparedStatement[] = [
@@ -738,13 +832,13 @@ export async function saveProgress(c: Ctx) {
           org,
         )
       : c.env.DB.prepare(
-          'INSERT INTO progress_updates (id,organization_id,student_id,class_id,teacher_user_id,update_date,overall_comment,homework,status,published_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+          'INSERT INTO progress_updates (id,organization_id,student_id,class_id,teacher_user_id,update_date,overall_comment,homework,status,published_at,created_at,updated_at,idempotency_key) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
         ).bind(
           updateId,
           org,
           studentId,
           classId,
-          a.userId,
+          auth.userId,
           updateDate,
           opt(b.overall_comment, 1000),
           opt(b.homework, 1000),
@@ -752,11 +846,23 @@ export async function saveProgress(c: Ctx) {
           requestedStatus === 'published' ? timestamp : null,
           timestamp,
           timestamp,
+          operationKey,
         ),
+  ];
+  if (requestedStatus === 'published') {
+    // The unique claim makes concurrent draft-to-published batches mutually exclusive. A losing
+    // batch rolls back before it can remove or replace the winning publication's items.
+    statements.push(
+      c.env.DB.prepare(
+        'INSERT INTO progress_publication_claims (progress_update_id,organization_id,claimed_at) VALUES (?,?,?)',
+      ).bind(updateId, org, timestamp),
+    );
+  }
+  statements.push(
     c.env.DB.prepare(
       'DELETE FROM progress_update_items WHERE progress_update_id=? AND organization_id=?',
     ).bind(updateId, org),
-  ];
+  );
   for (const item of validItems) {
     statements.push(
       c.env.DB.prepare(
@@ -777,7 +883,13 @@ export async function saveProgress(c: Ctx) {
     if (requestedStatus === 'published') {
       statements.push(
         c.env.DB.prepare(
-          `INSERT INTO student_lesson_status (id,organization_id,student_id,lesson_id,current_status,first_passed_at,last_activity_at,last_progress_update_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(organization_id,student_id,lesson_id) DO UPDATE SET current_status=excluded.current_status,first_passed_at=COALESCE(student_lesson_status.first_passed_at,excluded.first_passed_at),last_activity_at=excluded.last_activity_at,last_progress_update_id=excluded.last_progress_update_id,updated_at=excluded.updated_at`,
+          `INSERT INTO student_lesson_status (id,organization_id,student_id,lesson_id,current_status,first_passed_at,last_activity_at,last_progress_update_id,created_at,updated_at,latest_published_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(organization_id,student_id,lesson_id) DO UPDATE SET
+          first_passed_at=CASE WHEN excluded.first_passed_at IS NULL THEN student_lesson_status.first_passed_at WHEN student_lesson_status.first_passed_at IS NULL OR excluded.first_passed_at < student_lesson_status.first_passed_at THEN excluded.first_passed_at ELSE student_lesson_status.first_passed_at END,
+          current_status=CASE WHEN excluded.last_activity_at > student_lesson_status.last_activity_at OR (excluded.last_activity_at=student_lesson_status.last_activity_at AND (excluded.latest_published_at > COALESCE(student_lesson_status.latest_published_at,'') OR (excluded.latest_published_at=COALESCE(student_lesson_status.latest_published_at,'') AND excluded.last_progress_update_id > student_lesson_status.last_progress_update_id))) THEN excluded.current_status ELSE student_lesson_status.current_status END,
+          last_activity_at=CASE WHEN excluded.last_activity_at > student_lesson_status.last_activity_at OR (excluded.last_activity_at=student_lesson_status.last_activity_at AND (excluded.latest_published_at > COALESCE(student_lesson_status.latest_published_at,'') OR (excluded.latest_published_at=COALESCE(student_lesson_status.latest_published_at,'') AND excluded.last_progress_update_id > student_lesson_status.last_progress_update_id))) THEN excluded.last_activity_at ELSE student_lesson_status.last_activity_at END,
+          last_progress_update_id=CASE WHEN excluded.last_activity_at > student_lesson_status.last_activity_at OR (excluded.last_activity_at=student_lesson_status.last_activity_at AND (excluded.latest_published_at > COALESCE(student_lesson_status.latest_published_at,'') OR (excluded.latest_published_at=COALESCE(student_lesson_status.latest_published_at,'') AND excluded.last_progress_update_id > student_lesson_status.last_progress_update_id))) THEN excluded.last_progress_update_id ELSE student_lesson_status.last_progress_update_id END,
+          latest_published_at=CASE WHEN excluded.last_activity_at > student_lesson_status.last_activity_at OR (excluded.last_activity_at=student_lesson_status.last_activity_at AND (excluded.latest_published_at > COALESCE(student_lesson_status.latest_published_at,'') OR (excluded.latest_published_at=COALESCE(student_lesson_status.latest_published_at,'') AND excluded.last_progress_update_id > student_lesson_status.last_progress_update_id))) THEN excluded.latest_published_at ELSE student_lesson_status.latest_published_at END,
+          updated_at=excluded.updated_at`,
         ).bind(
           id('sls'),
           org,
@@ -787,6 +899,7 @@ export async function saveProgress(c: Ctx) {
           item.outcome === 'passed' ? updateDate : null,
           updateDate,
           updateId,
+          timestamp,
           timestamp,
           timestamp,
         ),
@@ -801,18 +914,60 @@ export async function saveProgress(c: Ctx) {
       updateId,
       'Progress saved',
       timestamp,
+      { operationKey },
     ),
   );
   try {
     await c.env.DB.batch(statements);
   } catch {
+    // A racing retry may have committed the unique operation key first. Return that record rather
+    // than creating another update; all other database failures remain opaque.
+    if (operationKey) {
+      const raced = await c.env.DB.prepare(
+        'SELECT id,status FROM progress_updates WHERE organization_id=? AND idempotency_key=?',
+      )
+        .bind(org, operationKey)
+        .first<{ id: string; status: string }>();
+      if (raced)
+        return c.json({
+          ok: true,
+          id: raced.id,
+          idempotent: true,
+          publication: raced.status === 'published' ? 'already_published' : 'draft_saved',
+          notification: null,
+        });
+    }
     return json(c, 500, `Progress could not be saved. Reference ${c.get('requestId')}`);
   }
 
-  let notification = null;
-  if (requestedStatus === 'published' && b.notify === true)
-    notification = await submitNotifications(c, updateId, false);
-  return c.json({ ok: true, id: updateId, notification });
+  let notification: AnyNotificationResult[] | null = null;
+  if (requestedStatus === 'published' && b.notify === true) {
+    const result = await submitNotifications(c, updateId, false);
+    if (result instanceof Response) return result;
+    notification = result;
+  }
+  return c.json({
+    ok: true,
+    id: updateId,
+    idempotent: false,
+    publication:
+      requestedStatus === 'published'
+        ? b.notify === true
+          ? notificationSummary(notification)
+          : 'published_only'
+        : 'draft_saved',
+    notification,
+  });
+}
+
+function notificationSummary(results: AnyNotificationResult[] | null) {
+  if (!results?.length) return 'no_recipients';
+  if (results.some((result) => result.status === 'ambiguous')) return 'notification_ambiguous';
+  if (results.some((result) => result.status === 'failed')) return 'notification_failed';
+  if (results.every((result) => result.status === 'submitted' && result.already))
+    return 'already_notified';
+  if (results.some((result) => result.status === 'submitted')) return 'notifications_submitted';
+  return 'already_notified';
 }
 
 const outcomeLabels: Record<string, Record<string, string>> = {
@@ -868,7 +1023,7 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
   ).results;
   const recipients = (
     await c.env.DB.prepare(
-      `SELECT g.id guardian_id,g.email,g.preferred_locale FROM guardians g JOIN student_guardians sg ON sg.guardian_id=g.id AND sg.organization_id=g.organization_id JOIN students s ON s.id=sg.student_id AND s.organization_id=sg.organization_id WHERE sg.student_id=? AND g.organization_id=? AND g.active=1 AND s.active=1 AND sg.receive_notifications=1`,
+      `SELECT g.id guardian_id,g.name guardian_name,g.email,g.preferred_locale FROM guardians g JOIN student_guardians sg ON sg.guardian_id=g.id AND sg.organization_id=g.organization_id JOIN students s ON s.id=sg.student_id AND s.organization_id=sg.organization_id WHERE sg.student_id=? AND g.organization_id=? AND g.active=1 AND s.active=1 AND sg.receive_notifications=1`,
     )
       .bind(pu.student_id, org)
       .all<any>()
@@ -882,18 +1037,33 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
     )
       .bind(org, dedup)
       .first<{ id: string; status: string }>();
-    if (
-      prior?.status === 'sent' ||
-      prior?.status === 'pending' ||
-      (prior?.status === 'failed' && !retry)
-    ) {
+    if (prior?.status === 'sent') {
       results.push({
         guardianId: recipient.guardian_id,
-        status: prior.status === 'failed' ? 'failed' : 'skipped',
-        retryAvailable: prior.status === 'failed',
+        guardianName: recipient.guardian_name,
+        status: 'submitted',
+        already: true,
       });
       continue;
     }
+    if (prior?.status === 'pending') {
+      results.push({
+        guardianId: recipient.guardian_id,
+        guardianName: recipient.guardian_name,
+        status: 'ambiguous',
+      });
+      continue;
+    }
+    if (prior?.status === 'failed' && !retry) {
+      results.push({
+        guardianId: recipient.guardian_id,
+        guardianName: recipient.guardian_name,
+        status: 'failed',
+        retryAvailable: true,
+      });
+      continue;
+    }
+
     const timestamp = now();
     const locale = ['en', 'tr'].includes(recipient.preferred_locale)
       ? recipient.preferred_locale
@@ -905,6 +1075,7 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
         ? `${pu.student_name} için ilerleme güncellemesi`
         : `Progress update for ${pu.student_name}`;
     const logId = prior?.id ?? id('not');
+    const attemptId = id('nat');
     const count = prior
       ? await c.env.DB.prepare(
           'SELECT count(*) count FROM notification_attempts WHERE notification_log_id=? AND organization_id=?',
@@ -913,7 +1084,6 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
           .first<{ count: number }>()
       : { count: 0 };
     const attemptNumber = Number(count?.count ?? 0) + 1;
-    const attemptId = id('nat');
     try {
       if (prior) {
         await c.env.DB.batch([
@@ -923,30 +1093,31 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
           c.env.DB.prepare(
             'INSERT INTO notification_attempts (id,notification_log_id,organization_id,attempt_number,status,request_id,attempted_at) SELECT ?,?,?,?,?,?,? WHERE changes()=1',
           ).bind(attemptId, logId, org, attemptNumber, 'pending', c.get('requestId'), timestamp),
-          auditStatement(
-            c,
+          c.env.DB.prepare(
+            `INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM notification_attempts WHERE id=? AND organization_id=?)`,
+          ).bind(
+            id('audit'),
+            org,
+            c.get('auth').userId,
             'notification.retry_reserved',
             'notification',
             logId,
             'Notification retry reserved',
+            JSON.stringify({ attemptNumber }),
+            c.get('requestId'),
             timestamp,
-            { attemptNumber },
+            attemptId,
+            org,
           ),
         ]);
-        const reserved = await c.env.DB.prepare(
-          'SELECT 1 FROM notification_attempts WHERE id=? AND organization_id=?',
-        )
-          .bind(attemptId, org)
-          .first();
-        if (!reserved) {
-          results.push({ guardianId: recipient.guardian_id, status: 'skipped' });
-          continue;
-        }
       } else {
-        const inserted = await c.env.DB.prepare(
-          'INSERT OR IGNORE INTO notification_log (id,organization_id,guardian_id,student_id,progress_update_id,recipient_email,notification_type,subject,status,attempted_at,created_at,deduplication_key) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-        )
-          .bind(
+        // Reservation, initial attempt, and audit commit together before the external relay call.
+        // D1 and the relay cannot share a transaction, so a post-acceptance D1 failure intentionally
+        // leaves this pending/submitting reservation ambiguous and non-retryable.
+        await c.env.DB.batch([
+          c.env.DB.prepare(
+            'INSERT OR IGNORE INTO notification_log (id,organization_id,guardian_id,student_id,progress_update_id,recipient_email,notification_type,subject,status,attempted_at,created_at,deduplication_key) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+          ).bind(
             logId,
             org,
             recipient.guardian_id,
@@ -959,32 +1130,63 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
             timestamp,
             timestamp,
             dedup,
-          )
-          .run();
-        if (!inserted.meta.changes) {
-          results.push({ guardianId: recipient.guardian_id, status: 'skipped' });
-          continue;
-        }
-        await c.env.DB.batch([
+          ),
           c.env.DB.prepare(
-            'INSERT INTO notification_attempts (id,notification_log_id,organization_id,attempt_number,status,request_id,attempted_at) VALUES (?,?,?,?,?,?,?)',
-          ).bind(attemptId, logId, org, 1, 'pending', c.get('requestId'), timestamp),
-          auditStatement(
-            c,
+            'INSERT INTO notification_attempts (id,notification_log_id,organization_id,attempt_number,status,request_id,attempted_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM notification_log WHERE id=? AND organization_id=?)',
+          ).bind(attemptId, logId, org, 1, 'pending', c.get('requestId'), timestamp, logId, org),
+          c.env.DB.prepare(
+            `INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,request_id,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM notification_attempts WHERE id=? AND organization_id=?)`,
+          ).bind(
+            id('audit'),
+            org,
+            c.get('auth').userId,
             'notification.reserved',
             'notification',
             logId,
             'Notification submission reserved',
+            c.get('requestId'),
             timestamp,
+            attemptId,
+            org,
           ),
         ]);
       }
     } catch {
-      results.push({ guardianId: recipient.guardian_id, status: 'skipped' });
+      results.push({
+        guardianId: recipient.guardian_id,
+        guardianName: recipient.guardian_name,
+        status: 'not_reserved',
+        requestId: c.get('requestId'),
+      });
       continue;
     }
+    const owned = await c.env.DB.prepare(
+      "SELECT 1 FROM notification_attempts WHERE id=? AND organization_id=? AND status='pending'",
+    )
+      .bind(attemptId, org)
+      .first();
+    if (!owned) {
+      const state = await c.env.DB.prepare(
+        'SELECT status FROM notification_log WHERE organization_id=? AND deduplication_key=?',
+      )
+        .bind(org, dedup)
+        .first<{ status: string }>();
+      results.push({
+        guardianId: recipient.guardian_id,
+        guardianName: recipient.guardian_name,
+        status:
+          state?.status === 'sent'
+            ? 'submitted'
+            : state?.status === 'failed'
+              ? 'failed'
+              : 'ambiguous',
+        retryAvailable: state?.status === 'failed',
+      });
+      continue;
+    }
+
+    const data = { ...pu, items };
     try {
-      const data = { ...pu, items };
       await sendRelayMail(c.env, {
         to: recipient.email,
         fromAlias: sender.fromAlias,
@@ -994,7 +1196,47 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
         text: emailText(locale, data),
         html: emailHtml(locale, data),
       });
+    } catch {
       const completed = now();
+      const safeMessage = `Email relay submission failed. Reference ${c.get('requestId')}`;
+      try {
+        await c.env.DB.batch([
+          c.env.DB.prepare(
+            "UPDATE notification_log SET status='failed',error_code='RELAY_REJECTED',error_message=? WHERE id=? AND organization_id=? AND status='pending'",
+          ).bind(safeMessage, logId, org),
+          c.env.DB.prepare(
+            "UPDATE notification_attempts SET status='failed',error_code='RELAY_REJECTED',error_message=?,completed_at=? WHERE id=? AND organization_id=? AND status='pending'",
+          ).bind(safeMessage, completed, attemptId, org),
+          auditStatement(
+            c,
+            'notification.relay_failed',
+            'notification',
+            logId,
+            'Notification relay submission failed',
+            completed,
+            { attemptNumber },
+          ),
+        ]);
+        results.push({
+          guardianId: recipient.guardian_id,
+          guardianName: recipient.guardian_name,
+          status: 'failed',
+          retryAvailable: true,
+          requestId: c.get('requestId'),
+        });
+      } catch {
+        results.push({
+          guardianId: recipient.guardian_id,
+          guardianName: recipient.guardian_name,
+          status: 'ambiguous',
+          requestId: c.get('requestId'),
+        });
+      }
+      continue;
+    }
+
+    const completed = now();
+    try {
       await c.env.DB.batch([
         c.env.DB.prepare(
           "UPDATE notification_log SET status='sent',sent_at=?,error_code=NULL,error_message=NULL WHERE id=? AND organization_id=? AND status='pending'",
@@ -1012,31 +1254,18 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
           { attemptNumber },
         ),
       ]);
-      results.push({ guardianId: recipient.guardian_id, status: 'sent' });
-    } catch {
-      const completed = now();
-      const safeMessage = `Email relay submission failed. Reference ${c.get('requestId')}`;
-      await c.env.DB.batch([
-        c.env.DB.prepare(
-          "UPDATE notification_log SET status='failed',error_code='RELAY_REJECTED',error_message=? WHERE id=? AND organization_id=? AND status='pending'",
-        ).bind(safeMessage, logId, org),
-        c.env.DB.prepare(
-          "UPDATE notification_attempts SET status='failed',error_code='RELAY_REJECTED',error_message=?,completed_at=? WHERE id=? AND organization_id=? AND status='pending'",
-        ).bind(safeMessage, completed, attemptId, org),
-        auditStatement(
-          c,
-          'notification.relay_failed',
-          'notification',
-          logId,
-          'Notification relay submission failed',
-          completed,
-          { attemptNumber },
-        ),
-      ]);
       results.push({
         guardianId: recipient.guardian_id,
-        status: 'failed',
-        retryAvailable: true,
+        guardianName: recipient.guardian_name,
+        status: 'submitted',
+      });
+    } catch {
+      // Relay acceptance is known, but persistence is not. Keep pending as a non-retryable
+      // ambiguous state rather than risk a duplicate guardian email.
+      results.push({
+        guardianId: recipient.guardian_id,
+        guardianName: recipient.guardian_name,
+        status: 'ambiguous',
         requestId: c.get('requestId'),
       });
     }
@@ -1045,7 +1274,9 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
 }
 type AnyNotificationResult = {
   guardianId: string;
+  guardianName?: string;
   status: string;
   retryAvailable?: boolean;
   requestId?: string;
+  already?: boolean;
 };

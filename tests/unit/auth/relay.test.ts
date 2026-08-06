@@ -121,6 +121,16 @@ describe('mail relay protocol', () => {
     expect(staticConfig).not.toContain('GmailApp.');
   });
 
+  it('maps optional HTML to htmlBody while retaining required text fallback', () => {
+    const script = readFileSync('apps-script-mail-relay/Code.gs', 'utf8');
+    expect(script).toContain('options.htmlBody = message.html');
+    expect(script).toContain(
+      'GmailApp.sendEmail(normalizeEmail_(message.to), message.subject, message.text, options)',
+    );
+    expect(script).toContain("typeof message.text !== 'string'");
+    expect(script).toContain("typeof message.html !== 'string'");
+  });
+
   it('verifies and rejects relay auth for missing, expiry, replay, bad signature, and alias failures', async () => {
     const body = JSON.stringify(message);
     const signature = await signRelayRequest('relay-secret', '1000', 'nonce-1', body);

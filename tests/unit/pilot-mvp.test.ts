@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SqliteD1, base, user, membership, now } from '../helpers/sqliteD1';
+import en from '../../src/i18n/locales/en';
+import tr from '../../src/i18n/locales/tr';
 const { validateSession } = vi.hoisted(() => ({ validateSession: vi.fn() }));
 const { sendRelayMail } = vi.hoisted(() => ({ sendRelayMail: vi.fn() }));
 vi.mock('../../worker/auth/service', async (orig) => ({
@@ -253,6 +255,7 @@ describe('Pilot MVP API', () => {
       )
     ).json()) as any;
     expect(res.ok).toBe(true);
+    expect(res.publication).toBe('notification_failed');
     expect(db.db.prepare('SELECT status FROM notification_log').get()).toMatchObject({
       status: 'failed',
     });
@@ -420,6 +423,7 @@ describe('Pilot MVP API', () => {
     const published = (await (
       await app.fetch(
         req('/api/v1/progress-updates', 'POST', {
+          operation_key: 'concurrent-progress',
           student_id: 'stu-a',
           class_id: 'class-a',
           status: 'published',
@@ -483,5 +487,280 @@ describe('Pilot MVP API', () => {
     );
     expect(sendRelayMail).toHaveBeenCalledTimes(2);
     expect(db.count('notification_attempts')).toBe(2);
+  });
+  it('updates selected administrator records without creating duplicates', async () => {
+    auth();
+    for (const [path, payload, table, id, expected] of [
+      [
+        '/api/v1/classes',
+        { id: 'class-a', name: 'Edited Class', active: false },
+        'classes',
+        'class-a',
+        'Edited Class',
+      ],
+      [
+        '/api/v1/students',
+        { id: 'stu-a', display_name: 'Edited Student', active: false },
+        'students',
+        'stu-a',
+        'Edited Student',
+      ],
+    ] as const) {
+      const before = db.count(table);
+      expect((await app.fetch(req(path, 'POST', payload), env(db))).status).toBe(200);
+      expect(db.count(table)).toBe(before);
+      expect(
+        db.db
+          .prepare(
+            `SELECT ${table === 'classes' ? 'name' : 'display_name'} value,active FROM ${table} WHERE id=?`,
+          )
+          .get(id),
+      ).toMatchObject({ value: expected, active: 0 });
+    }
+    const created = (await (
+      await app.fetch(
+        req('/api/v1/guardians', 'POST', {
+          name: 'Guardian',
+          email: 'edit@example.com',
+          active: true,
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    const before = db.count('guardians');
+    expect(
+      (
+        await app.fetch(
+          req('/api/v1/guardians', 'POST', {
+            id: created.id,
+            name: 'Edited Guardian',
+            email: 'edit@example.com',
+            active: false,
+          }),
+          env(db),
+        )
+      ).status,
+    ).toBe(200);
+    expect(db.count('guardians')).toBe(before);
+    expect(
+      db.db.prepare('SELECT name,active FROM guardians WHERE id=?').get(created.id),
+    ).toMatchObject({ name: 'Edited Guardian', active: 0 });
+  });
+  it('saves, publishes, and safely repeats one idempotent progress operation', async () => {
+    auth('teacher', 'org-a', 'teacher');
+    const payload = {
+      operation_key: 'operation-example-1',
+      student_id: 'stu-a',
+      class_id: 'class-a',
+      update_date: '2026-08-01',
+      items: [{ lesson_id: 'lesson-a', outcome: 'passed' }],
+    };
+    const draft = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', { ...payload, status: 'draft' }),
+        env(db),
+      )
+    ).json()) as any;
+    const repeatedDraft = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', { ...payload, status: 'draft' }),
+        env(db),
+      )
+    ).json()) as any;
+    expect(repeatedDraft.id).toBe(draft.id);
+    const publicationRequest = () =>
+      app.fetch(
+        req('/api/v1/progress-updates', 'POST', { ...payload, id: draft.id, status: 'published' }),
+        env(db),
+      );
+    const [published, repeatedPublish] = await Promise.all([
+      publicationRequest(),
+      publicationRequest(),
+    ]);
+    expect(published.status).toBe(200);
+    expect(repeatedPublish.status).toBe(200);
+    expect(db.count('progress_updates')).toBe(1);
+    expect(db.count('progress_update_items')).toBe(1);
+  });
+  it('keeps newer lesson state while an older pass establishes first completion', async () => {
+    auth('teacher', 'org-a', 'teacher');
+    const publish = (operation_key: string, update_date: string, outcome: string) =>
+      app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          operation_key,
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          update_date,
+          status: 'published',
+          items: [{ lesson_id: 'lesson-a', outcome }],
+        }),
+        env(db),
+      );
+    await publish('newer-operation', '2026-08-05', 'practiced');
+    await publish('older-operation', '2026-07-01', 'passed');
+    expect(
+      db.db
+        .prepare(
+          'SELECT current_status,first_passed_at,last_activity_at FROM student_lesson_status',
+        )
+        .get(),
+    ).toMatchObject({
+      current_status: 'practiced',
+      first_passed_at: '2026-07-01',
+      last_activity_at: '2026-08-05',
+    });
+    expect(db.count('progress_updates')).toBe(2);
+  });
+  it('rejects moving an existing level to a different track', async () => {
+    auth();
+    db.db
+      .prepare(
+        'INSERT INTO program_tracks (id,organization_id,code,name,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?)',
+      )
+      .run('track-other', 'org-a', 'O', 'Other', 1, now, now);
+    const response = await app.fetch(
+      req('/api/v1/program/levels', 'POST', {
+        id: 'level-a',
+        track_id: 'track-other',
+        code: 'L1',
+        name: 'Moved',
+        active: true,
+      }),
+      env(db),
+    );
+    expect(response.status).toBe(400);
+    expect(
+      db.db.prepare('SELECT track_id,name FROM levels WHERE id=?').get('level-a'),
+    ).toMatchObject({ track_id: 'track-a', name: 'Level 1' });
+  });
+  it('does not call the relay when atomic notification reservation fails', async () => {
+    auth();
+    const guardian = (await (
+      await app.fetch(
+        req('/api/v1/guardians', 'POST', {
+          name: 'Reserve Guardian',
+          email: 'reserve@example.com',
+          active: true,
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    await app.fetch(
+      req('/api/v1/student-guardians', 'POST', {
+        student_id: 'stu-a',
+        guardian_id: guardian.id,
+        receive_notifications: true,
+      }),
+      env(db),
+    );
+    auth('teacher', 'org-a', 'teacher');
+    const published = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          operation_key: 'reserve-progress',
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          status: 'published',
+          items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    db.failBatchAt = 1;
+    const result = (await (
+      await app.fetch(req(`/api/v1/progress-updates/${published.id}/notify`, 'POST'), env(db))
+    ).json()) as any;
+    expect(sendRelayMail).not.toHaveBeenCalled();
+    expect(result.results[0].status).toBe('not_reserved');
+    expect(db.count('notification_log')).toBe(0);
+  });
+  it('leaves accepted but unfinalized relay submission ambiguous and non-retryable', async () => {
+    auth();
+    const guardian = (await (
+      await app.fetch(
+        req('/api/v1/guardians', 'POST', {
+          name: 'Ambiguous Guardian',
+          email: 'ambiguous@example.com',
+          active: true,
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    await app.fetch(
+      req('/api/v1/student-guardians', 'POST', {
+        student_id: 'stu-a',
+        guardian_id: guardian.id,
+        receive_notifications: true,
+      }),
+      env(db),
+    );
+    auth('teacher', 'org-a', 'teacher');
+    sendRelayMail.mockImplementationOnce(async () => {
+      db.failBatchAt = 1;
+    });
+    const first = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          operation_key: 'ambiguous-progress',
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          status: 'published',
+          notify: true,
+          items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    expect(first.publication).toBe('notification_ambiguous');
+    expect(first.notification[0].status).toBe('ambiguous');
+    expect(db.db.prepare('SELECT status FROM notification_log').get()).toMatchObject({
+      status: 'pending',
+    });
+    db.failBatchAt = 0;
+    await app.fetch(req(`/api/v1/progress-updates/${first.id}/notify`, 'POST'), env(db));
+    await app.fetch(req(`/api/v1/progress-updates/${first.id}/notify?retry=1`, 'POST'), env(db));
+    expect(sendRelayMail).toHaveBeenCalledTimes(1);
+  });
+  it('reports publish-only and no-recipient outcomes accurately', async () => {
+    auth('teacher', 'org-a', 'teacher');
+    const publishOnly = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          operation_key: 'publish-only',
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          status: 'published',
+          items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    expect(publishOnly.publication).toBe('published_only');
+    const noRecipients = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          operation_key: 'publish-notify-empty',
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          status: 'published',
+          notify: true,
+          items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    expect(noRecipients.publication).toBe('no_recipients');
+    expect(noRecipients.notification).toEqual([]);
+  });
+  it('localizes every final publication and ambiguous notification result', () => {
+    for (const locale of [en, tr]) {
+      expect(locale.pilot.messages.notifications_submitted).toBeTruthy();
+      expect(locale.pilot.messages.no_recipients).toBeTruthy();
+      expect(locale.pilot.messages.notification_failed).toBeTruthy();
+      expect(locale.pilot.messages.notification_ambiguous).toBeTruthy();
+      expect(locale.pilot.messages.already_notified).toBeTruthy();
+      expect(locale.pilot.messages.published_only).toBeTruthy();
+      expect(locale.pilot.notification.ambiguous).toBeTruthy();
+    }
   });
 });

@@ -46,3 +46,9 @@ The Pilot MVP continues to use the existing roster and progress tables. Current 
 ## Pilot notification reservation migration 0007
 
 Migration `0007_notification_attempts.sql` adds append-only submission attempts. The existing unique `(organization_id, deduplication_key)` constraint reserves one logical progress-update/guardian notification, while attempt rows retain pending, relay-accepted, and failed explicit attempts. Failed submissions can move back to pending only through explicit retry; pending and relay-accepted submissions are not automatically resent. Relay acceptance is not confirmed inbox delivery.
+
+## Pilot correctness migration 0008
+
+Migration `0008_progress_idempotency.sql` adds a tenant-scoped unique progress-operation key so repeated draft/create requests resolve to one progress update. Draft publication conditionally transitions that same row, and an already-published request returns the existing result without replacing historical items. The migration also adds `student_lesson_status.latest_published_at`, which provides a stable equal-activity-date tie-breaker. Backdated history can establish an earlier `first_passed_at`, but current lesson state changes only for a chronologically newer activity date, then newer publication timestamp, then stable update ID. Migration `0009_progress_publication_claim.sql` adds one unique publication claim per update so concurrent draft-to-publication batches cannot delete or replace the winning publication’s items.
+
+Notification `pending` represents a committed submission reservation at the external-relay boundary. It is non-retryable because the relay may have accepted the message even if D1 could not persist final acceptance; only a definitively recorded `failed` attempt permits explicit retry. `sent` continues to mean relay-accepted/submitted, never confirmed inbox delivery.

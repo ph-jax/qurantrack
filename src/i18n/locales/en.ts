@@ -317,6 +317,10 @@ export default {
       submitted: 'Submitted to the email relay (not confirmed inbox delivery).',
       failed: 'Email submission failed. Retry is available.',
       skipped: 'No new email was submitted.',
+      noRecipients: 'Published. No eligible guardian recipients were found.',
+      ambiguous:
+        'Published. An email submission has an uncertain status and cannot be retried automatically.',
+      alreadyNotified: 'Published. Guardian notifications were already submitted or reserved.',
     },
     messages: {
       saving: 'Saving…',
@@ -324,6 +328,16 @@ export default {
       published: 'Progress update published.',
       notificationFailed: 'Progress was published, but email submission failed.',
       saveError: 'Progress could not be saved.',
+      draft_saved: 'Draft saved.',
+      published_only: 'Published without guardian notification.',
+      notifications_submitted:
+        'Published and submitted to the guardian email relay (not confirmed inbox delivery).',
+      no_recipients: 'Published. No eligible guardian recipients were found.',
+      notification_failed: 'Published, but one or more guardian submissions failed.',
+      notification_ambiguous:
+        'Published. A guardian submission is uncertain and has been blocked from retry.',
+      already_notified: 'Already published and guardian notifications were already handled.',
+      already_published: 'This progress update was already published.',
     },
   },
   common: {

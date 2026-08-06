@@ -316,6 +316,10 @@ export default {
       submitted: 'E-posta aktarımına gönderildi (gelen kutusuna teslimat doğrulanmadı).',
       failed: 'E-posta gönderimi başarısız. Yeniden denenebilir.',
       skipped: 'Yeni e-posta gönderilmedi.',
+      noRecipients: 'Yayınlandı. Uygun veli alıcısı bulunamadı.',
+      ambiguous:
+        'Yayınlandı. Bir e-posta gönderiminin durumu belirsiz ve otomatik olarak yeniden denenemez.',
+      alreadyNotified: 'Yayınlandı. Veli bildirimleri daha önce gönderildi veya ayrıldı.',
     },
     messages: {
       saving: 'Kaydediliyor…',
@@ -323,6 +327,16 @@ export default {
       published: 'İlerleme güncellemesi yayınlandı.',
       notificationFailed: 'İlerleme yayınlandı ancak e-posta gönderimi başarısız.',
       saveError: 'İlerleme kaydedilemedi.',
+      draft_saved: 'Taslak kaydedildi.',
+      published_only: 'Veli bildirimi olmadan yayınlandı.',
+      notifications_submitted:
+        'Yayınlandı ve veli e-posta aktarımına gönderildi (gelen kutusuna teslimat doğrulanmadı).',
+      no_recipients: 'Yayınlandı. Uygun veli alıcısı bulunamadı.',
+      notification_failed: 'Yayınlandı ancak bir veya daha fazla veli gönderimi başarısız.',
+      notification_ambiguous:
+        'Yayınlandı. Bir veli gönderiminin durumu belirsiz ve yeniden denemeye kapatıldı.',
+      already_notified: 'Zaten yayınlandı ve veli bildirimleri daha önce işlendi.',
+      already_published: 'Bu ilerleme güncellemesi zaten yayınlandı.',
     },
   },
   common: {
