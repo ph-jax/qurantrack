@@ -90,6 +90,11 @@ async function seed(db: SqliteD1) {
       'INSERT INTO lessons (id,organization_id,level_id,code,name,default_homework,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
     )
     .run('lesson-a', 'org-a', 'level-a', '001', 'Lesson <One>', 'Practice & review', 1, now, now);
+  db.db
+    .prepare(
+      'INSERT INTO student_track_levels (id,organization_id,student_id,track_id,current_level_id,started_at,updated_at) VALUES (?,?,?,?,?,?,?)',
+    )
+    .run('stl-a', 'org-a', 'stu-a', 'track-a', 'level-a', now, now);
 }
 describe('Pilot MVP API', () => {
   let db: SqliteD1;
@@ -212,20 +217,21 @@ describe('Pilot MVP API', () => {
   });
   it('emails only eligible guardians, escapes content, records failures, and prevents duplicate success', async () => {
     auth();
-    await app.fetch(
-      req('/api/v1/guardians', 'POST', {
-        id: 'g1',
-        name: 'Parent',
-        email: 'parent@example.com',
-        active: true,
-        preferred_locale: 'tr',
-      }),
-      env(db),
-    );
+    const guardianCreated = (await (
+      await app.fetch(
+        req('/api/v1/guardians', 'POST', {
+          name: 'Parent',
+          email: 'parent@example.com',
+          active: true,
+          preferred_locale: 'tr',
+        }),
+        env(db),
+      )
+    ).json()) as any;
     await app.fetch(
       req('/api/v1/student-guardians', 'POST', {
         student_id: 'stu-a',
-        guardian_id: 'g1',
+        guardian_id: guardianCreated.id,
         receive_notifications: true,
       }),
       env(db),
@@ -256,6 +262,226 @@ describe('Pilot MVP API', () => {
     expect(sendRelayMail).toHaveBeenCalledTimes(2);
     const msg = sendRelayMail.mock.calls[1][1];
     expect(msg.subject).toContain('ilerleme');
+    expect(msg.text).toContain('Ödev verildi');
+    expect(msg.text).not.toContain('needs_practice');
     expect(msg.html).toContain('&lt;job&gt;');
+    expect(db.count('notification_attempts')).toBe(2);
+    expect(
+      db.db.prepare("SELECT count(*) count FROM notification_attempts WHERE status='failed'").get(),
+    ).toMatchObject({ count: 1 });
+  });
+  it('rejects cross-tenant and mismatched setup relationships without disclosure', async () => {
+    auth();
+    db.db
+      .prepare(
+        'INSERT INTO program_tracks (id,organization_id,code,name,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?)',
+      )
+      .run('track-x', 'org-a', 'X', 'Other Track', 1, now, now);
+    db.db
+      .prepare(
+        'INSERT INTO levels (id,organization_id,track_id,code,name,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',
+      )
+      .run('level-x', 'org-a', 'track-x', 'X1', 'Other Level', 1, now, now);
+    db.db
+      .prepare(
+        'INSERT INTO lessons (id,organization_id,level_id,code,name,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',
+      )
+      .run('lesson-x', 'org-a', 'level-x', 'X1', 'Other Lesson', 1, now, now);
+    expect(
+      (
+        await app.fetch(
+          req('/api/v1/student-track-levels', 'POST', {
+            student_id: 'stu-a',
+            track_id: 'track-a',
+            current_level_id: 'level-x',
+          }),
+          env(db),
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await app.fetch(
+          req('/api/v1/student-track-levels', 'POST', {
+            student_id: 'stu-b',
+            track_id: 'track-a',
+            current_level_id: 'level-a',
+          }),
+          env(db),
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await app.fetch(
+          req('/api/v1/progress-updates', 'POST', {
+            student_id: 'stu-a',
+            class_id: 'class-a',
+            status: 'published',
+            items: [{ lesson_id: 'lesson-x', outcome: 'passed' }],
+          }),
+          env(db),
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await app.fetch(
+          req('/api/v1/progress-updates', 'POST', {
+            student_id: 'stu-a',
+            class_id: 'class-b',
+            status: 'published',
+            items: [{ lesson_id: 'lesson-a', outcome: 'passed' }],
+          }),
+          env(db),
+        )
+      ).status,
+    ).toBe(404);
+    db.db
+      .prepare(
+        'INSERT INTO guardians (id,organization_id,name,email,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?)',
+      )
+      .run('guardian-b', 'org-b', 'Guardian B', 'guardian-b@example.com', 1, now, now);
+    expect(
+      (
+        await app.fetch(
+          req('/api/v1/student-guardians', 'POST', {
+            student_id: 'stu-a',
+            guardian_id: 'guardian-b',
+            receive_notifications: true,
+          }),
+          env(db),
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await app.fetch(
+          req('/api/v1/enrollments', 'POST', { class_id: 'class-b', student_id: 'stu-a' }),
+          env(db),
+        )
+      ).status,
+    ).toBe(404);
+  });
+  it('rolls back every publication write when an atomic batch statement fails', async () => {
+    auth('teacher', 'org-a', 'teacher');
+    db.failBatchAt = 3;
+    const response = await app.fetch(
+      req('/api/v1/progress-updates', 'POST', {
+        student_id: 'stu-a',
+        class_id: 'class-a',
+        status: 'published',
+        items: [{ lesson_id: 'lesson-a', outcome: 'passed' }],
+      }),
+      env(db),
+    );
+    expect(response.status).toBe(500);
+    expect(db.count('progress_updates')).toBe(0);
+    expect(db.count('progress_update_items')).toBe(0);
+    expect(db.count('student_lesson_status')).toBe(0);
+    expect(
+      db.db.prepare("SELECT count(*) count FROM audit_log WHERE action='progress.publish'").get(),
+    ).toMatchObject({ count: 0 });
+  });
+  it('keeps every administrator setup mutation unavailable to teachers', async () => {
+    auth('teacher', 'org-a', 'teacher');
+    for (const [path, payload] of [
+      ['/api/v1/pilot/setup-options', undefined],
+      ['/api/v1/students', { display_name: 'No' }],
+      ['/api/v1/guardians', { name: 'No', email: 'no@example.com' }],
+      ['/api/v1/enrollments', { class_id: 'class-a', student_id: 'stu-a' }],
+      ['/api/v1/program/tracks', { code: 'N', name: 'No' }],
+    ] as const) {
+      const response = await app.fetch(req(path, payload ? 'POST' : 'GET', payload), env(db));
+      expect(response.status).toBe(403);
+    }
+  });
+  it('reserves concurrent notifications once and never implicitly retries failure', async () => {
+    auth();
+    const concurrentGuardian = (await (
+      await app.fetch(
+        req('/api/v1/guardians', 'POST', {
+          name: 'Concurrent Guardian',
+          email: 'concurrent@example.com',
+          active: true,
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    await app.fetch(
+      req('/api/v1/student-guardians', 'POST', {
+        student_id: 'stu-a',
+        guardian_id: concurrentGuardian.id,
+        receive_notifications: true,
+      }),
+      env(db),
+    );
+    auth('teacher', 'org-a', 'teacher');
+    const published = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          status: 'published',
+          items: [{ lesson_id: 'lesson-a', outcome: 'needs_practice' }],
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    sendRelayMail.mockResolvedValue(undefined);
+    await Promise.all([
+      app.fetch(req(`/api/v1/progress-updates/${published.id}/notify`, 'POST'), env(db)),
+      app.fetch(req(`/api/v1/progress-updates/${published.id}/notify`, 'POST'), env(db)),
+    ]);
+    expect(sendRelayMail).toHaveBeenCalledTimes(1);
+    expect(sendRelayMail.mock.calls[0][1].text).toContain('Needs practice');
+    await app.fetch(
+      req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'),
+      env(db),
+    );
+    expect(sendRelayMail).toHaveBeenCalledTimes(1);
+  });
+  it('does not retry a failed submission without an explicit retry flag', async () => {
+    auth();
+    const failedGuardian = (await (
+      await app.fetch(
+        req('/api/v1/guardians', 'POST', {
+          name: 'Failed Guardian',
+          email: 'failed@example.com',
+          active: true,
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    await app.fetch(
+      req('/api/v1/student-guardians', 'POST', {
+        student_id: 'stu-a',
+        guardian_id: failedGuardian.id,
+        receive_notifications: true,
+      }),
+      env(db),
+    );
+    auth('teacher', 'org-a', 'teacher');
+    sendRelayMail.mockRejectedValueOnce(new Error('relay')).mockResolvedValue(undefined);
+    const published = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          status: 'published',
+          notify: true,
+          items: [{ lesson_id: 'lesson-a', outcome: 'needs_practice' }],
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    await app.fetch(req(`/api/v1/progress-updates/${published.id}/notify`, 'POST'), env(db));
+    expect(sendRelayMail).toHaveBeenCalledTimes(1);
+    await app.fetch(
+      req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'),
+      env(db),
+    );
+    expect(sendRelayMail).toHaveBeenCalledTimes(2);
+    expect(db.count('notification_attempts')).toBe(2);
   });
 });

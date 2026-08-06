@@ -50,6 +50,7 @@ import {
   studentSummary,
   saveProgress,
   notifyProgress,
+  setupOptions,
 } from './api/v1/pilot';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -125,6 +126,7 @@ app.patch(
   patchOrganizationSettings,
 );
 app.get('/api/v1/classes', requireAuth(), listClasses);
+app.get('/api/v1/pilot/setup-options', requireAuth(['organization_admin']), setupOptions);
 app.post('/api/v1/classes', requireAuth(['organization_admin']), saveClass);
 app.post('/api/v1/classes/:id/teachers', requireAuth(['organization_admin']), classTeachers);
 app.delete(

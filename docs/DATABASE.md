@@ -42,3 +42,7 @@ Phase 3B1 review corrections are verified with a real in-memory SQLite database 
 Migration `0006_guardian_preferred_locale.sql` adds `guardians.preferred_locale`, an optional locale constrained to `en` or `tr`. The field is intentionally limited to the guardian progress-email MVP: templates use the guardian preference when present and fall back to the organization's default locale otherwise.
 
 The Pilot MVP continues to use the existing roster and progress tables. Current teacher assignment is represented by row presence in `class_teachers`; withdrawal history is preserved with `class_enrollments.active`, `enrolled_at`, and `withdrawn_at`; published progress updates write history to `progress_updates`/`progress_update_items` and maintain compact lesson state in `student_lesson_status`.
+
+## Pilot notification reservation migration 0007
+
+Migration `0007_notification_attempts.sql` adds append-only submission attempts. The existing unique `(organization_id, deduplication_key)` constraint reserves one logical progress-update/guardian notification, while attempt rows retain pending, relay-accepted, and failed explicit attempts. Failed submissions can move back to pending only through explicit retry; pending and relay-accepted submissions are not automatically resent. Relay acceptance is not confirmed inbox delivery.

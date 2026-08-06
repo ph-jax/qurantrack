@@ -103,3 +103,5 @@ All notable changes to QuranTrack will be documented in this file.
 - Added the QuranTrack Pilot MVP vertical slice for local organizational use: admin roster setup, manual curriculum administration, student track-level assignment, teacher-visible rosters, progress drafting/publishing, homework summaries, and guardian notification submission through the existing mail relay.
 - Added `0006_guardian_preferred_locale.sql` to store an optional validated `guardians.preferred_locale` (`en` or `tr`) for progress email template selection.
 - Documented that progress notification `sent` status means the mail relay accepted/submitted the message, not confirmed inbox delivery.
+- Completed production-backed administrator setup controls, editable teacher drafts, and English/Turkish localization for pilot screens and guardian-email outcome labels.
+- Tightened tenant relationship validation, made progress publication atomic, and added `0007_notification_attempts.sql` for concurrency-safe notification reservation with retained retry history.
