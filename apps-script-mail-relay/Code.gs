@@ -54,6 +54,7 @@ function doPost(e) {
       replyTo: normalizeEmail_(message.replyTo),
       name: message.senderName.trim(),
     };
+    if (typeof message.html === 'string' && message.html) options.htmlBody = message.html;
     if (sender !== senderConfig.primarySender) options.from = sender;
     GmailApp.sendEmail(normalizeEmail_(message.to), message.subject, message.text, options);
     return json_({ ok: true });
@@ -121,6 +122,11 @@ function validateMessage_(message) {
     return 'invalid_subject';
   if (typeof message.text !== 'string' || !message.text || message.text.length > LIMITS.body)
     return 'invalid_body';
+  if (
+    message.html !== undefined &&
+    (typeof message.html !== 'string' || !message.html || message.html.length > LIMITS.body)
+  )
+    return 'invalid_html_body';
   return null;
 }
 

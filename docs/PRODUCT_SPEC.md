@@ -3353,3 +3353,13 @@ Begin now by:
 ## Phase 2.7 authentication decision
 
 Email/password is the primary staff and administrator login; secure magic links remain available. Existing users create a first password after magic-link authentication and new invitees will create one during acceptance. Forgot/reset is single-use and expires after 30 minutes. Parent login and guardian linking are deferred. Students are non-login records.
+
+## Pilot MVP implemented vertical slice
+
+The pilot implementation supports the smallest usable workflow for one organization: setup classes/students/guardians, manually define curriculum tracks/levels/lessons, assign students to current track levels, let teachers view only assigned active rosters, record draft or published progress with homework, view compact student progress summaries, and submit published progress updates to notification-enabled guardians through the existing Apps Script mail relay.
+
+Authorization is server-enforced from the active organization in the validated session. Organization administrators can manage roster, enrollment, guardian, curriculum, assignment, and progress data inside the active organization. Teachers can see only active assigned classes and active students enrolled in those classes, and can record progress only for those students. Read-only users receive no roster-management or progress-entry access in the pilot. Ordinary organization endpoints do not grant system administrators a cross-tenant bypass.
+
+Notifications are recipient-specific. Each active linked guardian with notifications enabled receives a separate relay submission. The operational notification state `sent` means the relay accepted/submitted the message; it is not confirmed inbox delivery. Drafts cannot be emailed. Failed submissions leave the published progress update intact and may be explicitly retried without automatically resending successful submissions.
+
+Postponed capabilities remain outside this pilot: guardian accounts/portal, public report links, scheduled summaries, bulk import/export, default curriculum installation, analytics, PDFs, SMS, custom template editing, and deployment/production operations.

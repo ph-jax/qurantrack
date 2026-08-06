@@ -97,3 +97,16 @@ All notable changes to QuranTrack will be documented in this file.
 - Integrated display-name/password onboarding into atomic invitation acceptance, made password rotation and reset race claims transactional, counted password-login failures only, and added safe successful-login auditing.
 - Preserved secure magic-link login as an alternative. Phase 2.7 is implemented in code and awaiting review and an explicitly approved staging deployment.
 - Marked Phase 3B1 complete following staging acceptance.
+
+## Unreleased
+
+- Added the QuranTrack Pilot MVP vertical slice for local organizational use: admin roster setup, manual curriculum administration, student track-level assignment, teacher-visible rosters, progress drafting/publishing, homework summaries, and guardian notification submission through the existing mail relay.
+- Added `0006_guardian_preferred_locale.sql` to store an optional validated `guardians.preferred_locale` (`en` or `tr`) for progress email template selection.
+- Documented that progress notification `sent` status means the mail relay accepted/submitted the message, not confirmed inbox delivery.
+- Completed production-backed administrator setup controls, editable teacher drafts, and English/Turkish localization for pilot screens and guardian-email outcome labels.
+- Tightened tenant relationship validation, made progress publication atomic, and added `0007_notification_attempts.sql` for concurrency-safe notification reservation with retained retry history.
+- Fixed shared administrator editor remounting and update SQL so selecting a different class, student, guardian, track, level, or lesson cannot retain stale form values or create an unintended duplicate.
+- Added `0008_progress_idempotency.sql` and `0009_progress_publication_claim.sql`, stable draft-to-publication idempotency, backdated lesson-state ordering, immutable level/lesson parents, honest ambiguous notification handling, accurate Publish & Notify results, and Apps Script `htmlBody` support. The Apps Script source was not deployed.
+- Corrected publication collision recovery to reject rolled-back drafts, classified explicit relay rejection separately from transport/protocol uncertainty, preserved notification results across form resets with accurate tones, and enforced strict real-calendar `YYYY-MM-DD` activity dates.
+- Restricted retryable relay rejection to a documented pre-send code allowlist, blocked first-time and ambiguous retry requests, added truthful mixed-recipient counts/partial results, and surfaced safe standalone Send/Retry request failures.
+- Preserved stored recipient states in explicit-retry results, so submitted guardians remain counted as already submitted and uncertain reservations remain ambiguous while only definitive failures are retried.

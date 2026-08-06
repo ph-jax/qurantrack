@@ -4,6 +4,7 @@ import {
   relayResponseSucceeded,
   relayUrlWithAuth,
   sendRelayMail,
+  submitRelayMail,
   signRelayRequest,
   verifyRelayRequest,
 } from '../../../worker/email/relay';
@@ -53,7 +54,7 @@ describe('mail relay protocol', () => {
   it('treats JSON responses other than ok true as relay failures', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => Response.json({ ok: false, error: 'replay' })),
+      vi.fn(async () => Response.json({ ok: false, error: 'invalid_recipient' })),
     );
     await expect(
       sendRelayMail(
@@ -66,6 +67,66 @@ describe('mail relay protocol', () => {
     ).rejects.toThrow('Mail relay rejected');
     expect(relayResponseSucceeded({ ok: true })).toBe(true);
     expect(relayResponseSucceeded({ ok: false, error: 'expired' })).toBe(false);
+  });
+
+  it.each([
+    ['timeout', new TypeError('network timeout')],
+    ['aborted transport', new DOMException('aborted', 'AbortError')],
+  ])('classifies %s as ambiguous', async (_label, error) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Promise.reject(error)),
+    );
+    await expect(
+      submitRelayMail(
+        {
+          MAIL_RELAY_URL: 'https://script.google.com/macros/s/demo/exec',
+          MAIL_RELAY_SECRET: 'relay-secret',
+        } as never,
+        message,
+      ),
+    ).resolves.toEqual({ status: 'ambiguous' });
+  });
+
+  it('distinguishes valid acceptance, explicit rejection, and malformed protocol responses', async () => {
+    const env = {
+      MAIL_RELAY_URL: 'https://script.google.com/macros/s/demo/exec',
+      MAIL_RELAY_SECRET: 'relay-secret',
+    } as never;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ ok: true })),
+    );
+    await expect(submitRelayMail(env, message)).resolves.toEqual({ status: 'accepted' });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ ok: false, error: 'invalid_recipient' })),
+    );
+    await expect(submitRelayMail(env, message)).resolves.toEqual({
+      status: 'rejected_before_send',
+    });
+    for (const error of ['relay_unavailable', 'replay', 'unknown_code']) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => Response.json({ ok: false, error })),
+      );
+      await expect(submitRelayMail(env, message)).resolves.toEqual({ status: 'ambiguous' });
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ ok: false, error: 'invalid_recipient' }, { status: 500 })),
+    );
+    await expect(submitRelayMail(env, message)).resolves.toEqual({ status: 'ambiguous' });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('not-json', { status: 200 })),
+    );
+    await expect(submitRelayMail(env, message)).resolves.toEqual({ status: 'ambiguous' });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ ok: false })),
+    );
+    await expect(submitRelayMail(env, message)).resolves.toEqual({ status: 'ambiguous' });
   });
 
   it('keeps Apps Script auth parameters reliably outside custom headers', () => {
@@ -119,6 +180,16 @@ describe('mail relay protocol', () => {
     );
     expect(staticConfig).not.toContain('Session.');
     expect(staticConfig).not.toContain('GmailApp.');
+  });
+
+  it('maps optional HTML to htmlBody while retaining required text fallback', () => {
+    const script = readFileSync('apps-script-mail-relay/Code.gs', 'utf8');
+    expect(script).toContain('options.htmlBody = message.html');
+    expect(script).toContain(
+      'GmailApp.sendEmail(normalizeEmail_(message.to), message.subject, message.text, options)',
+    );
+    expect(script).toContain("typeof message.text !== 'string'");
+    expect(script).toContain("typeof message.html !== 'string'");
   });
 
   it('verifies and rejects relay auth for missing, expiry, replay, bad signature, and alias failures', async () => {

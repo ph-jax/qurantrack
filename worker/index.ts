@@ -30,6 +30,28 @@ import {
   staffList,
 } from './api/v1/memberships';
 import type { Env, Variables } from './types/env';
+import {
+  listClasses,
+  saveClass,
+  classTeachers,
+  removeClassTeacher,
+  classRoster,
+  listStudents,
+  saveStudent,
+  enroll,
+  withdraw,
+  saveGuardian,
+  linkGuardian,
+  curriculum,
+  saveTrack,
+  saveLevel,
+  saveLesson,
+  assignTrack,
+  studentSummary,
+  saveProgress,
+  notifyProgress,
+  setupOptions,
+} from './api/v1/pilot';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -102,6 +124,42 @@ app.patch(
   '/api/v1/organization/settings',
   requireAuth(['system_admin', 'organization_admin']),
   patchOrganizationSettings,
+);
+app.get('/api/v1/classes', requireAuth(), listClasses);
+app.get('/api/v1/pilot/setup-options', requireAuth(['organization_admin']), setupOptions);
+app.post('/api/v1/classes', requireAuth(['organization_admin']), saveClass);
+app.post('/api/v1/classes/:id/teachers', requireAuth(['organization_admin']), classTeachers);
+app.delete(
+  '/api/v1/classes/:id/teachers/:userId',
+  requireAuth(['organization_admin']),
+  removeClassTeacher,
+);
+app.get('/api/v1/classes/:id/roster', requireAuth(), classRoster);
+app.get('/api/v1/students', requireAuth(), listStudents);
+app.post('/api/v1/students', requireAuth(['organization_admin']), saveStudent);
+app.post('/api/v1/enrollments', requireAuth(['organization_admin']), enroll);
+app.post('/api/v1/enrollments/:id/withdraw', requireAuth(['organization_admin']), withdraw);
+app.post('/api/v1/guardians', requireAuth(['organization_admin']), saveGuardian);
+app.post('/api/v1/student-guardians', requireAuth(['organization_admin']), linkGuardian);
+app.get('/api/v1/program', requireAuth(), curriculum);
+app.post('/api/v1/program/tracks', requireAuth(['organization_admin']), saveTrack);
+app.post('/api/v1/program/levels', requireAuth(['organization_admin']), saveLevel);
+app.post('/api/v1/program/lessons', requireAuth(['organization_admin']), saveLesson);
+app.post(
+  '/api/v1/student-track-levels',
+  requireAuth(['organization_admin', 'teacher']),
+  assignTrack,
+);
+app.get(
+  '/api/v1/students/:id/summary',
+  requireAuth(['organization_admin', 'teacher']),
+  studentSummary,
+);
+app.post('/api/v1/progress-updates', requireAuth(['organization_admin', 'teacher']), saveProgress);
+app.post(
+  '/api/v1/progress-updates/:id/notify',
+  requireAuth(['organization_admin', 'teacher']),
+  notifyProgress,
 );
 
 app.notFound((c) =>
