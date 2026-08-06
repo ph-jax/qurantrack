@@ -97,3 +97,9 @@ All notable changes to QuranTrack will be documented in this file.
 - Integrated display-name/password onboarding into atomic invitation acceptance, made password rotation and reset race claims transactional, counted password-login failures only, and added safe successful-login auditing.
 - Preserved secure magic-link login as an alternative. Phase 2.7 is implemented in code and awaiting review and an explicitly approved staging deployment.
 - Marked Phase 3B1 complete following staging acceptance.
+
+## Unreleased
+
+- Added the QuranTrack Pilot MVP vertical slice for local organizational use: admin roster setup, manual curriculum administration, student track-level assignment, teacher-visible rosters, progress drafting/publishing, homework summaries, and guardian notification submission through the existing mail relay.
+- Added `0006_guardian_preferred_locale.sql` to store an optional validated `guardians.preferred_locale` (`en` or `tr`) for progress email template selection.
+- Documented that progress notification `sent` status means the mail relay accepted/submitted the message, not confirmed inbox delivery.

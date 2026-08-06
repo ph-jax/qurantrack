@@ -8,6 +8,13 @@ import { PlaceholderPage } from '../pages/PlaceholderPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { StaffPage } from '../pages/StaffPage';
+import {
+  ClassesPage,
+  ProgramPage,
+  RosterPage,
+  StudentProgressPage,
+  StudentsPage,
+} from '../pages/PilotPages';
 import { InvitationPage } from '../features/auth/InvitationPage';
 import {
   SecurityPage,
@@ -19,7 +26,19 @@ import { showcasePaths } from './showcaseGate';
 const uiPreviewEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_UI_PREVIEW === 'true';
 const appChildren = [
   { index: true, element: <DashboardPage /> },
-  ...['students', 'classes', 'program', 'reports', 'families', 'notifications'].map((path) => ({
+  { path: 'students', element: <StudentsPage /> },
+  { path: 'students/:id', element: <StudentProgressPage /> },
+  { path: 'classes', element: <ClassesPage /> },
+  { path: 'classes/:id', element: <RosterPage /> },
+  {
+    path: 'program',
+    element: (
+      <RoleProtectedRoute roles={['organization_admin']}>
+        <ProgramPage />
+      </RoleProtectedRoute>
+    ),
+  },
+  ...['reports', 'families', 'notifications'].map((path) => ({
     path,
     element: <PlaceholderPage />,
   })),

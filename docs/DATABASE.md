@@ -36,3 +36,9 @@ Phase 3B1 review corrections are verified with a real in-memory SQLite database 
 `0004_password_authentication.sql` adds password authentication storage. `user_password_credentials` stores one global credential per user with algorithm and work-factor upgrade metadata. `password_reset_tokens` stores unique hashes and lifecycle timestamps. `password_reset_consumptions` plus its validation trigger provides a unique transactional claim so racing reset requests cannot both change a password. `authentication_rate_limits` atomically upserts purpose-separated hashed subjects; requests opportunistically delete up to 100 expired rows. Migration 0004 is additive and applies after 0001–0003.
 
 `0005_cloudflare_password_work_factor.sql` rebuilds the credential table with the Cloudflare-compatible PBKDF2 work-factor constraint so new 100,000-iteration credentials can be stored. It has been applied to the remote staging D1 database `qurantrack-staging` (`bf824e5e-a67b-4592-950b-16d01cbd5689`) as part of Phase 2.7 staging verification. Production was not migrated as part of the Phase 2.7 closeout.
+
+## Pilot MVP migration 0006
+
+Migration `0006_guardian_preferred_locale.sql` adds `guardians.preferred_locale`, an optional locale constrained to `en` or `tr`. The field is intentionally limited to the guardian progress-email MVP: templates use the guardian preference when present and fall back to the organization's default locale otherwise.
+
+The Pilot MVP continues to use the existing roster and progress tables. Current teacher assignment is represented by row presence in `class_teachers`; withdrawal history is preserved with `class_enrollments.active`, `enrolled_at`, and `withdrawn_at`; published progress updates write history to `progress_updates`/`progress_update_items` and maintain compact lesson state in `student_lesson_status`.

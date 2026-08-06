@@ -9,6 +9,7 @@ export interface RelayMessage {
   replyTo: string;
   subject: string;
   text: string;
+  html?: string;
 }
 
 export interface RelayResponse {
