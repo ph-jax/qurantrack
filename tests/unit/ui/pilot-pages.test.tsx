@@ -2,8 +2,10 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { I18nextProvider } from 'react-i18next';
+import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ClassesPage } from '../../../src/pages/PilotPages';
+import { ClassesPage, ProgressForm } from '../../../src/pages/PilotPages';
+import { pilotResultPresentation } from '../../../src/features/pilot/results';
 import { i18n } from '../../../src/i18n';
 
 vi.mock('../../../src/features/auth/SessionProvider', () => ({
@@ -96,5 +98,88 @@ describe('Pilot administrator editors', () => {
     expect(screen.getByLabelText('Name')).toHaveValue('');
     await user.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
     expect(screen.getByLabelText('Name')).toHaveValue('First Class');
+  });
+});
+
+describe('Pilot progress result lifecycle', () => {
+  const summary = {
+    classes: [{ id: 'class-a', name: 'Class A' }],
+    lessons: [
+      {
+        id: 'lesson-a',
+        name: 'Lesson A',
+        track_name: 'Track',
+        level_name: 'Level',
+        default_homework: '',
+      },
+    ],
+  };
+  function ResultHarness({ fail = false }: { fail?: boolean }) {
+    const [epoch, setEpoch] = useState(0);
+    const [result, setResult] = useState('');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        fail
+          ? new Response(JSON.stringify({ error: { message: 'safe' } }), { status: 500 })
+          : Response.json({ ok: true, id: 'progress-a', publication: 'notifications_submitted' }),
+      ),
+    );
+    const presentation = result ? pilotResultPresentation(result) : null;
+    return (
+      <>
+        <ProgressForm
+          key={epoch}
+          studentId="student-a"
+          summary={summary}
+          draft={null}
+          onDone={async (reset) => {
+            if (reset) setEpoch((value) => value + 1);
+          }}
+          onResult={setResult}
+        />
+        {presentation && (
+          <div data-testid="result" data-tone={presentation.tone}>
+            {i18n.t(presentation.key)}
+          </div>
+        )}
+      </>
+    );
+  }
+
+  it('maps notification outcomes to accurate tones', () => {
+    expect(pilotResultPresentation('notifications_submitted').tone).toBe('success');
+    expect(pilotResultPresentation('no_recipients').tone).toBe('info');
+    expect(pilotResultPresentation('already_notified').tone).toBe('info');
+    expect(pilotResultPresentation('notification_failed').tone).toBe('error');
+    expect(pilotResultPresentation('notification_ambiguous').tone).toBe('warning');
+    expect(pilotResultPresentation('notification_preparation_failed').tone).toBe('error');
+  });
+
+  it('keeps a successful result visible after the editable form remounts', async () => {
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ResultHarness />
+      </I18nextProvider>,
+    );
+    await user.selectOptions(screen.getByLabelText('Lesson'), 'lesson-a');
+    await user.click(screen.getByRole('button', { name: 'Publish & notify guardians' }));
+    expect(await screen.findByTestId('result')).toHaveAttribute('data-tone', 'success');
+    expect(screen.getByTestId('result')).toHaveTextContent('Published and submitted');
+  });
+
+  it('retains entered form data and shows an error after publication failure', async () => {
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ResultHarness fail />
+      </I18nextProvider>,
+    );
+    await user.selectOptions(screen.getByLabelText('Lesson'), 'lesson-a');
+    await user.type(screen.getByLabelText('Teacher comment'), 'Keep this comment');
+    await user.click(screen.getByRole('button', { name: 'Publish' }));
+    expect(await screen.findByTestId('result')).toHaveAttribute('data-tone', 'error');
+    expect(screen.getByLabelText('Teacher comment')).toHaveValue('Keep this comment');
   });
 });

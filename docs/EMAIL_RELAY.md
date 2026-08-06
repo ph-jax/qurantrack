@@ -17,6 +17,8 @@ The relay preserves the five-minute timestamp window, nonce replay cache, and HM
 
 Progress messages retain required plain text as the fallback and may include the Worker's escaped optional HTML body. The checked-in Apps Script maps that value to Gmail's `htmlBody` option after validation. The source change has not been deployed as part of the Pilot correction pass.
 
+The Worker classifies a valid `{ "ok": true }` response as accepted and a valid explicit `{ "ok": false, "error": "..." }` response as rejected. Network errors, timeouts, aborts, malformed/incomplete responses, and invalid protocol responses are ambiguous because relay acceptance cannot be ruled out. Only explicit rejection is retryable; ambiguous attempts remain reserved and non-retryable to avoid duplicate email. This boundary cannot provide exactly-once delivery.
+
 The executing Google account is accepted as the primary sender without requiring it in `GmailApp.getAliases()`, but it must be explicitly approved. Every additional From alias must both be explicitly approved and appear in `GmailApp.getAliases()`. An explicitly requested unauthorized alias is rejected rather than substituted. Do not log bodies, recipients, links, tokens, nonces, signatures, or secrets.
 
 ## Post-merge staging configuration (manual)

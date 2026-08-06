@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Context } from 'hono';
-import { sendRelayMail } from '../../email/relay';
+import { submitRelayMail } from '../../email/relay';
 import { resolveSender } from '../../email/sender';
 import type { Env, Variables } from '../../types/env';
 
@@ -113,6 +113,15 @@ const opt = (v: unknown, max = 1000) => {
   return s || null;
 };
 const bool = (v: unknown) => v === true || v === 1 || v === '1';
+const isoActivityDate = (value: unknown): value is string => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  if (year < 1 || month < 1 || month > 12 || day < 1) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  );
+};
 
 export async function listClasses(c: Ctx) {
   const a = c.get('auth'),
@@ -757,7 +766,8 @@ export async function saveProgress(c: Ctx) {
   const requestedId = str(b.id);
   const operationKey = str(b.operation_key, 120) || (requestedId ? `record:${requestedId}` : null);
   const payloadItems = Array.isArray(b.items) ? (b.items as Record<string, unknown>[]) : [];
-  if (!studentId || !classId || !payloadItems.length) return json(c, 400);
+  if (!studentId || !classId || !payloadItems.length || !isoActivityDate(b.update_date))
+    return json(c, 400);
 
   const relationship = await c.env.DB.prepare(
     `SELECT 1 FROM students s JOIN class_enrollments ce ON ce.student_id=s.id AND ce.organization_id=s.organization_id AND ce.active=1 JOIN classes cl ON cl.id=ce.class_id AND cl.organization_id=s.organization_id AND cl.active=1 WHERE s.id=? AND cl.id=? AND s.organization_id=? AND s.active=1`,
@@ -816,7 +826,7 @@ export async function saveProgress(c: Ctx) {
 
   const updateId = existing?.id ?? id('pu');
   const timestamp = now();
-  const updateDate = str(b.update_date, 10) || timestamp.slice(0, 10);
+  const updateDate = b.update_date;
   const statements: D1PreparedStatement[] = [
     existing
       ? c.env.DB.prepare(
@@ -920,15 +930,26 @@ export async function saveProgress(c: Ctx) {
   try {
     await c.env.DB.batch(statements);
   } catch {
-    // A racing retry may have committed the unique operation key first. Return that record rather
-    // than creating another update; all other database failures remain opaque.
-    if (operationKey) {
+    // Collision recovery is limited to a concurrent create or publication claim. Existing-draft
+    // failures are successful only when another request actually reached the published state.
+    if ((!existing || requestedStatus === 'published') && operationKey) {
       const raced = await c.env.DB.prepare(
-        'SELECT id,status FROM progress_updates WHERE organization_id=? AND idempotency_key=?',
+        'SELECT id,status,student_id,class_id,teacher_user_id FROM progress_updates WHERE organization_id=? AND idempotency_key=?',
       )
         .bind(org, operationKey)
-        .first<{ id: string; status: string }>();
-      if (raced)
+        .first<{
+          id: string;
+          status: string;
+          student_id: string;
+          class_id: string;
+          teacher_user_id: string;
+        }>();
+      if (
+        raced?.status === requestedStatus &&
+        raced.student_id === studentId &&
+        raced.class_id === classId &&
+        raced.teacher_user_id === (existing?.teacher_user_id ?? auth.userId)
+      )
         return c.json({
           ok: true,
           id: raced.id,
@@ -962,6 +983,8 @@ export async function saveProgress(c: Ctx) {
 
 function notificationSummary(results: AnyNotificationResult[] | null) {
   if (!results?.length) return 'no_recipients';
+  if (results.some((result) => result.status === 'not_reserved'))
+    return 'notification_preparation_failed';
   if (results.some((result) => result.status === 'ambiguous')) return 'notification_ambiguous';
   if (results.some((result) => result.status === 'failed')) return 'notification_failed';
   if (results.every((result) => result.status === 'submitted' && result.already))
@@ -1186,8 +1209,9 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
     }
 
     const data = { ...pu, items };
+    let relayResult: Awaited<ReturnType<typeof submitRelayMail>>;
     try {
-      await sendRelayMail(c.env, {
+      relayResult = await submitRelayMail(c.env, {
         to: recipient.email,
         fromAlias: sender.fromAlias,
         senderName: sender.senderName,
@@ -1197,6 +1221,20 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
         html: emailHtml(locale, data),
       });
     } catch {
+      relayResult = { status: 'ambiguous' };
+    }
+    if (relayResult.status === 'ambiguous') {
+      // Transport/protocol uncertainty may occur after the relay accepted the message. Preserve
+      // pending as non-retryable rather than risk sending a duplicate guardian email.
+      results.push({
+        guardianId: recipient.guardian_id,
+        guardianName: recipient.guardian_name,
+        status: 'ambiguous',
+        requestId: c.get('requestId'),
+      });
+      continue;
+    }
+    if (relayResult.status === 'rejected') {
       const completed = now();
       const safeMessage = `Email relay submission failed. Reference ${c.get('requestId')}`;
       try {

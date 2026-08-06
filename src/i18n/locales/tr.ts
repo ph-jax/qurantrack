@@ -320,6 +320,7 @@ export default {
       ambiguous:
         'Yayınlandı. Bir e-posta gönderiminin durumu belirsiz ve otomatik olarak yeniden denenemez.',
       alreadyNotified: 'Yayınlandı. Veli bildirimleri daha önce gönderildi veya ayrıldı.',
+      preparationFailed: 'Veli bildirimi hazırlanamadı. E-posta gönderilmedi.',
     },
     messages: {
       saving: 'Kaydediliyor…',
@@ -335,6 +336,8 @@ export default {
       notification_failed: 'Yayınlandı ancak bir veya daha fazla veli gönderimi başarısız.',
       notification_ambiguous:
         'Yayınlandı. Bir veli gönderiminin durumu belirsiz ve yeniden denemeye kapatıldı.',
+      notification_preparation_failed:
+        'Yayınlandı ancak veli bildirimi hazırlanamadı. E-posta gönderilmedi.',
       already_notified: 'Zaten yayınlandı ve veli bildirimleri daha önce işlendi.',
       already_published: 'Bu ilerleme güncellemesi zaten yayınlandı.',
     },

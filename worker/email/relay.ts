@@ -73,20 +73,39 @@ export function relayResponseSucceeded(value: RelayResponse): boolean {
   return value.ok === true;
 }
 
-export async function sendRelayMail(env: Env, message: RelayMessage): Promise<void> {
+export type RelaySubmissionResult =
+  { status: 'accepted' } | { status: 'rejected' } | { status: 'ambiguous' };
+
+export async function submitRelayMail(
+  env: Env,
+  message: RelayMessage,
+): Promise<RelaySubmissionResult> {
   const url = requireSecret(env.MAIL_RELAY_URL, 'MAIL_RELAY_URL');
   const secret = requireSecret(env.MAIL_RELAY_SECRET, 'MAIL_RELAY_SECRET');
   const timestamp = String(Math.floor(Date.now() / 1000));
   const nonce = crypto.randomUUID();
   const body = JSON.stringify(message);
   const signature = await signRelayRequest(secret, timestamp, nonce, body);
-  const response = await fetch(relayUrlWithAuth(url, timestamp, nonce, signature), {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body,
-  });
+  let response: Response;
+  try {
+    response = await fetch(relayUrlWithAuth(url, timestamp, nonce, signature), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+    });
+  } catch {
+    return { status: 'ambiguous' };
+  }
   const json = (await response.json().catch(() => null)) as RelayResponse | null;
-  if (!response.ok || !json || !relayResponseSucceeded(json)) {
+  if (response.ok && json?.ok === true) return { status: 'accepted' };
+  if (json?.ok === false && typeof json.error === 'string' && json.error.length > 0)
+    return { status: 'rejected' };
+  return { status: 'ambiguous' };
+}
+
+export async function sendRelayMail(env: Env, message: RelayMessage): Promise<void> {
+  const result = await submitRelayMail(env, message);
+  if (result.status !== 'accepted') {
     throw new Error('Mail relay rejected the message');
   }
 }

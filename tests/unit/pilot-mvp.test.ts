@@ -4,14 +4,14 @@ import { SqliteD1, base, user, membership, now } from '../helpers/sqliteD1';
 import en from '../../src/i18n/locales/en';
 import tr from '../../src/i18n/locales/tr';
 const { validateSession } = vi.hoisted(() => ({ validateSession: vi.fn() }));
-const { sendRelayMail } = vi.hoisted(() => ({ sendRelayMail: vi.fn() }));
+const { submitRelayMail } = vi.hoisted(() => ({ submitRelayMail: vi.fn() }));
 vi.mock('../../worker/auth/service', async (orig) => ({
   ...(await orig<typeof import('../../worker/auth/service')>()),
   validateSession,
 }));
 vi.mock('../../worker/email/relay', async (orig) => ({
   ...(await orig<typeof import('../../worker/email/relay')>()),
-  sendRelayMail,
+  submitRelayMail,
 }));
 import app from '../../worker/index';
 const env = (db: SqliteD1) => ({
@@ -35,10 +35,17 @@ function auth(
   });
 }
 function req(path: string, method = 'GET', body?: unknown) {
+  const payload =
+    path.startsWith('/api/v1/progress-updates') &&
+    body &&
+    typeof body === 'object' &&
+    !Object.prototype.hasOwnProperty.call(body, 'update_date')
+      ? { update_date: '2026-08-01', ...(body as Record<string, unknown>) }
+      : body;
   return new Request(`http://local${path}`, {
     method,
     headers: { cookie: 'qurantrack_session=t', 'content-type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
+    body: payload ? JSON.stringify(payload) : undefined,
   });
 }
 async function seed(db: SqliteD1) {
@@ -104,7 +111,8 @@ describe('Pilot MVP API', () => {
     db = new SqliteD1();
     await seed(db);
     validateSession.mockReset();
-    sendRelayMail.mockReset();
+    submitRelayMail.mockReset();
+    submitRelayMail.mockResolvedValue({ status: 'accepted' });
   });
   it('supports admin roster, guardian, curriculum, assignment, and enrollment workflows', async () => {
     auth();
@@ -192,7 +200,7 @@ describe('Pilot MVP API', () => {
       env(db),
     );
     expect(db.count('student_lesson_status')).toBe(0);
-    expect(sendRelayMail).not.toHaveBeenCalled();
+    expect(submitRelayMail).not.toHaveBeenCalled();
     await app.fetch(
       req('/api/v1/progress-updates', 'POST', {
         student_id: 'stu-a',
@@ -238,7 +246,9 @@ describe('Pilot MVP API', () => {
       }),
       env(db),
     );
-    sendRelayMail.mockRejectedValueOnce(new Error('boom')).mockResolvedValue(undefined);
+    submitRelayMail
+      .mockResolvedValueOnce({ status: 'rejected' })
+      .mockResolvedValue({ status: 'accepted' });
     auth('teacher', 'org-a', 'teacher');
     const res = (await (
       await app.fetch(
@@ -262,8 +272,8 @@ describe('Pilot MVP API', () => {
     const pu = (db.db.prepare('SELECT id FROM progress_updates').get() as any).id;
     await app.fetch(req(`/api/v1/progress-updates/${pu}/notify?retry=1`, 'POST'), env(db));
     await app.fetch(req(`/api/v1/progress-updates/${pu}/notify`, 'POST'), env(db));
-    expect(sendRelayMail).toHaveBeenCalledTimes(2);
-    const msg = sendRelayMail.mock.calls[1][1];
+    expect(submitRelayMail).toHaveBeenCalledTimes(2);
+    const msg = submitRelayMail.mock.calls[1][1];
     expect(msg.subject).toContain('ilerleme');
     expect(msg.text).toContain('Ödev verildi');
     expect(msg.text).not.toContain('needs_practice');
@@ -386,6 +396,39 @@ describe('Pilot MVP API', () => {
       db.db.prepare("SELECT count(*) count FROM audit_log WHERE action='progress.publish'").get(),
     ).toMatchObject({ count: 0 });
   });
+  it('never treats failed draft publication as idempotent success', async () => {
+    auth('teacher', 'org-a', 'teacher');
+    const payload = {
+      operation_key: 'failed-existing-draft',
+      student_id: 'stu-a',
+      class_id: 'class-a',
+      update_date: '2026-08-02',
+      items: [{ lesson_id: 'lesson-a', outcome: 'passed' }],
+    };
+    const draft = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', { ...payload, status: 'draft' }),
+        env(db),
+      )
+    ).json()) as any;
+    db.failBatchAt = 3;
+    const failed = await app.fetch(
+      req('/api/v1/progress-updates', 'POST', {
+        ...payload,
+        id: draft.id,
+        status: 'published',
+      }),
+      env(db),
+    );
+    expect(failed.status).toBe(500);
+    expect(await failed.json()).toMatchObject({ ok: false, error: { code: 'INTERNAL_ERROR' } });
+    expect(
+      db.db.prepare('SELECT status FROM progress_updates WHERE id=?').get(draft.id),
+    ).toMatchObject({
+      status: 'draft',
+    });
+    expect(db.count('student_lesson_status')).toBe(0);
+  });
   it('keeps every administrator setup mutation unavailable to teachers', async () => {
     auth('teacher', 'org-a', 'teacher');
     for (const [path, payload] of [
@@ -432,18 +475,18 @@ describe('Pilot MVP API', () => {
         env(db),
       )
     ).json()) as any;
-    sendRelayMail.mockResolvedValue(undefined);
+    submitRelayMail.mockResolvedValue({ status: 'accepted' });
     await Promise.all([
       app.fetch(req(`/api/v1/progress-updates/${published.id}/notify`, 'POST'), env(db)),
       app.fetch(req(`/api/v1/progress-updates/${published.id}/notify`, 'POST'), env(db)),
     ]);
-    expect(sendRelayMail).toHaveBeenCalledTimes(1);
-    expect(sendRelayMail.mock.calls[0][1].text).toContain('Needs practice');
+    expect(submitRelayMail).toHaveBeenCalledTimes(1);
+    expect(submitRelayMail.mock.calls[0][1].text).toContain('Needs practice');
     await app.fetch(
       req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'),
       env(db),
     );
-    expect(sendRelayMail).toHaveBeenCalledTimes(1);
+    expect(submitRelayMail).toHaveBeenCalledTimes(1);
   });
   it('does not retry a failed submission without an explicit retry flag', async () => {
     auth();
@@ -466,7 +509,9 @@ describe('Pilot MVP API', () => {
       env(db),
     );
     auth('teacher', 'org-a', 'teacher');
-    sendRelayMail.mockRejectedValueOnce(new Error('relay')).mockResolvedValue(undefined);
+    submitRelayMail
+      .mockResolvedValueOnce({ status: 'rejected' })
+      .mockResolvedValue({ status: 'accepted' });
     const published = (await (
       await app.fetch(
         req('/api/v1/progress-updates', 'POST', {
@@ -480,12 +525,12 @@ describe('Pilot MVP API', () => {
       )
     ).json()) as any;
     await app.fetch(req(`/api/v1/progress-updates/${published.id}/notify`, 'POST'), env(db));
-    expect(sendRelayMail).toHaveBeenCalledTimes(1);
+    expect(submitRelayMail).toHaveBeenCalledTimes(1);
     await app.fetch(
       req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'),
       env(db),
     );
-    expect(sendRelayMail).toHaveBeenCalledTimes(2);
+    expect(submitRelayMail).toHaveBeenCalledTimes(2);
     expect(db.count('notification_attempts')).toBe(2);
   });
   it('updates selected administrator records without creating duplicates', async () => {
@@ -582,6 +627,59 @@ describe('Pilot MVP API', () => {
     expect(db.count('progress_updates')).toBe(1);
     expect(db.count('progress_update_items')).toBe(1);
   });
+  it('resolves a legitimate concurrent create collision only at the requested state', async () => {
+    auth('teacher', 'org-a', 'teacher');
+    const payload = {
+      operation_key: 'concurrent-create-operation',
+      student_id: 'stu-a',
+      class_id: 'class-a',
+      update_date: '2026-08-03',
+      status: 'draft',
+      items: [{ lesson_id: 'lesson-a', outcome: 'practiced' }],
+    };
+    const responses = await Promise.all([
+      app.fetch(req('/api/v1/progress-updates', 'POST', payload), env(db)),
+      app.fetch(req('/api/v1/progress-updates', 'POST', payload), env(db)),
+    ]);
+    expect(responses.every((response) => response.status === 200)).toBe(true);
+    expect(db.count('progress_updates')).toBe(1);
+  });
+
+  it('strictly validates real ISO activity dates before database writes', async () => {
+    auth('teacher', 'org-a', 'teacher');
+    const send = (operation_key: string, update_date: unknown) =>
+      app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          operation_key,
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          update_date,
+          status: 'published',
+          items: [{ lesson_id: 'lesson-a', outcome: 'practiced' }],
+        }),
+        env(db),
+      );
+    expect((await send('normal-date', '2026-08-03')).status).toBe(200);
+    expect((await send('leap-date', '2028-02-29')).status).toBe(200);
+    const before = db.count('progress_updates');
+    for (const [index, value] of [
+      null,
+      '2027-02-29',
+      '2026-02-30',
+      '2026-00-10',
+      '2026-13-01',
+      '2026-08-00',
+      '2026-8-03',
+      '2026-08-3',
+      '2026-08-03T00:00:00Z',
+      ' 2026-08-03',
+      '2026-08-03 ',
+      'x2026-08-03',
+    ].entries()) {
+      expect((await send(`invalid-date-${index}`, value)).status).toBe(400);
+    }
+    expect(db.count('progress_updates')).toBe(before);
+  });
   it('keeps newer lesson state while an older pass establishes first completion', async () => {
     auth('teacher', 'org-a', 'teacher');
     const publish = (operation_key: string, update_date: string, outcome: string) =>
@@ -668,10 +766,23 @@ describe('Pilot MVP API', () => {
     ).json()) as any;
     db.failBatchAt = 1;
     const result = (await (
-      await app.fetch(req(`/api/v1/progress-updates/${published.id}/notify`, 'POST'), env(db))
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          id: published.id,
+          operation_key: 'reserve-progress',
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          update_date: '2026-08-01',
+          status: 'published',
+          notify: true,
+          items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+        }),
+        env(db),
+      )
     ).json()) as any;
-    expect(sendRelayMail).not.toHaveBeenCalled();
-    expect(result.results[0].status).toBe('not_reserved');
+    expect(submitRelayMail).not.toHaveBeenCalled();
+    expect(result.publication).toBe('notification_preparation_failed');
+    expect(result.notification[0].status).toBe('not_reserved');
     expect(db.count('notification_log')).toBe(0);
   });
   it('leaves accepted but unfinalized relay submission ambiguous and non-retryable', async () => {
@@ -695,8 +806,9 @@ describe('Pilot MVP API', () => {
       env(db),
     );
     auth('teacher', 'org-a', 'teacher');
-    sendRelayMail.mockImplementationOnce(async () => {
+    submitRelayMail.mockImplementationOnce(async () => {
       db.failBatchAt = 1;
+      return { status: 'accepted' };
     });
     const first = (await (
       await app.fetch(
@@ -719,7 +831,7 @@ describe('Pilot MVP API', () => {
     db.failBatchAt = 0;
     await app.fetch(req(`/api/v1/progress-updates/${first.id}/notify`, 'POST'), env(db));
     await app.fetch(req(`/api/v1/progress-updates/${first.id}/notify?retry=1`, 'POST'), env(db));
-    expect(sendRelayMail).toHaveBeenCalledTimes(1);
+    expect(submitRelayMail).toHaveBeenCalledTimes(1);
   });
   it('reports publish-only and no-recipient outcomes accurately', async () => {
     auth('teacher', 'org-a', 'teacher');
@@ -758,9 +870,11 @@ describe('Pilot MVP API', () => {
       expect(locale.pilot.messages.no_recipients).toBeTruthy();
       expect(locale.pilot.messages.notification_failed).toBeTruthy();
       expect(locale.pilot.messages.notification_ambiguous).toBeTruthy();
+      expect(locale.pilot.messages.notification_preparation_failed).toBeTruthy();
       expect(locale.pilot.messages.already_notified).toBeTruthy();
       expect(locale.pilot.messages.published_only).toBeTruthy();
       expect(locale.pilot.notification.ambiguous).toBeTruthy();
+      expect(locale.pilot.notification.preparationFailed).toBeTruthy();
     }
   });
 });

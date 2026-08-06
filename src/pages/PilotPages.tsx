@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Alert, Badge, Button, Card, FormField, Input, Spinner, Textarea } from '../components/ui';
 import { useSession } from '../features/auth/SessionProvider';
+import { pilotResultPresentation } from '../features/pilot/results';
 
 type Any = Record<string, any>;
 async function api<T = Any>(url: string, init?: RequestInit) {
@@ -678,6 +679,7 @@ export function StudentProgressPage() {
   const [draft, setDraft] = useState<Any | null>(null);
   const [formEpoch, setFormEpoch] = useState(0);
   const [notice, setNotice] = useState('');
+  const [operationResult, setOperationResult] = useState('');
   const [notificationBusy, setNotificationBusy] = useState('');
   if (summary.error || program.error || (admin && setup.error))
     return <Alert tone="error" title={t('pilot.loadError')} />;
@@ -695,8 +697,8 @@ export function StudentProgressPage() {
       <Header title={summary.data.student.display_name} description={t('pilot.progressSummary')} />
       {notice && (
         <Alert
-          tone={notice === 'failed' ? 'error' : 'success'}
-          title={t(`pilot.notification.${notice}`)}
+          tone={pilotResultPresentation(notice).tone}
+          title={t(pilotResultPresentation(notice).key)}
         />
       )}
       {admin && (
@@ -731,7 +733,14 @@ export function StudentProgressPage() {
         summary={summary.data}
         draft={draft}
         onDone={refresh}
+        onResult={setOperationResult}
       />
+      {operationResult && (
+        <Alert
+          tone={pilotResultPresentation(operationResult).tone}
+          title={t(pilotResultPresentation(operationResult).key)}
+        />
+      )}
       <Card>
         <h3 className="font-bold">{t('pilot.passedLessons')}</h3>
         <div className="flex flex-wrap gap-2">
@@ -842,6 +851,7 @@ export function StudentProgressPage() {
 }
 function notificationNotice(results: Any[]) {
   if (!results.length) return 'noRecipients';
+  if (results.some((result) => result.status === 'not_reserved')) return 'preparationFailed';
   if (results.some((result) => result.status === 'ambiguous')) return 'ambiguous';
   if (results.some((result) => result.status === 'failed')) return 'failed';
   if (results.some((result) => result.status === 'submitted')) return 'submitted';
@@ -1078,16 +1088,18 @@ function StudentSetup({
     </Card>
   );
 }
-function ProgressForm({
+export function ProgressForm({
   studentId,
   summary,
   draft,
   onDone,
+  onResult,
 }: {
   studentId: string;
   summary: Any;
   draft: Any | null;
   onDone: (resetProgressForm?: boolean) => Promise<void>;
+  onResult: (result: string) => void;
 }) {
   const { t } = useTranslation();
   const [value, setValue] = useState<Any>(
@@ -1106,12 +1118,11 @@ function ProgressForm({
           operation_key: crypto.randomUUID(),
         },
   );
-  const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   async function save(status: string, notify = false) {
     if (busy) return;
     setBusy(true);
-    setMessage('saving');
+    onResult('');
     try {
       const result = await api('/api/v1/progress-updates', {
         method: 'POST',
@@ -1123,10 +1134,10 @@ function ProgressForm({
         }),
       });
       setValue((current: Any) => ({ ...current, id: result.id }));
-      setMessage(result.publication || (status === 'draft' ? 'draft_saved' : 'published_only'));
+      onResult(result.publication || (status === 'draft' ? 'draft_saved' : 'published_only'));
       await onDone(status === 'published');
     } catch {
-      setMessage('saveError');
+      onResult('saveError');
     } finally {
       setBusy(false);
     }
@@ -1268,21 +1279,6 @@ function ProgressForm({
             {t('pilot.publishNotify')}
           </Button>
         </div>
-        {message && (
-          <Alert
-            tone={
-              [
-                'saveError',
-                'notification_failed',
-                'notification_ambiguous',
-                'not_reserved',
-              ].includes(message)
-                ? 'error'
-                : 'success'
-            }
-            title={t(`pilot.messages.${message}`)}
-          />
-        )}
       </div>
     </Card>
   );

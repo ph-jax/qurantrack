@@ -321,6 +321,7 @@ export default {
       ambiguous:
         'Published. An email submission has an uncertain status and cannot be retried automatically.',
       alreadyNotified: 'Published. Guardian notifications were already submitted or reserved.',
+      preparationFailed: 'Guardian notification preparation failed. No email was submitted.',
     },
     messages: {
       saving: 'Saving…',
@@ -336,6 +337,8 @@ export default {
       notification_failed: 'Published, but one or more guardian submissions failed.',
       notification_ambiguous:
         'Published. A guardian submission is uncertain and has been blocked from retry.',
+      notification_preparation_failed:
+        'Published, but guardian notification preparation failed. No email was submitted.',
       already_notified: 'Already published and guardian notifications were already handled.',
       already_published: 'This progress update was already published.',
     },
