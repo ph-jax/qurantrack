@@ -53,6 +53,10 @@ function Header({ title, description }: { title: string; description: string }) 
     </div>
   );
 }
+function focusFirstEditor() {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.requestAnimationFrame(() => document.querySelector<HTMLElement>('form input')?.focus());
+}
 function SelectField({
   id,
   label,
@@ -237,7 +241,7 @@ export function ClassesPage() {
           <Card>
             <p>{t('pilot.emptyClasses')}</p>
             {admin && (
-              <Button className="mt-3" type="button" onClick={() => window.scrollTo({ top: 0 })}>
+              <Button className="mt-3" type="button" onClick={focusFirstEditor}>
                 {t('pilot.classes.create')}
               </Button>
             )}
@@ -526,7 +530,7 @@ export function StudentsPage() {
           <Card>
             <p>{t('pilot.emptyStudents')}</p>
             {admin && (
-              <Button className="mt-3" type="button" onClick={() => window.scrollTo({ top: 0 })}>
+              <Button className="mt-3" type="button" onClick={focusFirstEditor}>
                 {t('pilot.students.create')}
               </Button>
             )}
@@ -541,6 +545,8 @@ export function FamiliesPage() {
   const { t } = useTranslation();
   const setup = useLoad('/api/v1/pilot/setup-options');
   const [editing, setEditing] = useState<Any | null>(null);
+  const [unlinking, setUnlinking] = useState('');
+  const [unlinkResult, setUnlinkResult] = useState<'success' | 'error' | ''>('');
   const reload = async () => {
     await setup.reload();
     setEditing(null);
@@ -548,9 +554,30 @@ export function FamiliesPage() {
   if (setup.error) return <Alert tone="error" title={t('pilot.loadError')} />;
   if (!setup.data) return <Spinner label={t('pilot.loading')} />;
   const data = setup.data;
+  const unlink = async (linkId: string) => {
+    if (unlinking || !confirm(t('pilot.confirm'))) return;
+    setUnlinking(linkId);
+    setUnlinkResult('');
+    try {
+      await api(`/api/v1/student-guardians/${linkId}`, { method: 'DELETE' });
+      await setup.reload();
+      setUnlinkResult('success');
+    } catch {
+      setUnlinkResult('error');
+    } finally {
+      setUnlinking('');
+    }
+  };
   return (
     <div className="space-y-5">
       <Header title={t('pilot.guardians.title')} description={t('pilot.guardians.description')} />
+      <Alert tone="info" title={t('pilot.guardians.linkHelp')} />
+      {unlinkResult && (
+        <Alert
+          tone={unlinkResult === 'success' ? 'success' : 'error'}
+          title={t(`pilot.guardians.unlink${unlinkResult === 'success' ? 'Success' : 'Error'}`)}
+        />
+      )}
       <Editor
         key={editing?.id ?? 'create-guardian'}
         title={editing ? t('pilot.guardians.edit') : t('pilot.guardians.create')}
@@ -604,15 +631,19 @@ export function FamiliesPage() {
                     }{' '}
                     · {t(link.receive_notifications ? 'pilot.enabled' : 'pilot.disabled')}
                   </span>
+                  <Link
+                    className="font-semibold text-brand"
+                    to={`/app/students/${link.student_id}`}
+                  >
+                    {t('pilot.guardians.manageLink')}
+                  </Link>
                   <Button
                     type="button"
                     variant="secondary"
-                    onClick={() =>
-                      confirm(t('pilot.confirm')) &&
-                      api(`/api/v1/student-guardians/${link.id}`, { method: 'DELETE' }).then(reload)
-                    }
+                    disabled={!!unlinking}
+                    onClick={() => void unlink(link.id)}
                   >
-                    {t('pilot.guardians.unlink')}
+                    {unlinking === link.id ? t('pilot.saving') : t('pilot.guardians.unlink')}
                   </Button>
                 </div>
               ))}

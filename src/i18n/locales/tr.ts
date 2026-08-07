@@ -282,6 +282,11 @@ export default {
       notifications: 'Veliler ve bildirim gönderimleri',
       unlink: 'Öğrenci bağlantısını kaldır',
       linkedStudents: 'Bağlı öğrenciler',
+      linkHelp:
+        'Bir veliyi bağlamak veya bu ilişkinin ilerleme bildirimi tercihini değiştirmek için öğrenciyi açın.',
+      manageLink: 'Öğrencide yönet',
+      unlinkSuccess: 'Veli bağlantısı kaldırıldı.',
+      unlinkError: 'Veli bağlantısı kaldırılamadı. Yeniden deneyin.',
     },
     program: {
       title: 'Program',

@@ -210,6 +210,19 @@ describe('Pilot MVP API', () => {
     const students = (await (await app.fetch(req('/api/v1/students'), env(db))).json()) as any;
     expect(students.students).toHaveLength(1);
   });
+  it('denies system administrators access to organization-owned Pilot APIs', async () => {
+    auth('system_admin', 'org-a', 'admin');
+    for (const path of [
+      '/api/v1/classes',
+      '/api/v1/classes/class-a/roster',
+      '/api/v1/students',
+      '/api/v1/students/stu-a/summary',
+      '/api/v1/pilot/setup-options',
+      '/api/v1/program',
+    ]) {
+      expect((await app.fetch(req(path), env(db))).status, path).toBe(403);
+    }
+  });
   it('removes teacher visibility immediately after unassignment and withdrawal', async () => {
     auth('teacher', 'org-a', 'teacher');
     expect((await app.fetch(req('/api/v1/students/stu-a/summary'), env(db))).status).toBe(200);

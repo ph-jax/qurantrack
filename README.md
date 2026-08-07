@@ -130,6 +130,13 @@ Phase 2.6 authentication, Turnstile, session, organization switching, and email 
 
 Phase 3B1 adds production-backed staff memberships, single-use organization invitations, per-organization roles, and authenticated organization switching. Invitation links expire after seven days and only purpose-separated, peppered hashes are stored. Staging verification covered administrator Staff-page access, invitation creation, email submission and receipt, invitation acceptance, membership creation, and Teacher / Mentor route restrictions; Phase 3B1 is complete.
 
+### Pilot acceptance role
+
+Run organization-owned Pilot acceptance with an active `organization_admin` membership. The
+bootstrap `system_admin` account is limited to explicitly supported system-level capabilities and
+must not receive a cross-tenant bypass to Classes, Students, Families, Program, or organization
+progress data. Teachers see only assigned classes and their actively enrolled students.
+
 Email/password is the primary staff authentication method and secure magic-link authentication remains an alternative. New users create a password during invitation acceptance, while existing passwordless users can create one after magic-link authentication. Students initially remain non-login records. Phase 2.7 is complete, and Phase 3B2—groups/classes, students, teacher assignments, enrollments/rosters, and server-enforced teacher visibility—is the next incomplete planned phase. Phase 3C will add approved default curriculum and program administration, and Phase 3D will add new-organization onboarding.
 
 ### Staff authentication

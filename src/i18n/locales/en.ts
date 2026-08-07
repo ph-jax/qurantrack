@@ -285,6 +285,11 @@ export default {
       notifications: 'Guardians and notification submissions',
       unlink: 'Unlink from student',
       linkedStudents: 'Linked students',
+      linkHelp:
+        'Open a student to link a guardian or change progress-notification preferences for that relationship.',
+      manageLink: 'Manage on student',
+      unlinkSuccess: 'Guardian link removed.',
+      unlinkError: 'The guardian link could not be removed. Try again.',
     },
     program: {
       title: 'Program',

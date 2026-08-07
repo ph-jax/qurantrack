@@ -126,7 +126,7 @@ app.patch(
   requireAuth(['system_admin', 'organization_admin']),
   patchOrganizationSettings,
 );
-app.get('/api/v1/classes', requireAuth(), listClasses);
+app.get('/api/v1/classes', requireAuth(['organization_admin', 'teacher']), listClasses);
 app.get('/api/v1/pilot/setup-options', requireAuth(['organization_admin']), setupOptions);
 app.post('/api/v1/classes', requireAuth(['organization_admin']), saveClass);
 app.post('/api/v1/classes/:id/teachers', requireAuth(['organization_admin']), classTeachers);
@@ -135,15 +135,15 @@ app.delete(
   requireAuth(['organization_admin']),
   removeClassTeacher,
 );
-app.get('/api/v1/classes/:id/roster', requireAuth(), classRoster);
-app.get('/api/v1/students', requireAuth(), listStudents);
+app.get('/api/v1/classes/:id/roster', requireAuth(['organization_admin', 'teacher']), classRoster);
+app.get('/api/v1/students', requireAuth(['organization_admin', 'teacher']), listStudents);
 app.post('/api/v1/students', requireAuth(['organization_admin']), saveStudent);
 app.post('/api/v1/enrollments', requireAuth(['organization_admin']), enroll);
 app.post('/api/v1/enrollments/:id/withdraw', requireAuth(['organization_admin']), withdraw);
 app.post('/api/v1/guardians', requireAuth(['organization_admin']), saveGuardian);
 app.post('/api/v1/student-guardians', requireAuth(['organization_admin']), linkGuardian);
 app.delete('/api/v1/student-guardians/:id', requireAuth(['organization_admin']), unlinkGuardian);
-app.get('/api/v1/program', requireAuth(), curriculum);
+app.get('/api/v1/program', requireAuth(['organization_admin', 'teacher']), curriculum);
 app.post('/api/v1/program/tracks', requireAuth(['organization_admin']), saveTrack);
 app.post('/api/v1/program/levels', requireAuth(['organization_admin']), saveLevel);
 app.post('/api/v1/program/lessons', requireAuth(['organization_admin']), saveLesson);

@@ -5,7 +5,11 @@ import { MemoryRouter } from 'react-router-dom';
 import { I18nextProvider } from 'react-i18next';
 import { SessionProvider, useSession } from '../../../src/features/auth/SessionProvider';
 import { ProtectedRoute } from '../../../src/features/auth/ProtectedRoute';
-import { visibleNavigation } from '../../../src/app/navigation';
+import {
+  educatorPilotRoles,
+  organizationPilotRoles,
+  visibleNavigation,
+} from '../../../src/app/navigation';
 import { i18n, LANGUAGE_KEY } from '../../../src/i18n';
 import { Dialog, Button, FormField, Input } from '../../../src/components/ui';
 import { isUiPreviewEnabled, showcasePaths } from '../../../src/app/showcaseGate';
@@ -119,8 +123,28 @@ describe('session and protected routing foundation', () => {
 });
 describe('navigation, language and shared accessibility', () => {
   it('filters administrative routes using trusted session roles', () => {
-    expect(visibleNavigation('teacher').map((x) => x.key)).not.toContain('settings');
-    expect(visibleNavigation('organization_admin').map((x) => x.key)).toContain('settings');
+    expect(visibleNavigation('system_admin').map((x) => x.key)).toEqual([
+      'dashboard',
+      'teachers',
+      'settings',
+    ]);
+    expect(visibleNavigation('organization_admin').map((x) => x.key)).toEqual([
+      'dashboard',
+      'students',
+      'teachers',
+      'classes',
+      'program',
+      'families',
+      'settings',
+    ]);
+    expect(visibleNavigation('teacher').map((x) => x.key)).toEqual([
+      'dashboard',
+      'students',
+      'classes',
+    ]);
+    expect(visibleNavigation('read_only').map((x) => x.key)).toEqual(['dashboard']);
+    expect(educatorPilotRoles).toEqual(['organization_admin', 'teacher']);
+    expect(organizationPilotRoles).toEqual(['organization_admin']);
   });
   it('does not configure development showcase routes in production', () => {
     expect(showcasePaths(false)).toEqual([]);
