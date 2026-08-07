@@ -1,7 +1,5 @@
 import {
-  Bell,
   BookOpen,
-  ChartNoAxesCombined,
   GraduationCap,
   House,
   School,
@@ -20,9 +18,7 @@ export const navigation: NavigationItem[] = [
   { key: 'teachers', to: '/app/teachers', icon: Users, roles: admin },
   { key: 'classes', to: '/app/classes', icon: School, roles: all },
   { key: 'program', to: '/app/program', icon: BookOpen, roles: admin },
-  { key: 'reports', to: '/app/reports', icon: ChartNoAxesCombined, roles: all },
   { key: 'families', to: '/app/families', icon: UsersRound, roles: admin },
-  { key: 'notifications', to: '/app/notifications', icon: Bell, roles: admin },
   { key: 'settings', to: '/app/settings', icon: Settings, roles: admin },
 ];
 export const visibleNavigation = (role: Role) =>

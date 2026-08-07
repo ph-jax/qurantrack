@@ -179,7 +179,7 @@ describe('Staff administration UI', () => {
     );
     expect(Boolean(screen.queryByText('staff-secret'))).toBe(allowed);
     if (!allowed)
-      expect(screen.getByText('You do not have permission to manage staff.')).toBeInTheDocument();
+      expect(screen.getByText('You do not have permission to view this page.')).toBeInTheDocument();
   });
   it('maps stale errors in Turkish without exposing server English', async () => {
     await i18n.changeLanguage('tr');

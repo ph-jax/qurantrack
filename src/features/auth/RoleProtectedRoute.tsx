@@ -10,6 +10,6 @@ export function RoleProtectedRoute({ roles, children }: { roles: Role[]; childre
   return roles.includes(session.role) ? (
     children
   ) : (
-    <Alert tone="error" title={t('auth.permissionDenied')} />
+    <Alert tone="error" title={t('auth.routePermissionDenied')} />
   );
 }

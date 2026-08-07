@@ -10,6 +10,7 @@ import { SettingsPage } from '../pages/SettingsPage';
 import { StaffPage } from '../pages/StaffPage';
 import {
   ClassesPage,
+  FamiliesPage,
   ProgramPage,
   RosterPage,
   StudentProgressPage,
@@ -38,10 +39,18 @@ const appChildren = [
       </RoleProtectedRoute>
     ),
   },
-  ...['reports', 'families', 'notifications'].map((path) => ({
+  ...['reports', 'notifications'].map((path) => ({
     path,
     element: <PlaceholderPage />,
   })),
+  {
+    path: 'families',
+    element: (
+      <RoleProtectedRoute roles={['system_admin', 'organization_admin']}>
+        <FamiliesPage />
+      </RoleProtectedRoute>
+    ),
+  },
   {
     path: 'teachers',
     element: (

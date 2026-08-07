@@ -163,6 +163,44 @@ describe('Pilot MVP API', () => {
       ).status,
     ).toBe(200);
   });
+  it('unlinks a guardian relationship only inside the active tenant', async () => {
+    auth();
+    const guardian = (await (
+      await app.fetch(
+        req('/api/v1/guardians', 'POST', {
+          name: 'Fictional Guardian',
+          email: 'guardian@example.com',
+          active: true,
+          preferred_locale: 'en',
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    await app.fetch(
+      req('/api/v1/student-guardians', 'POST', {
+        student_id: 'stu-a',
+        guardian_id: guardian.id,
+        relationship: 'Guardian',
+        receive_notifications: true,
+      }),
+      env(db),
+    );
+    const setup = (await (
+      await app.fetch(req('/api/v1/pilot/setup-options'), env(db))
+    ).json()) as any;
+    const link = setup.guardianLinks.find((item: any) => item.guardian_id === guardian.id);
+    expect(link.receive_notifications).toBe(1);
+
+    auth('organization_admin', 'org-b', 'other');
+    expect(
+      (await app.fetch(req(`/api/v1/student-guardians/${link.id}`, 'DELETE'), env(db))).status,
+    ).toBe(404);
+    auth();
+    expect(
+      (await app.fetch(req(`/api/v1/student-guardians/${link.id}`, 'DELETE'), env(db))).status,
+    ).toBe(200);
+    expect(db.count('student_guardians')).toBe(0);
+  });
   it('blocks teacher admin mutations and hides unauthorized/cross-org records', async () => {
     auth('teacher', 'org-a', 'teacher');
     expect((await app.fetch(req('/api/v1/classes', 'POST', { name: 'No' }), env(db))).status).toBe(

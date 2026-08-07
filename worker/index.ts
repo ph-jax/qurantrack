@@ -42,6 +42,7 @@ import {
   withdraw,
   saveGuardian,
   linkGuardian,
+  unlinkGuardian,
   curriculum,
   saveTrack,
   saveLevel,
@@ -141,6 +142,7 @@ app.post('/api/v1/enrollments', requireAuth(['organization_admin']), enroll);
 app.post('/api/v1/enrollments/:id/withdraw', requireAuth(['organization_admin']), withdraw);
 app.post('/api/v1/guardians', requireAuth(['organization_admin']), saveGuardian);
 app.post('/api/v1/student-guardians', requireAuth(['organization_admin']), linkGuardian);
+app.delete('/api/v1/student-guardians/:id', requireAuth(['organization_admin']), unlinkGuardian);
 app.get('/api/v1/program', requireAuth(), curriculum);
 app.post('/api/v1/program/tracks', requireAuth(['organization_admin']), saveTrack);
 app.post('/api/v1/program/levels', requireAuth(['organization_admin']), saveLevel);

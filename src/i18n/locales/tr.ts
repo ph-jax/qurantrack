@@ -19,6 +19,7 @@ export default {
     expired: 'Oturumunuzun süresi doldu veya iptal edildi. Lütfen yeniden giriş yapın.',
     noMembership: 'Artık aktif bir kurum üyeliğiniz yok. Bir yöneticiyle iletişime geçin.',
     permissionDenied: 'Personeli yönetme yetkiniz yok.',
+    routePermissionDenied: 'Bu sayfayı görüntüleme yetkiniz yok.',
     service: 'Oturumunuz doğrulanamadı. Bağlantınızı kontrol edip yeniden deneyin.',
     retry: 'Yeniden dene',
     turnstileLoading: 'Kötüye kullanım denetimi yükleniyor…',
@@ -201,6 +202,8 @@ export default {
     remove: 'Kaldır',
     confirm: 'Emin misiniz?',
     empty: 'Henüz kayıt yok.',
+    emptyClasses: 'Henüz sınıf yok. Öğretmen ve öğrenci atamak için ilk sınıfı oluşturun.',
+    emptyStudents: 'Henüz öğrenci yok. Kayıt ve ilerleme takibi için ilk öğrenciyi oluşturun.',
     name: 'Ad',
     description: 'Açıklama',
     schedule: 'Ders programı',
@@ -270,10 +273,15 @@ export default {
     },
     guardians: {
       title: 'Veli iletişim bilgileri',
+      description:
+        'Veli iletişim bilgilerini, dillerini, bağlı öğrencileri ve ilerleme bildirimlerini yönetin.',
+      empty: 'Henüz veli iletişim bilgisi yok. Bir öğrenciye bağlamak için ilk veliyi oluşturun.',
       create: 'Veli oluştur',
       edit: 'Veliyi düzenle',
       links: 'Bağlı veliler',
       notifications: 'Veliler ve bildirim gönderimleri',
+      unlink: 'Öğrenci bağlantısını kaldır',
+      linkedStudents: 'Bağlı öğrenciler',
     },
     program: {
       title: 'Program',

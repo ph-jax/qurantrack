@@ -476,6 +476,25 @@ export async function linkGuardian(c: Ctx) {
   await audit(c, 'guardian.link', 'student', studentId, 'Guardian linked');
   return c.json({ ok: true });
 }
+export async function unlinkGuardian(c: Ctx) {
+  const no = await requireAdmin(c);
+  if (no) return no;
+  const org = c.get('auth').organizationId;
+  const linkId = param(c, 'id');
+  const link = await c.env.DB.prepare(
+    'SELECT student_id,guardian_id FROM student_guardians WHERE id=? AND organization_id=?',
+  )
+    .bind(linkId, org)
+    .first<{ student_id: string; guardian_id: string }>();
+  if (!link) return json(c, 404);
+  await c.env.DB.prepare('DELETE FROM student_guardians WHERE id=? AND organization_id=?')
+    .bind(linkId, org)
+    .run();
+  await audit(c, 'guardian.unlink', 'student', link.student_id, 'Guardian unlinked', {
+    guardianId: link.guardian_id,
+  });
+  return c.json({ ok: true });
+}
 export async function curriculum(c: Ctx) {
   const auth = c.get('auth');
   const org = auth.organizationId;

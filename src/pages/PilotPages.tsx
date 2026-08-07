@@ -233,7 +233,16 @@ export function ClassesPage() {
             edit={() => setEditing(item)}
           />
         ))}
-        {!classes.data.classes.length && <p>{t('pilot.empty')}</p>}
+        {!classes.data.classes.length && (
+          <Card>
+            <p>{t('pilot.emptyClasses')}</p>
+            {admin && (
+              <Button className="mt-3" type="button" onClick={() => window.scrollTo({ top: 0 })}>
+                {t('pilot.classes.create')}
+              </Button>
+            )}
+          </Card>
+        )}
       </div>
     </div>
   );
@@ -513,6 +522,109 @@ export function StudentsPage() {
             </div>
           </Card>
         ))}
+        {!students.data.students.length && (
+          <Card>
+            <p>{t('pilot.emptyStudents')}</p>
+            {admin && (
+              <Button className="mt-3" type="button" onClick={() => window.scrollTo({ top: 0 })}>
+                {t('pilot.students.create')}
+              </Button>
+            )}
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function FamiliesPage() {
+  const { t } = useTranslation();
+  const setup = useLoad('/api/v1/pilot/setup-options');
+  const [editing, setEditing] = useState<Any | null>(null);
+  const reload = async () => {
+    await setup.reload();
+    setEditing(null);
+  };
+  if (setup.error) return <Alert tone="error" title={t('pilot.loadError')} />;
+  if (!setup.data) return <Spinner label={t('pilot.loading')} />;
+  const data = setup.data;
+  return (
+    <div className="space-y-5">
+      <Header title={t('pilot.guardians.title')} description={t('pilot.guardians.description')} />
+      <Editor
+        key={editing?.id ?? 'create-guardian'}
+        title={editing ? t('pilot.guardians.edit') : t('pilot.guardians.create')}
+        initial={editing ?? undefined}
+        fields={[
+          { key: 'name', label: t('pilot.name') },
+          { key: 'email', label: t('pilot.email'), type: 'email' },
+          { key: 'phone', label: t('pilot.phone') },
+          {
+            key: 'preferred_locale',
+            label: t('pilot.locale'),
+            options: [
+              { value: 'en', label: t('common.english') },
+              { value: 'tr', label: t('common.turkish') },
+            ],
+          },
+        ]}
+        onSave={(value) =>
+          api('/api/v1/guardians', { method: 'POST', body: JSON.stringify(value) }).then(reload)
+        }
+        onCancel={editing ? () => setEditing(null) : undefined}
+      />
+      <div className="grid gap-3">
+        {data.guardians.map((guardian: Any) => {
+          const links = data.guardianLinks.filter((link: Any) => link.guardian_id === guardian.id);
+          return (
+            <Card key={guardian.id}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="font-bold">{guardian.name}</h3>
+                  <p className="break-all text-sm text-text-secondary">{guardian.email}</p>
+                  <p className="text-sm">{guardian.preferred_locale?.toUpperCase()}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Status value={!!guardian.active} />
+                  <Button type="button" variant="secondary" onClick={() => setEditing(guardian)}>
+                    {t('pilot.edit')}
+                  </Button>
+                </div>
+              </div>
+              <h4 className="mt-3 font-semibold">{t('pilot.guardians.linkedStudents')}</h4>
+              {links.map((link: Any) => (
+                <div
+                  key={link.id}
+                  className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded border border-border p-2"
+                >
+                  <span>
+                    {
+                      data.students.find((student: Any) => student.id === link.student_id)
+                        ?.display_name
+                    }{' '}
+                    · {t(link.receive_notifications ? 'pilot.enabled' : 'pilot.disabled')}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() =>
+                      confirm(t('pilot.confirm')) &&
+                      api(`/api/v1/student-guardians/${link.id}`, { method: 'DELETE' }).then(reload)
+                    }
+                  >
+                    {t('pilot.guardians.unlink')}
+                  </Button>
+                </div>
+              ))}
+              {!links.length && <p className="text-sm text-text-secondary">{t('pilot.empty')}</p>}
+            </Card>
+          );
+        })}
+        {!data.guardians.length && (
+          <Card>
+            <p>{t('pilot.guardians.empty')}</p>
+          </Card>
+        )}
       </div>
     </div>
   );
