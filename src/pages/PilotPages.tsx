@@ -22,13 +22,15 @@ function useLoad(url: string | null) {
   const [error, setError] = useState(false);
   const reload = useCallback(async () => {
     if (!url) {
-      return;
+      return true;
     }
     setError(false);
     try {
       setData(await api(url));
+      return true;
     } catch {
       setError(true);
+      return false;
     }
   }, [url]);
   useEffect(() => {
@@ -52,6 +54,10 @@ function Header({ title, description }: { title: string; description: string }) 
       </div>
     </div>
   );
+}
+function focusFirstEditor() {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.requestAnimationFrame(() => document.querySelector<HTMLElement>('form input')?.focus());
 }
 function SelectField({
   id,
@@ -233,7 +239,16 @@ export function ClassesPage() {
             edit={() => setEditing(item)}
           />
         ))}
-        {!classes.data.classes.length && <p>{t('pilot.empty')}</p>}
+        {!classes.data.classes.length && (
+          <Card>
+            <p>{t('pilot.emptyClasses')}</p>
+            {admin && (
+              <Button className="mt-3" type="button" onClick={focusFirstEditor}>
+                {t('pilot.classes.create')}
+              </Button>
+            )}
+          </Card>
+        )}
       </div>
     </div>
   );
@@ -513,6 +528,148 @@ export function StudentsPage() {
             </div>
           </Card>
         ))}
+        {!students.data.students.length && (
+          <Card>
+            <p>{t('pilot.emptyStudents')}</p>
+            {admin && (
+              <Button className="mt-3" type="button" onClick={focusFirstEditor}>
+                {t('pilot.students.create')}
+              </Button>
+            )}
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function FamiliesPage() {
+  const { t } = useTranslation();
+  const setup = useLoad('/api/v1/pilot/setup-options');
+  const [editing, setEditing] = useState<Any | null>(null);
+  const [unlinking, setUnlinking] = useState('');
+  const [unlinkResult, setUnlinkResult] = useState<
+    'success' | 'deleteError' | 'verificationError' | ''
+  >('');
+  const reload = async () => {
+    await setup.reload();
+    setEditing(null);
+  };
+  if (setup.error && unlinkResult !== 'verificationError')
+    return <Alert tone="error" title={t('pilot.loadError')} />;
+  if (!setup.data) return <Spinner label={t('pilot.loading')} />;
+  const data = setup.data;
+  const unlink = async (linkId: string) => {
+    if (unlinking || !confirm(t('pilot.confirm'))) return;
+    setUnlinking(linkId);
+    setUnlinkResult('');
+    try {
+      await api(`/api/v1/student-guardians/${linkId}`, { method: 'DELETE' });
+      if (!(await setup.reload())) {
+        setUnlinkResult('verificationError');
+        return;
+      }
+      setUnlinkResult('success');
+    } catch {
+      setUnlinkResult('deleteError');
+    } finally {
+      setUnlinking('');
+    }
+  };
+  return (
+    <div className="space-y-5">
+      <Header title={t('pilot.guardians.title')} description={t('pilot.guardians.description')} />
+      <Alert tone="info" title={t('pilot.guardians.linkHelp')} />
+      {unlinkResult && (
+        <Alert
+          tone={unlinkResult === 'success' ? 'success' : 'error'}
+          title={t(
+            unlinkResult === 'success'
+              ? 'pilot.guardians.unlinkSuccess'
+              : unlinkResult === 'verificationError'
+                ? 'pilot.guardians.unlinkVerificationError'
+                : 'pilot.guardians.unlinkError',
+          )}
+        />
+      )}
+      <Editor
+        key={editing?.id ?? 'create-guardian'}
+        title={editing ? t('pilot.guardians.edit') : t('pilot.guardians.create')}
+        initial={editing ?? undefined}
+        fields={[
+          { key: 'name', label: t('pilot.name') },
+          { key: 'email', label: t('pilot.email'), type: 'email' },
+          { key: 'phone', label: t('pilot.phone') },
+          {
+            key: 'preferred_locale',
+            label: t('pilot.locale'),
+            options: [
+              { value: 'en', label: t('common.english') },
+              { value: 'tr', label: t('common.turkish') },
+            ],
+          },
+        ]}
+        onSave={(value) =>
+          api('/api/v1/guardians', { method: 'POST', body: JSON.stringify(value) }).then(reload)
+        }
+        onCancel={editing ? () => setEditing(null) : undefined}
+      />
+      <div className="grid gap-3">
+        {data.guardians.map((guardian: Any) => {
+          const links = data.guardianLinks.filter((link: Any) => link.guardian_id === guardian.id);
+          return (
+            <Card key={guardian.id}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="font-bold">{guardian.name}</h3>
+                  <p className="break-all text-sm text-text-secondary">{guardian.email}</p>
+                  <p className="text-sm">{guardian.preferred_locale?.toUpperCase()}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Status value={!!guardian.active} />
+                  <Button type="button" variant="secondary" onClick={() => setEditing(guardian)}>
+                    {t('pilot.edit')}
+                  </Button>
+                </div>
+              </div>
+              <h4 className="mt-3 font-semibold">{t('pilot.guardians.linkedStudents')}</h4>
+              {links.map((link: Any) => (
+                <div
+                  key={link.id}
+                  className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded border border-border p-2"
+                >
+                  <span>
+                    {
+                      data.students.find((student: Any) => student.id === link.student_id)
+                        ?.display_name
+                    }{' '}
+                    · {t(link.receive_notifications ? 'pilot.enabled' : 'pilot.disabled')}
+                  </span>
+                  <Link
+                    className="font-semibold text-brand"
+                    to={`/app/students/${link.student_id}`}
+                  >
+                    {t('pilot.guardians.manageLink')}
+                  </Link>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!!unlinking}
+                    onClick={() => void unlink(link.id)}
+                  >
+                    {unlinking === link.id ? t('pilot.saving') : t('pilot.guardians.unlink')}
+                  </Button>
+                </div>
+              ))}
+              {!links.length && <p className="text-sm text-text-secondary">{t('pilot.empty')}</p>}
+            </Card>
+          );
+        })}
+        {!data.guardians.length && (
+          <Card>
+            <p>{t('pilot.guardians.empty')}</p>
+          </Card>
+        )}
       </div>
     </div>
   );
@@ -711,14 +868,6 @@ export function StudentProgressPage() {
           reload={refresh}
         />
       )}
-      {!admin && (
-        <TrackLevelControl
-          studentId={id!}
-          assignedTracks={summary.data.tracks}
-          program={program.data}
-          reload={summary.reload}
-        />
-      )}
       <Card>
         <h3 className="font-bold">{t('pilot.assignedTracks')}</h3>
         {summary.data.tracks.map((track: Any) => (
@@ -855,75 +1004,6 @@ export function StudentProgressPage() {
         ))}
       </Card>
     </div>
-  );
-}
-function TrackLevelControl({
-  studentId,
-  assignedTracks,
-  program,
-  reload,
-}: {
-  studentId: string;
-  assignedTracks: Any[];
-  program: Any;
-  reload: () => Promise<void>;
-}) {
-  const { t } = useTranslation();
-  const [trackId, setTrackId] = useState(assignedTracks[0]?.track_id ?? '');
-  const [levelId, setLevelId] = useState('');
-  return (
-    <Card>
-      <h3 className="font-bold">{t('pilot.changeLevel')}</h3>
-      <div className="grid gap-3 md:grid-cols-2">
-        <SelectField
-          id="teacher-track"
-          label={t('pilot.track')}
-          value={trackId}
-          onChange={(value) => {
-            setTrackId(value);
-            setLevelId('');
-          }}
-        >
-          <option value="">{t('pilot.select')}</option>
-          {assignedTracks.map((track) => (
-            <option key={track.track_id} value={track.track_id}>
-              {track.track_name}
-            </option>
-          ))}
-        </SelectField>
-        <SelectField
-          id="teacher-level"
-          label={t('pilot.currentLevel')}
-          value={levelId}
-          onChange={setLevelId}
-        >
-          <option value="">{t('pilot.select')}</option>
-          {program.levels
-            .filter((level: Any) => level.track_id === trackId && level.active)
-            .map((level: Any) => (
-              <option key={level.id} value={level.id}>
-                {level.name}
-              </option>
-            ))}
-        </SelectField>
-      </div>
-      <Button
-        type="button"
-        disabled={!trackId || !levelId}
-        onClick={() =>
-          api('/api/v1/student-track-levels', {
-            method: 'POST',
-            body: JSON.stringify({
-              student_id: studentId,
-              track_id: trackId,
-              current_level_id: levelId,
-            }),
-          }).then(reload)
-        }
-      >
-        {t('pilot.changeLevel')}
-      </Button>
-    </Card>
   );
 }
 function StudentSetup({

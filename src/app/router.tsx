@@ -10,6 +10,7 @@ import { SettingsPage } from '../pages/SettingsPage';
 import { StaffPage } from '../pages/StaffPage';
 import {
   ClassesPage,
+  FamiliesPage,
   ProgramPage,
   RosterPage,
   StudentProgressPage,
@@ -23,34 +24,79 @@ import {
 } from '../features/auth/PasswordPages';
 import { RoleProtectedRoute } from '../features/auth/RoleProtectedRoute';
 import { showcasePaths } from './showcaseGate';
+import { educatorPilotRoles, organizationPilotRoles } from './navigation';
+import { administrativeRoles } from '../../shared/roles';
 const uiPreviewEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_UI_PREVIEW === 'true';
 const appChildren = [
   { index: true, element: <DashboardPage /> },
-  { path: 'students', element: <StudentsPage /> },
-  { path: 'students/:id', element: <StudentProgressPage /> },
-  { path: 'classes', element: <ClassesPage /> },
-  { path: 'classes/:id', element: <RosterPage /> },
+  {
+    path: 'students',
+    element: (
+      <RoleProtectedRoute roles={educatorPilotRoles}>
+        <StudentsPage />
+      </RoleProtectedRoute>
+    ),
+  },
+  {
+    path: 'students/:id',
+    element: (
+      <RoleProtectedRoute roles={educatorPilotRoles}>
+        <StudentProgressPage />
+      </RoleProtectedRoute>
+    ),
+  },
+  {
+    path: 'classes',
+    element: (
+      <RoleProtectedRoute roles={educatorPilotRoles}>
+        <ClassesPage />
+      </RoleProtectedRoute>
+    ),
+  },
+  {
+    path: 'classes/:id',
+    element: (
+      <RoleProtectedRoute roles={educatorPilotRoles}>
+        <RosterPage />
+      </RoleProtectedRoute>
+    ),
+  },
   {
     path: 'program',
     element: (
-      <RoleProtectedRoute roles={['organization_admin']}>
+      <RoleProtectedRoute roles={organizationPilotRoles}>
         <ProgramPage />
       </RoleProtectedRoute>
     ),
   },
-  ...['reports', 'families', 'notifications'].map((path) => ({
+  ...['reports', 'notifications'].map((path) => ({
     path,
     element: <PlaceholderPage />,
   })),
   {
+    path: 'families',
+    element: (
+      <RoleProtectedRoute roles={organizationPilotRoles}>
+        <FamiliesPage />
+      </RoleProtectedRoute>
+    ),
+  },
+  {
     path: 'teachers',
     element: (
-      <RoleProtectedRoute roles={['system_admin', 'organization_admin']}>
+      <RoleProtectedRoute roles={administrativeRoles}>
         <StaffPage />
       </RoleProtectedRoute>
     ),
   },
-  { path: 'settings', element: <SettingsPage /> },
+  {
+    path: 'settings',
+    element: (
+      <RoleProtectedRoute roles={administrativeRoles}>
+        <SettingsPage />
+      </RoleProtectedRoute>
+    ),
+  },
   { path: 'security', element: <SecurityPage /> },
 ];
 export const router = createBrowserRouter([

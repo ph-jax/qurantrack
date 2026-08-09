@@ -19,6 +19,7 @@ export default {
     expired: 'Your session expired or was revoked. Please sign in again.',
     noMembership: 'You no longer have an active organization membership. Contact an administrator.',
     permissionDenied: 'You do not have permission to manage staff.',
+    routePermissionDenied: 'You do not have permission to view this page.',
     service: 'We could not verify your session. Check your connection and try again.',
     retry: 'Try again',
     turnstileLoading: 'Loading anti-abuse check…',
@@ -201,6 +202,10 @@ export default {
     remove: 'Remove',
     confirm: 'Are you sure?',
     empty: 'No records yet.',
+    emptyClasses:
+      'No classes yet. Create the first class to begin assigning teachers and students.',
+    emptyStudents:
+      'No students yet. Create the first student to begin enrollment and progress tracking.',
     name: 'Name',
     description: 'Description',
     schedule: 'Meeting schedule',
@@ -271,10 +276,22 @@ export default {
     },
     guardians: {
       title: 'Guardian contacts',
+      description:
+        'Manage guardian contacts, languages, linked students, and progress notifications.',
+      empty: 'No guardian contacts yet. Create the first guardian to link them to a student.',
       create: 'Create guardian',
       edit: 'Edit guardian',
       links: 'Linked guardians',
       notifications: 'Guardians and notification submissions',
+      unlink: 'Unlink from student',
+      linkedStudents: 'Linked students',
+      linkHelp:
+        'Open a student to link a guardian or change progress-notification preferences for that relationship.',
+      manageLink: 'Manage on student',
+      unlinkSuccess: 'Guardian link removed.',
+      unlinkError: 'The guardian link could not be removed. Try again.',
+      unlinkVerificationError:
+        'The guardian link removal was submitted, but the updated stored state could not be loaded. Refresh before trying again.',
     },
     program: {
       title: 'Program',

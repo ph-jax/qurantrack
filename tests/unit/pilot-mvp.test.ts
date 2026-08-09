@@ -163,6 +163,64 @@ describe('Pilot MVP API', () => {
       ).status,
     ).toBe(200);
   });
+  it('atomically unlinks and audits a guardian relationship inside the active tenant', async () => {
+    auth();
+    const guardian = (await (
+      await app.fetch(
+        req('/api/v1/guardians', 'POST', {
+          name: 'Fictional Guardian',
+          email: 'guardian@example.com',
+          active: true,
+          preferred_locale: 'en',
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    await app.fetch(
+      req('/api/v1/student-guardians', 'POST', {
+        student_id: 'stu-a',
+        guardian_id: guardian.id,
+        relationship: 'Guardian',
+        receive_notifications: true,
+      }),
+      env(db),
+    );
+    const setup = (await (
+      await app.fetch(req('/api/v1/pilot/setup-options'), env(db))
+    ).json()) as any;
+    const link = setup.guardianLinks.find((item: any) => item.guardian_id === guardian.id);
+    expect(link.receive_notifications).toBe(1);
+
+    auth('organization_admin', 'org-b', 'other');
+    expect(
+      (await app.fetch(req(`/api/v1/student-guardians/${link.id}`, 'DELETE'), env(db))).status,
+    ).toBe(404);
+    auth();
+    db.failBatchAt = 2;
+    expect(
+      (await app.fetch(req(`/api/v1/student-guardians/${link.id}`, 'DELETE'), env(db))).status,
+    ).toBe(500);
+    expect(
+      db.db.prepare('SELECT count(*) count FROM student_guardians WHERE id=?').get(link.id),
+    ).toMatchObject({ count: 1 });
+    expect(
+      db.db.prepare("SELECT count(*) count FROM audit_log WHERE action='guardian.unlink'").get(),
+    ).toMatchObject({ count: 0 });
+
+    db.failBatchAt = 0;
+    expect(
+      (await app.fetch(req(`/api/v1/student-guardians/${link.id}`, 'DELETE'), env(db))).status,
+    ).toBe(200);
+    expect(db.count('student_guardians')).toBe(0);
+    const unlinkAudits = db.db
+      .prepare(
+        "SELECT entity_id,metadata_json FROM audit_log WHERE action='guardian.unlink' ORDER BY created_at",
+      )
+      .all() as { entity_id: string; metadata_json: string }[];
+    expect(unlinkAudits).toHaveLength(1);
+    expect(unlinkAudits[0]).toMatchObject({ entity_id: 'stu-a' });
+    expect(JSON.parse(unlinkAudits[0].metadata_json)).toEqual({ guardianId: guardian.id });
+  });
   it('blocks teacher admin mutations and hides unauthorized/cross-org records', async () => {
     auth('teacher', 'org-a', 'teacher');
     expect((await app.fetch(req('/api/v1/classes', 'POST', { name: 'No' }), env(db))).status).toBe(
@@ -171,6 +229,31 @@ describe('Pilot MVP API', () => {
     expect((await app.fetch(req('/api/v1/students/stu-b/summary'), env(db))).status).toBe(404);
     const students = (await (await app.fetch(req('/api/v1/students'), env(db))).json()) as any;
     expect(students.students).toHaveLength(1);
+    expect(
+      (
+        await app.fetch(
+          req('/api/v1/student-track-levels', 'POST', {
+            student_id: 'stu-a',
+            track_id: 'track-a',
+            current_level_id: 'level-a',
+          }),
+          env(db),
+        )
+      ).status,
+    ).toBe(403);
+  });
+  it('denies system administrators access to organization-owned Pilot APIs', async () => {
+    auth('system_admin', 'org-a', 'admin');
+    for (const path of [
+      '/api/v1/classes',
+      '/api/v1/classes/class-a/roster',
+      '/api/v1/students',
+      '/api/v1/students/stu-a/summary',
+      '/api/v1/pilot/setup-options',
+      '/api/v1/program',
+    ]) {
+      expect((await app.fetch(req(path), env(db))).status, path).toBe(403);
+    }
   });
   it('removes teacher visibility immediately after unassignment and withdrawal', async () => {
     auth('teacher', 'org-a', 'teacher');

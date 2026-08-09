@@ -4,7 +4,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { I18nextProvider } from 'react-i18next';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ClassesPage, ProgressForm } from '../../../src/pages/PilotPages';
+import {
+  ClassesPage,
+  FamiliesPage,
+  ProgressForm,
+  StudentsPage,
+} from '../../../src/pages/PilotPages';
 import {
   pilotResultPresentation,
   requestNotificationAction,
@@ -223,5 +228,250 @@ describe('Pilot progress result lifecycle', () => {
     await user.click(screen.getByRole('button', { name: 'Publish' }));
     expect(await screen.findByTestId('result')).toHaveAttribute('data-tone', 'error');
     expect(screen.getByLabelText('Teacher comment')).toHaveValue('Keep this comment');
+  });
+});
+
+describe('Pilot first-use and Families workflows', () => {
+  const emptySetup = {
+    ok: true,
+    teachers: [],
+    students: [],
+    guardians: [],
+    assignments: [],
+    enrollments: [],
+    guardianLinks: [],
+  };
+  beforeEach(() => {
+    void i18n.changeLanguage('en');
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal('scrollTo', vi.fn());
+    vi.stubGlobal(
+      'confirm',
+      vi.fn(() => true),
+    );
+  });
+
+  it.each([
+    [ClassesPage, 'No classes yet.', 'Create class', 'Name'],
+    [StudentsPage, 'No students yet.', 'Create student', 'Display name'],
+  ])('focuses the creation form from a first-use state', async (Page, empty, action, field) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) =>
+        Response.json(String(input).endsWith('/classes') ? { ok: true, classes: [] } : emptySetup),
+      ),
+    );
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <Page />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+    expect(await screen.findByText(new RegExp(empty))).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: action }).at(-1)!);
+    expect(screen.getByLabelText(field)).toHaveFocus();
+  });
+
+  it('shows Families loading and English and Turkish empty states', async () => {
+    let resolve!: (response: Response) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>((done) => (resolve = done))),
+    );
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <FamiliesPage />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+    expect(screen.getByText('Loading…')).toBeInTheDocument();
+    resolve(Response.json(emptySetup));
+    expect(await screen.findByText(/No guardian contacts yet/)).toBeInTheDocument();
+    await i18n.changeLanguage('tr');
+    expect(await screen.findByText(/Henüz veli iletişim bilgisi yok/)).toBeInTheDocument();
+  });
+
+  it('creates and edits guardians and displays linked students', async () => {
+    const setup = {
+      ...emptySetup,
+      students: [{ id: 'student-a', display_name: 'Fictional Student' }],
+      guardians: [
+        {
+          id: 'guardian-a',
+          name: 'Fictional Guardian',
+          email: 'guardian@example.com',
+          active: 1,
+          preferred_locale: 'en',
+        },
+      ],
+      guardianLinks: [
+        {
+          id: 'link-a',
+          guardian_id: 'guardian-a',
+          student_id: 'student-a',
+          receive_notifications: 1,
+        },
+      ],
+    };
+    const saves: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          saves.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+          return Response.json({ ok: true, id: 'guardian-a' });
+        }
+        return Response.json(setup);
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <FamiliesPage />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+    expect(
+      await screen.findByText(
+        (_content, element) =>
+          element?.tagName === 'SPAN' && !!element.textContent?.includes('Fictional Student'),
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/enabled/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Manage on student' })).toHaveAttribute(
+      'href',
+      '/app/students/student-a',
+    );
+    await user.type(screen.getByLabelText('Name'), 'New Guardian');
+    await user.type(screen.getByLabelText('Email'), 'new.guardian@example.com');
+    await user.selectOptions(screen.getByLabelText('Preferred language'), 'tr');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(saves.at(-1)).toMatchObject({
+        name: 'New Guardian',
+        email: 'new.guardian@example.com',
+        preferred_locale: 'tr',
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.clear(screen.getByLabelText('Name'));
+    await user.type(screen.getByLabelText('Name'), 'Updated Guardian');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(saves.at(-1)).toMatchObject({ id: 'guardian-a', name: 'Updated Guardian' }),
+    );
+  });
+
+  it.each([false, true])(
+    'handles unlink outcome and duplicate clicks (failure=%s)',
+    async (failure) => {
+      let deletes = 0;
+      let links = [
+        {
+          id: 'link-a',
+          guardian_id: 'guardian-a',
+          student_id: 'student-a',
+          receive_notifications: 1,
+        },
+      ];
+      let release!: () => void;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+          if (init?.method === 'DELETE') {
+            deletes += 1;
+            await new Promise<void>((resolve) => (release = resolve));
+            if (failure) return Response.json({ error: { message: 'safe' } }, { status: 500 });
+            links = [];
+            return Response.json({ ok: true });
+          }
+          return Response.json({
+            ...emptySetup,
+            students: [{ id: 'student-a', display_name: 'Fictional Student' }],
+            guardians: [
+              { id: 'guardian-a', name: 'Guardian', email: 'guardian@example.com', active: 1 },
+            ],
+            guardianLinks: links,
+          });
+        }),
+      );
+      const user = userEvent.setup();
+      render(
+        <I18nextProvider i18n={i18n}>
+          <MemoryRouter>
+            <FamiliesPage />
+          </MemoryRouter>
+        </I18nextProvider>,
+      );
+      const unlink = await screen.findByRole('button', { name: 'Unlink from student' });
+      await user.click(unlink);
+      await user.click(unlink);
+      expect(deletes).toBe(1);
+      release();
+      expect(
+        await screen.findByText(failure ? /could not be removed/ : 'Guardian link removed.'),
+      ).toBeInTheDocument();
+      if (!failure)
+        expect(
+          screen.queryByRole('button', { name: 'Unlink from student' }),
+        ).not.toBeInTheDocument();
+    },
+  );
+
+  it('reports a verification error when DELETE succeeds but stored-state reload fails', async () => {
+    let deletes = 0;
+    let setupRequests = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'DELETE') {
+          deletes += 1;
+          return Response.json({ ok: true });
+        }
+        setupRequests += 1;
+        if (setupRequests > 1)
+          return Response.json({ error: { message: 'safe' } }, { status: 500 });
+        return Response.json({
+          ...emptySetup,
+          students: [{ id: 'student-a', display_name: 'Fictional Student' }],
+          guardians: [
+            { id: 'guardian-a', name: 'Guardian', email: 'guardian@example.com', active: 1 },
+          ],
+          guardianLinks: [
+            {
+              id: 'link-a',
+              guardian_id: 'guardian-a',
+              student_id: 'student-a',
+              receive_notifications: 1,
+            },
+          ],
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <FamiliesPage />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Unlink from student' }));
+    expect(
+      await screen.findByText(
+        /removal was submitted, but the updated stored state could not be loaded/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Guardian link removed.')).not.toBeInTheDocument();
+    expect(deletes).toBe(1);
+    expect(setupRequests).toBe(2);
+    expect(screen.getByRole('button', { name: 'Unlink from student' })).toBeEnabled();
   });
 });

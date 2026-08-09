@@ -144,23 +144,28 @@ describe('organization settings API authorization and isolation', () => {
   });
 
   it.each(['teacher', 'read_only'] as Role[])(
-    'returns 403 when %s attempts PATCH',
+    'returns 403 when %s attempts GET and PATCH',
     async (role) => {
       authenticate(role);
+      expect((await app.fetch(request('GET'), { DB: database().DB })).status).toBe(403);
       expect(
         (await app.fetch(request('PATCH', settingsFor('org-a')), { DB: database().DB })).status,
       ).toBe(403);
     },
   );
 
-  it.each(['system_admin', 'organization_admin'] as Role[])('allows %s to PATCH', async (role) => {
-    authenticate(role);
-    const response = await app.fetch(request('PATCH', settingsFor('org-a')), {
-      DB: database().DB,
-    });
-    expect(response.status).toBe(200);
-    expect((await response.json()) as { settings: unknown }).toMatchObject({ settings: input });
-  });
+  it.each(['system_admin', 'organization_admin'] as Role[])(
+    'allows %s to GET and PATCH',
+    async (role) => {
+      authenticate(role);
+      expect((await app.fetch(request('GET'), { DB: database().DB })).status).toBe(200);
+      const response = await app.fetch(request('PATCH', settingsFor('org-a')), {
+        DB: database().DB,
+      });
+      expect(response.status).toBe(200);
+      expect((await response.json()) as { settings: unknown }).toMatchObject({ settings: input });
+    },
+  );
 
   it('allows matching IDs and binds only the session tenant for GET and PATCH', async () => {
     authenticate('organization_admin', 'org-a');
