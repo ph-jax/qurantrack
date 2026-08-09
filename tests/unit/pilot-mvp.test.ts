@@ -163,7 +163,7 @@ describe('Pilot MVP API', () => {
       ).status,
     ).toBe(200);
   });
-  it('unlinks a guardian relationship only inside the active tenant', async () => {
+  it('atomically unlinks and audits a guardian relationship inside the active tenant', async () => {
     auth();
     const guardian = (await (
       await app.fetch(
@@ -196,10 +196,30 @@ describe('Pilot MVP API', () => {
       (await app.fetch(req(`/api/v1/student-guardians/${link.id}`, 'DELETE'), env(db))).status,
     ).toBe(404);
     auth();
+    db.failBatchAt = 2;
+    expect(
+      (await app.fetch(req(`/api/v1/student-guardians/${link.id}`, 'DELETE'), env(db))).status,
+    ).toBe(500);
+    expect(
+      db.db.prepare('SELECT count(*) count FROM student_guardians WHERE id=?').get(link.id),
+    ).toMatchObject({ count: 1 });
+    expect(
+      db.db.prepare("SELECT count(*) count FROM audit_log WHERE action='guardian.unlink'").get(),
+    ).toMatchObject({ count: 0 });
+
+    db.failBatchAt = 0;
     expect(
       (await app.fetch(req(`/api/v1/student-guardians/${link.id}`, 'DELETE'), env(db))).status,
     ).toBe(200);
     expect(db.count('student_guardians')).toBe(0);
+    const unlinkAudits = db.db
+      .prepare(
+        "SELECT entity_id,metadata_json FROM audit_log WHERE action='guardian.unlink' ORDER BY created_at",
+      )
+      .all() as { entity_id: string; metadata_json: string }[];
+    expect(unlinkAudits).toHaveLength(1);
+    expect(unlinkAudits[0]).toMatchObject({ entity_id: 'stu-a' });
+    expect(JSON.parse(unlinkAudits[0].metadata_json)).toEqual({ guardianId: guardian.id });
   });
   it('blocks teacher admin mutations and hides unauthorized/cross-org records', async () => {
     auth('teacher', 'org-a', 'teacher');

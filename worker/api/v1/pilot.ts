@@ -487,12 +487,22 @@ export async function unlinkGuardian(c: Ctx) {
     .bind(linkId, org)
     .first<{ student_id: string; guardian_id: string }>();
   if (!link) return json(c, 404);
-  await c.env.DB.prepare('DELETE FROM student_guardians WHERE id=? AND organization_id=?')
-    .bind(linkId, org)
-    .run();
-  await audit(c, 'guardian.unlink', 'student', link.student_id, 'Guardian unlinked', {
-    guardianId: link.guardian_id,
-  });
+  const timestamp = now();
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM student_guardians WHERE id=? AND organization_id=?').bind(
+      linkId,
+      org,
+    ),
+    auditStatement(
+      c,
+      'guardian.unlink',
+      'student',
+      link.student_id,
+      'Guardian unlinked',
+      timestamp,
+      { guardianId: link.guardian_id },
+    ),
+  ]);
   return c.json({ ok: true });
 }
 export async function curriculum(c: Ctx) {
