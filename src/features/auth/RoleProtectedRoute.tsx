@@ -3,7 +3,13 @@ import { Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Alert } from '../../components/ui';
 import { useSession, type Role } from './SessionProvider';
-export function RoleProtectedRoute({ roles, children }: { roles: Role[]; children: ReactNode }) {
+export function RoleProtectedRoute({
+  roles,
+  children,
+}: {
+  roles: readonly Role[];
+  children: ReactNode;
+}) {
   const { session } = useSession();
   const { t } = useTranslation();
   if (!session) return <Navigate to="/login" replace />;

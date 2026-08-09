@@ -11,7 +11,7 @@ export const noStore = createMiddleware<{ Bindings: Env; Variables: Variables }>
   },
 );
 
-export function requireAuth(roles?: Role[]) {
+export function requireAuth(roles?: readonly Role[]) {
   return createMiddleware<{ Bindings: Env; Variables: Variables }>(async (c, next) => {
     const token = readCookie(c.req.header('cookie'), SESSION_COOKIE);
     if (!token)

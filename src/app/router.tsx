@@ -25,6 +25,7 @@ import {
 import { RoleProtectedRoute } from '../features/auth/RoleProtectedRoute';
 import { showcasePaths } from './showcaseGate';
 import { educatorPilotRoles, organizationPilotRoles } from './navigation';
+import { administrativeRoles } from '../../shared/roles';
 const uiPreviewEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_UI_PREVIEW === 'true';
 const appChildren = [
   { index: true, element: <DashboardPage /> },
@@ -83,12 +84,19 @@ const appChildren = [
   {
     path: 'teachers',
     element: (
-      <RoleProtectedRoute roles={['system_admin', 'organization_admin']}>
+      <RoleProtectedRoute roles={administrativeRoles}>
         <StaffPage />
       </RoleProtectedRoute>
     ),
   },
-  { path: 'settings', element: <SettingsPage /> },
+  {
+    path: 'settings',
+    element: (
+      <RoleProtectedRoute roles={administrativeRoles}>
+        <SettingsPage />
+      </RoleProtectedRoute>
+    ),
+  },
   { path: 'security', element: <SecurityPage /> },
 ];
 export const router = createBrowserRouter([

@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { administrativeRoles } from '../shared/roles';
 
 import { healthHandler } from './api/v1/health';
 import {
@@ -120,10 +121,14 @@ app.post(
   requireAuth(['system_admin', 'organization_admin']),
   invitationRevoke,
 );
-app.get('/api/v1/organization/settings', requireAuth(), readOrganizationSettings);
+app.get(
+  '/api/v1/organization/settings',
+  requireAuth(administrativeRoles),
+  readOrganizationSettings,
+);
 app.patch(
   '/api/v1/organization/settings',
-  requireAuth(['system_admin', 'organization_admin']),
+  requireAuth(administrativeRoles),
   patchOrganizationSettings,
 );
 app.get('/api/v1/classes', requireAuth(['organization_admin', 'teacher']), listClasses);

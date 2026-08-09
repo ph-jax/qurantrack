@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
+import { MemoryRouter } from 'react-router-dom';
 import { i18n } from '../../../src/i18n';
 import { SettingsPage } from '../../../src/pages/SettingsPage';
 import { OrganizationIdentity } from '../../../src/components/OrganizationIdentity';
 import type { Role, Session } from '../../../src/features/auth/SessionProvider';
 import { canEditSettings } from '../../../src/features/settings/types';
+import { RoleProtectedRoute } from '../../../src/features/auth/RoleProtectedRoute';
+import { administrativeRoles } from '../../../shared/roles';
 
 const { prepareLogo, useSession } = vi.hoisted(() => ({
   prepareLogo: vi.fn(),
@@ -59,6 +62,18 @@ function renderPage() {
   );
 }
 
+function renderGuardedPage() {
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <MemoryRouter>
+        <RoleProtectedRoute roles={administrativeRoles}>
+          <SettingsPage />
+        </RoleProtectedRoute>
+      </MemoryRouter>
+    </I18nextProvider>,
+  );
+}
+
 describe('settings UI behavior', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
@@ -72,6 +87,23 @@ describe('settings UI behavior', () => {
     expect(canEditSettings('organization_admin')).toBe(true);
     expect(canEditSettings('teacher')).toBe(false);
     expect(canEditSettings('read_only')).toBe(false);
+  });
+
+  it.each(['system_admin', 'organization_admin'] as Role[])(
+    'allows %s to open and read guarded Settings',
+    async (role) => {
+      useSession.mockReturnValue({ session: session(role), organizationSwitching: false });
+      renderGuardedPage();
+      expect(await screen.findByLabelText(/organization name/i)).toHaveValue('Organization A');
+      expect(screen.getByRole('button', { name: /save settings/i })).toBeEnabled();
+    },
+  );
+
+  it.each(['teacher', 'read_only'] as Role[])('denies %s direct Settings navigation', (role) => {
+    useSession.mockReturnValue({ session: session(role), organizationSwitching: false });
+    renderGuardedPage();
+    expect(screen.getByText('You do not have permission to view this page.')).toBeInTheDocument();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it.each(['teacher', 'read_only'] as Role[])('renders %s settings read-only', async (role) => {
