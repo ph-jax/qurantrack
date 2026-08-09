@@ -76,6 +76,27 @@ describe('real SQLite/D1 membership security', () => {
     expect(fetch).not.toHaveBeenCalled();
     db.close();
   });
+  it('lets a manual membership that wins after invitation preflight prevent invitation and delivery', async () => {
+    const db = new SqliteD1();
+    base(db);
+    db.beforeBatch = () => {
+      user(db, 'race-user', 'race@example.test');
+      membership(db, 'race-membership', 'org-a', 'race-user', 'teacher');
+    };
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    expect(
+      await createInvitation(env(db), auth, 'race@example.test', 'teacher', 'race-request'),
+    ).toEqual({ conflict: true });
+    expect(db.count('organization_invitations')).toBe(0);
+    expect(db.count('audit_log')).toBe(0);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(
+      db.db
+        .prepare("SELECT role,active FROM organization_memberships WHERE id='race-membership'")
+        .get(),
+    ).toEqual({ role: 'teacher', active: 1 });
+  });
   it('rolls back resend audit failures without invalidating the previous token', async () => {
     const db = new SqliteD1();
     base(db);

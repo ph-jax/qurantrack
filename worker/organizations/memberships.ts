@@ -29,32 +29,6 @@ const changes = (result: { meta?: unknown }) =>
   (result.meta as { rows_written?: number } | undefined)?.rows_written ??
   0;
 
-function auditInsert(
-  env: Env,
-  auth: AuthContext | null,
-  organizationId: string,
-  action: string,
-  entityType: string,
-  entityId: string,
-  requestId?: string,
-  createdAt = new Date().toISOString(),
-) {
-  return env.DB.prepare(
-    'INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-  ).bind(
-    crypto.randomUUID(),
-    organizationId,
-    auth?.userId ?? null,
-    action,
-    entityType,
-    entityId,
-    action.replaceAll('_', ' '),
-    null,
-    requestId ?? null,
-    createdAt,
-  );
-}
-
 export async function listStaff(env: Env, auth: AuthContext) {
   const members = await env.DB.prepare(
     `SELECT m.id,u.display_name AS displayName,lower(u.email) AS email,m.role,m.active,
@@ -121,15 +95,32 @@ export async function createTeacherManually(
     requireSecret(env.PASSWORD_HASH_PEPPER, 'PASSWORD_HASH_PEPPER'),
   );
   const metadata = JSON.stringify({ role: 'teacher', creationMethod: 'manual', userId });
+  let creationResults: Awaited<ReturnType<Env['DB']['batch']>>;
   try {
-    await env.DB.batch([
+    creationResults = await env.DB.batch([
       env.DB.prepare(
-        'INSERT INTO users (id,email,display_name,active,created_at,updated_at) VALUES (?,?,?,?,?,?)',
-      ).bind(userId, email, displayName, 1, timestamp, timestamp),
+        `INSERT INTO users (id,email,display_name,active,created_at,updated_at)
+         SELECT ?,?,?,?,?,? WHERE NOT EXISTS (
+           SELECT 1 FROM organization_invitations WHERE organization_id=?
+             AND normalized_email=? COLLATE NOCASE AND accepted_at IS NULL
+             AND revoked_at IS NULL AND expires_at>?
+         ) AND NOT EXISTS (SELECT 1 FROM users WHERE email=? COLLATE NOCASE)`,
+      ).bind(
+        userId,
+        email,
+        displayName,
+        1,
+        timestamp,
+        timestamp,
+        auth.organizationId,
+        email,
+        timestamp,
+        email,
+      ),
       env.DB.prepare(
         `INSERT INTO user_password_credentials
          (user_id,algorithm,work_factor,salt,password_hash,created_at,updated_at,password_changed_at)
-         VALUES (?,?,?,?,?,?,?,?)`,
+         SELECT ?,?,?,?,?,?,?,? FROM users WHERE id=?`,
       ).bind(
         userId,
         credential.algorithm,
@@ -139,15 +130,17 @@ export async function createTeacherManually(
         timestamp,
         timestamp,
         timestamp,
+        userId,
       ),
       env.DB.prepare(
         `INSERT INTO organization_memberships
-         (id,organization_id,user_id,role,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?)`,
-      ).bind(membershipId, auth.organizationId, userId, 'teacher', 1, timestamp, timestamp),
+         (id,organization_id,user_id,role,active,created_at,updated_at)
+         SELECT ?,?,?,?,?,?,? FROM users WHERE id=?`,
+      ).bind(membershipId, auth.organizationId, userId, 'teacher', 1, timestamp, timestamp, userId),
       env.DB.prepare(
         `INSERT INTO audit_log
          (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+         SELECT ?,?,?,?,?,?,?,?,?,? FROM organization_memberships WHERE id=?`,
       ).bind(
         crypto.randomUUID(),
         auth.organizationId,
@@ -159,6 +152,7 @@ export async function createTeacherManually(
         metadata,
         requestId ?? null,
         timestamp,
+        membershipId,
       ),
     ]);
   } catch (error) {
@@ -170,6 +164,18 @@ export async function createTeacherManually(
       .first();
     if (racedUser) return { conflict: 'existing_user' as const };
     throw error;
+  }
+  if (changes(creationResults[0]) === 0) {
+    const racedInvitation = await env.DB.prepare(
+      `SELECT 1 present FROM organization_invitations WHERE organization_id=?
+       AND normalized_email=? COLLATE NOCASE AND accepted_at IS NULL
+       AND revoked_at IS NULL AND expires_at>?`,
+    )
+      .bind(auth.organizationId, email, timestamp)
+      .first();
+    return {
+      conflict: racedInvitation ? ('pending_invitation' as const) : ('existing_user' as const),
+    };
   }
   return {
     teacher: {
@@ -241,10 +247,16 @@ export async function createInvitation(
     .bind(auth.organizationId, email)
     .first<{ id: string; active: number }>();
   if (existingMember?.active) return { conflict: true as const };
+  let invitationResults: Awaited<ReturnType<Env['DB']['batch']>>;
   try {
-    await env.DB.batch([
+    invitationResults = await env.DB.batch([
       env.DB.prepare(
-        'INSERT INTO organization_invitations (id,organization_id,normalized_email,role,token_hash,invited_by_user_id,expires_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
+        `INSERT INTO organization_invitations
+         (id,organization_id,normalized_email,role,token_hash,invited_by_user_id,expires_at,created_at,updated_at)
+         SELECT ?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (
+           SELECT 1 FROM organization_memberships m JOIN users u ON u.id=m.user_id
+           WHERE m.organization_id=? AND u.email=? COLLATE NOCASE
+         )`,
       ).bind(
         id,
         auth.organizationId,
@@ -255,16 +267,26 @@ export async function createInvitation(
         expiresAt,
         timestamp,
         timestamp,
-      ),
-      auditInsert(
-        env,
-        auth,
         auth.organizationId,
+        email,
+      ),
+      env.DB.prepare(
+        `INSERT INTO audit_log
+         (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at)
+         SELECT ?,?,?,?,?,?,?,?,?,? FROM organization_invitations WHERE id=? AND organization_id=?`,
+      ).bind(
+        crypto.randomUUID(),
+        auth.organizationId,
+        auth.userId,
         'invitation_created',
         'organization_invitation',
         id,
-        requestId,
+        'invitation created',
+        null,
+        requestId ?? null,
         timestamp,
+        id,
+        auth.organizationId,
       ),
     ]);
   } catch (error) {
@@ -277,6 +299,7 @@ export async function createInvitation(
     if (duplicate) return { conflict: true as const };
     throw error;
   }
+  if (changes(invitationResults[0]) === 0) return { conflict: true as const };
   const org = await organization(env, auth.organizationId);
   if (!org) return { deliveryFailed: true as const };
   try {

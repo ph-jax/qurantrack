@@ -22,6 +22,7 @@ type Invitation = {
   revokedAt: string | null;
   deliveryStatus: 'pending' | 'sent' | 'failed';
 };
+type StaffData = { members: Member[]; invitations: Invitation[] };
 const roles: Role[] = ['organization_admin', 'teacher', 'read_only'];
 export function StaffPage() {
   const { t } = useTranslation();
@@ -50,13 +51,13 @@ export function StaffPage() {
       try {
         const r = await fetch('/api/v1/organization/staff', { cache: 'no-store' });
         if (!r.ok) throw new Error();
-        const j = (await r.json()) as { members: Member[]; invitations: Invitation[] };
+        const j = (await r.json()) as StaffData;
         setMembers(j.members);
         setInvitations(j.invitations);
-        return true;
+        return j;
       } catch {
         if (showError) setError(t('staff.loadError'));
-        return false;
+        return null;
       } finally {
         setLoading(false);
       }
@@ -181,7 +182,19 @@ export function StaffPage() {
         ];
         throw new Error(t(`staff.errors.${known.includes(code) ? code : 'GENERAL'}`));
       }
-      if (!(await load(false))) {
+      const created = (await response.json()) as {
+        teacher?: { membershipId?: string; email?: string; role?: string; active?: boolean };
+      };
+      const refreshed = await load(false);
+      const verifiedMember = refreshed?.members.find(
+        (member) => member.id === created.teacher?.membershipId,
+      );
+      if (
+        !verifiedMember ||
+        verifiedMember.email !== normalizedEmail ||
+        verifiedMember.role !== 'teacher' ||
+        !verifiedMember.active
+      ) {
         setError(t('staff.manualVerificationFailed'));
         return;
       }

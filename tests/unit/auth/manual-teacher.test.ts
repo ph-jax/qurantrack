@@ -1,10 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PASSWORD_ALGORITHM,
   PASSWORD_WORK_FACTOR,
   verifyPassword,
 } from '../../../worker/auth/password';
-import { createTeacherManually } from '../../../worker/organizations/memberships';
+import { createInvitation, createTeacherManually } from '../../../worker/organizations/memberships';
 import { base, invitation, membership, SqliteD1, user } from '../../helpers/sqliteD1';
 
 const auth = {
@@ -15,7 +15,16 @@ const auth = {
   sessionId: 'session',
 };
 const env = (db: SqliteD1) =>
-  ({ DB: db as unknown as D1Database, PASSWORD_HASH_PEPPER: 'password-pepper' }) as never;
+  ({
+    DB: db as unknown as D1Database,
+    PASSWORD_HASH_PEPPER: 'password-pepper',
+    TOKEN_HASH_PEPPER: 'token-pepper',
+    APP_BASE_URL: 'https://app.test',
+    MAIL_RELAY_URL: 'https://relay.test',
+    MAIL_RELAY_SECRET: 'relay-secret',
+    MAIL_DEFAULT_FROM_ALIAS: 'sender@example.test',
+    MAIL_APPROVED_FROM_ALIASES: 'sender@example.test',
+  }) as never;
 
 describe('manual teacher persistence', () => {
   let db: SqliteD1;
@@ -23,7 +32,10 @@ describe('manual teacher persistence', () => {
     db = new SqliteD1();
     base(db);
   });
-  afterEach(() => db.close());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    db.close();
+  });
 
   it('atomically creates a normalized active teacher, credential, and safe audit without an invitation', async () => {
     const result = await createTeacherManually(
@@ -169,5 +181,89 @@ describe('manual teacher persistence', () => {
     ]).toEqual(before);
     expect(db.count('user_password_credentials')).toBe(0);
     expect(db.count('audit_log')).toBe(0);
+  });
+
+  it('lets an invitation that wins after preflight prevent every manual-creation write', async () => {
+    db.beforeBatch = () => {
+      db.db
+        .prepare(
+          `INSERT INTO organization_invitations
+         (id,organization_id,normalized_email,role,token_hash,invited_by_user_id,expires_at,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        )
+        .run(
+          'race-invite',
+          'org-a',
+          'race@example.test',
+          'teacher',
+          'hash',
+          'admin',
+          '2999-01-01',
+          '2026-01-01',
+          '2026-01-01',
+        );
+    };
+    await expect(
+      createTeacherManually(
+        env(db),
+        auth,
+        'Race Teacher',
+        'race@example.test',
+        'secure-password',
+        'race',
+      ),
+    ).resolves.toEqual({ conflict: 'pending_invitation' });
+    expect(
+      db.db.prepare("SELECT count(*) count FROM users WHERE email='race@example.test'").get(),
+    ).toEqual({ count: 0 });
+    expect(db.count('user_password_credentials')).toBe(0);
+    expect(
+      db.db
+        .prepare(
+          "SELECT count(*) count FROM organization_memberships WHERE id NOT IN ('admin-a','admin-b')",
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+    expect(db.count('audit_log')).toBe(0);
+    expect(
+      db.db
+        .prepare(
+          "SELECT role,revoked_at,accepted_at FROM organization_invitations WHERE id='race-invite'",
+        )
+        .get(),
+    ).toEqual({ role: 'teacher', revoked_at: null, accepted_at: null });
+  });
+
+  it('serializes concurrent invitation/manual batches so exactly one valid state wins', async () => {
+    await invitation(db, 'other-org', 'org-b', 'race@example.test', 'teacher', 'z'.repeat(43));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 })),
+    );
+    const [manualResult, invitationResult] = await Promise.all([
+      createTeacherManually(env(db), auth, 'Race Teacher', 'race@example.test', 'secure-password'),
+      createInvitation(env(db), auth, 'race@example.test', 'teacher'),
+    ]);
+    const manualWon = 'teacher' in manualResult;
+    const invitationWon = 'ok' in invitationResult;
+    expect(Number(manualWon) + Number(invitationWon)).toBe(1);
+    expect(
+      db.db.prepare("SELECT count(*) count FROM users WHERE email='race@example.test'").get(),
+    ).toEqual({ count: manualWon ? 1 : 0 });
+    expect(
+      db.db
+        .prepare(
+          "SELECT count(*) count FROM organization_invitations WHERE organization_id='org-a' AND normalized_email='race@example.test'",
+        )
+        .get(),
+    ).toEqual({ count: invitationWon ? 1 : 0 });
+    expect(
+      db.db
+        .prepare(
+          "SELECT count(*) count FROM organization_invitations WHERE id='other-org' AND organization_id='org-b'",
+        )
+        .get(),
+    ).toEqual({ count: 1 });
+    expect(db.count('audit_log')).toBe(1);
   });
 });
