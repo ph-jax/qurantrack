@@ -22,13 +22,15 @@ function useLoad(url: string | null) {
   const [error, setError] = useState(false);
   const reload = useCallback(async () => {
     if (!url) {
-      return;
+      return true;
     }
     setError(false);
     try {
       setData(await api(url));
+      return true;
     } catch {
       setError(true);
+      return false;
     }
   }, [url]);
   useEffect(() => {
@@ -546,12 +548,15 @@ export function FamiliesPage() {
   const setup = useLoad('/api/v1/pilot/setup-options');
   const [editing, setEditing] = useState<Any | null>(null);
   const [unlinking, setUnlinking] = useState('');
-  const [unlinkResult, setUnlinkResult] = useState<'success' | 'error' | ''>('');
+  const [unlinkResult, setUnlinkResult] = useState<
+    'success' | 'deleteError' | 'verificationError' | ''
+  >('');
   const reload = async () => {
     await setup.reload();
     setEditing(null);
   };
-  if (setup.error) return <Alert tone="error" title={t('pilot.loadError')} />;
+  if (setup.error && unlinkResult !== 'verificationError')
+    return <Alert tone="error" title={t('pilot.loadError')} />;
   if (!setup.data) return <Spinner label={t('pilot.loading')} />;
   const data = setup.data;
   const unlink = async (linkId: string) => {
@@ -560,10 +565,13 @@ export function FamiliesPage() {
     setUnlinkResult('');
     try {
       await api(`/api/v1/student-guardians/${linkId}`, { method: 'DELETE' });
-      await setup.reload();
+      if (!(await setup.reload())) {
+        setUnlinkResult('verificationError');
+        return;
+      }
       setUnlinkResult('success');
     } catch {
-      setUnlinkResult('error');
+      setUnlinkResult('deleteError');
     } finally {
       setUnlinking('');
     }
@@ -575,7 +583,13 @@ export function FamiliesPage() {
       {unlinkResult && (
         <Alert
           tone={unlinkResult === 'success' ? 'success' : 'error'}
-          title={t(`pilot.guardians.unlink${unlinkResult === 'success' ? 'Success' : 'Error'}`)}
+          title={t(
+            unlinkResult === 'success'
+              ? 'pilot.guardians.unlinkSuccess'
+              : unlinkResult === 'verificationError'
+                ? 'pilot.guardians.unlinkVerificationError'
+                : 'pilot.guardians.unlinkError',
+          )}
         />
       )}
       <Editor

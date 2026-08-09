@@ -290,6 +290,8 @@ export default {
       manageLink: 'Manage on student',
       unlinkSuccess: 'Guardian link removed.',
       unlinkError: 'The guardian link could not be removed. Try again.',
+      unlinkVerificationError:
+        'The guardian link removal was submitted, but the updated stored state could not be loaded. Refresh before trying again.',
     },
     program: {
       title: 'Program',

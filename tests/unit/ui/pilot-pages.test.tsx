@@ -424,4 +424,54 @@ describe('Pilot first-use and Families workflows', () => {
         ).not.toBeInTheDocument();
     },
   );
+
+  it('reports a verification error when DELETE succeeds but stored-state reload fails', async () => {
+    let deletes = 0;
+    let setupRequests = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'DELETE') {
+          deletes += 1;
+          return Response.json({ ok: true });
+        }
+        setupRequests += 1;
+        if (setupRequests > 1)
+          return Response.json({ error: { message: 'safe' } }, { status: 500 });
+        return Response.json({
+          ...emptySetup,
+          students: [{ id: 'student-a', display_name: 'Fictional Student' }],
+          guardians: [
+            { id: 'guardian-a', name: 'Guardian', email: 'guardian@example.com', active: 1 },
+          ],
+          guardianLinks: [
+            {
+              id: 'link-a',
+              guardian_id: 'guardian-a',
+              student_id: 'student-a',
+              receive_notifications: 1,
+            },
+          ],
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <FamiliesPage />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Unlink from student' }));
+    expect(
+      await screen.findByText(
+        /removal was submitted, but the updated stored state could not be loaded/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Guardian link removed.')).not.toBeInTheDocument();
+    expect(deletes).toBe(1);
+    expect(setupRequests).toBe(2);
+    expect(screen.getByRole('button', { name: 'Unlink from student' })).toBeEnabled();
+  });
 });

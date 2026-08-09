@@ -287,6 +287,8 @@ export default {
       manageLink: 'Öğrencide yönet',
       unlinkSuccess: 'Veli bağlantısı kaldırıldı.',
       unlinkError: 'Veli bağlantısı kaldırılamadı. Yeniden deneyin.',
+      unlinkVerificationError:
+        'Veli bağlantısını kaldırma isteği gönderildi ancak güncel kayıtlı durum yüklenemedi. Yeniden denemeden önce sayfayı yenileyin.',
     },
     program: {
       title: 'Program',
