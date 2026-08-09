@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(),
   createInvitation: vi.fn(),
+  createTeacherManually: vi.fn(),
   resendInvitation: vi.fn(),
   revokeInvitation: vi.fn(),
   updateMembership: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock('../../../worker/auth/service', async (original) => ({
 vi.mock('../../../worker/organizations/memberships', async (original) => ({
   ...(await original<typeof import('../../../worker/organizations/memberships')>()),
   createInvitation: mocks.createInvitation,
+  createTeacherManually: mocks.createTeacherManually,
   resendInvitation: mocks.resendInvitation,
   revokeInvitation: mocks.revokeInvitation,
   updateMembership: mocks.updateMembership,
@@ -43,6 +45,9 @@ describe('membership administration behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.createInvitation.mockResolvedValue({ ok: true });
+    mocks.createTeacherManually.mockResolvedValue({
+      teacher: { userId: 'teacher', membershipId: 'membership', role: 'teacher' },
+    });
     mocks.resendInvitation.mockResolvedValue({ ok: true });
     mocks.revokeInvitation.mockResolvedValue(true);
     mocks.updateMembership.mockResolvedValue('ok');
@@ -70,9 +75,31 @@ describe('membership administration behavior', () => {
           )
         ).status,
       ).toBe(403);
+      expect(
+        (
+          await send('/api/v1/organization/teachers', {
+            displayName: 'Teacher',
+            email: 'teacher@example.test',
+            password: 'password1',
+            passwordConfirmation: 'password1',
+            expectedOrganizationId: 'org-a',
+          })
+        ).status,
+      ).toBe(403);
     }
   });
   it.each([
+    [
+      '/api/v1/organization/teachers',
+      {
+        displayName: 'Teacher',
+        email: 'teacher@example.test',
+        password: 'password1',
+        passwordConfirmation: 'password1',
+        expectedOrganizationId: 'org-a',
+      },
+      'POST',
+    ],
     [
       '/api/v1/organization/invitations',
       { email: 'staff@example.test', role: 'teacher', expectedOrganizationId: 'org-a' },
@@ -91,9 +118,33 @@ describe('membership administration behavior', () => {
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: { code: 'STALE_ORGANIZATION' } });
     expect(mocks.createInvitation).not.toHaveBeenCalled();
+    expect(mocks.createTeacherManually).not.toHaveBeenCalled();
     expect(mocks.resendInvitation).not.toHaveBeenCalled();
     expect(mocks.revokeInvitation).not.toHaveBeenCalled();
     expect(mocks.updateMembership).not.toHaveBeenCalled();
+  });
+  it('creates only a teacher and returns no credential material', async () => {
+    auth('organization_admin');
+    const response = await send('/api/v1/organization/teachers', {
+      displayName: ' Teacher ',
+      email: ' TEACHER@EXAMPLE.TEST ',
+      password: 'password1',
+      passwordConfirmation: 'password1',
+      role: 'system_admin',
+      expectedOrganizationId: 'org-a',
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body).toMatchObject({ teacher: { role: 'teacher' } });
+    expect(JSON.stringify(body)).not.toMatch(/password|hash|salt/i);
+    expect(mocks.createTeacherManually).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ organizationId: 'org-a' }),
+      'Teacher',
+      'teacher@example.test',
+      'password1',
+      expect.any(String),
+    );
   });
   it('does not accept system_admin through invitation or membership input', async () => {
     auth('organization_admin');

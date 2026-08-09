@@ -29,6 +29,7 @@ import {
   invitationRevoke,
   membershipUpdate,
   staffList,
+  teacherCreate,
 } from './api/v1/memberships';
 import type { Env, Variables } from './types/env';
 import {
@@ -100,6 +101,11 @@ app.get(
   '/api/v1/organization/staff',
   requireAuth(['system_admin', 'organization_admin']),
   staffList,
+);
+app.post(
+  '/api/v1/organization/teachers',
+  requireAuth(['system_admin', 'organization_admin']),
+  teacherCreate,
 );
 app.patch(
   '/api/v1/organization/memberships/:id',

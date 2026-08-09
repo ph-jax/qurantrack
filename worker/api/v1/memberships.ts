@@ -8,12 +8,15 @@ import {
   acceptInvitation,
   ASSIGNABLE_ROLES,
   createInvitation,
+  createTeacherManually,
   inspectInvitation,
   listStaff,
   resendInvitation,
   revokeInvitation,
   updateMembership,
 } from '../../organizations/memberships';
+import { normalizeEmail } from '../../organizations/memberships';
+import { validatePasswordPolicy } from '../../auth/password';
 
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 const role = z.enum(ASSIGNABLE_ROLES);
@@ -39,6 +42,13 @@ const acceptance = token.extend({
   password: z.string().optional(),
   passwordConfirmation: z.string().optional(),
 });
+const manualTeacher = z.object({
+  displayName: z.string(),
+  email: z.string(),
+  password: z.string(),
+  passwordConfirmation: z.string(),
+  expectedOrganizationId: z.string().min(1),
+});
 const failure = (c: Ctx, code: string, message: string, status: 400 | 403 | 404 | 409 | 502) =>
   c.json({ ok: false, error: { code, message } }, status);
 const passwordPolicyMessage = (code: string | undefined) =>
@@ -61,6 +71,40 @@ const stale = (c: Ctx, expectedOrganizationId: string) =>
 
 export async function staffList(c: Ctx) {
   return c.json({ ok: true, ...(await listStaff(c.env, c.get('auth'))) });
+}
+export async function teacherCreate(c: Ctx) {
+  const parsed = manualTeacher.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return failure(c, 'BAD_REQUEST', 'Complete all required fields.', 400);
+  const displayName = parsed.data.displayName.trim();
+  const email = normalizeEmail(parsed.data.email);
+  if (!displayName || [...displayName].length > 100)
+    return failure(c, 'DISPLAY_NAME_INVALID', 'Display name must be 1–100 characters.', 400);
+  if (!z.email().max(254).safeParse(email).success)
+    return failure(c, 'EMAIL_INVALID', 'Enter a valid email address.', 400);
+  if (parsed.data.password !== parsed.data.passwordConfirmation)
+    return failure(c, 'PASSWORD_CONFIRMATION', 'The password confirmation does not match.', 400);
+  const policy = validatePasswordPolicy(parsed.data.password, email);
+  if (policy) return failure(c, policy, passwordPolicyMessage(policy), 400);
+  const staleResponse = stale(c, parsed.data.expectedOrganizationId);
+  if (staleResponse) return staleResponse;
+  const result = await createTeacherManually(
+    c.env,
+    c.get('auth'),
+    displayName,
+    email,
+    parsed.data.password,
+    c.get('requestId'),
+  );
+  if ('conflict' in result && result.conflict) {
+    const messages = {
+      existing_membership: 'This email already has a membership in the active organization.',
+      inactive_membership: 'This membership is inactive. Reactivate it instead.',
+      pending_invitation: 'Revoke the pending invitation for this email first.',
+      existing_user: 'This email belongs to an existing QuranTrack user. Use Invite Staff instead.',
+    };
+    return failure(c, result.conflict.toUpperCase(), messages[result.conflict], 409);
+  }
+  return c.json({ ok: true, teacher: result.teacher }, 201);
 }
 export async function invitationCreate(c: Ctx) {
   const parsed = invite.safeParse(await c.req.json().catch(() => null));

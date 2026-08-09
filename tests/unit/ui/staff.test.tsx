@@ -139,13 +139,153 @@ describe('Staff administration UI', () => {
     expect(screen.getByText('Email submission: Failed — resend available')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Resend' }).length).toBeGreaterThan(0);
   });
+  it('keeps manual teacher creation separate, fixed-role, and validates password matching locally', async () => {
+    const fetch = vi.fn().mockResolvedValue(response(data));
+    vi.stubGlobal('fetch', fetch);
+    renderStaff();
+    await screen.findByText('Teacher');
+    expect(screen.getByRole('heading', { name: 'Invite Staff' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Add Teacher Manually' })).toBeInTheDocument();
+    expect(screen.getAllByLabelText('Role')).toHaveLength(1);
+    await userEvent.type(screen.getByLabelText('Display name'), 'New Teacher');
+    await userEvent.type(screen.getByLabelText('Teacher email address'), 'new@example.test');
+    await userEvent.type(screen.getByLabelText('Initial password'), 'password1');
+    await userEvent.type(screen.getByLabelText('Confirm password'), 'password2');
+    await userEvent.click(screen.getByRole('button', { name: 'Create Teacher' }));
+    expect(await screen.findByText('The passwords do not match.')).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('submits once, reloads before success, shows the active teacher, and clears secrets', async () => {
+    const refreshed = {
+      ...data,
+      members: [
+        ...data.members,
+        {
+          id: 'new',
+          displayName: 'New Teacher',
+          email: 'new@example.test',
+          role: 'teacher',
+          active: 1,
+          isSelf: 0,
+        },
+      ],
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(response(data))
+      .mockResolvedValueOnce(
+        response({ ok: true, teacher: { membershipId: 'new', role: 'teacher' } }, 201),
+      )
+      .mockResolvedValueOnce(response(refreshed));
+    vi.stubGlobal('fetch', fetch);
+    renderStaff();
+    await screen.findByText('Teacher');
+    const name = screen.getByLabelText('Display name');
+    const email = screen.getByLabelText('Teacher email address');
+    const password = screen.getByLabelText('Initial password');
+    const confirmation = screen.getByLabelText('Confirm password');
+    await userEvent.type(name, 'New Teacher');
+    await userEvent.type(email, ' NEW@EXAMPLE.TEST ');
+    await userEvent.type(password, 'password1');
+    await userEvent.type(confirmation, 'password1');
+    await userEvent.click(screen.getByRole('button', { name: 'Create Teacher' }));
+    expect(
+      await screen.findByText('Teacher created and verified in the active staff list.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('new@example.test')).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(String(fetch.mock.calls[1][1]?.body))).toMatchObject({
+      email: 'new@example.test',
+    });
+    expect(name).toHaveValue('');
+    expect(email).toHaveValue('');
+    expect(password).toHaveValue('');
+    expect(confirmation).toHaveValue('');
+  });
+  it.each([
+    ['missing', data],
+    [
+      'inconsistent',
+      {
+        ...data,
+        members: [
+          ...data.members,
+          {
+            id: 'created',
+            displayName: 'New',
+            email: 'wrong@example.test',
+            role: 'teacher',
+            active: 1,
+            isSelf: 0,
+          },
+        ],
+      },
+    ],
+  ])('does not claim verification for a %s refreshed membership', async (_case, refreshed) => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(response(data))
+        .mockResolvedValueOnce(response({ ok: true, teacher: { membershipId: 'created' } }, 201))
+        .mockResolvedValueOnce(response(refreshed)),
+    );
+    renderStaff();
+    await screen.findByText('Teacher');
+    await userEvent.type(screen.getByLabelText('Display name'), 'New');
+    await userEvent.type(screen.getByLabelText('Teacher email address'), 'new@example.test');
+    await userEvent.type(screen.getByLabelText('Initial password'), 'password1');
+    await userEvent.type(screen.getByLabelText('Confirm password'), 'password1');
+    await userEvent.click(screen.getByRole('button', { name: 'Create Teacher' }));
+    expect(await screen.findByText(/updated staff list could not be verified/)).toBeInTheDocument();
+    expect(
+      screen.queryByText('Teacher created and verified in the active staff list.'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Initial password')).toHaveValue('password1');
+    expect(screen.getByRole('button', { name: 'Create Teacher' })).toBeEnabled();
+  });
+  it('reports API and post-creation reload failures without false success or stuck controls', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(response(data))
+      .mockResolvedValueOnce(response({ error: { code: 'GENERAL' } }, 500));
+    vi.stubGlobal('fetch', fetch);
+    renderStaff();
+    await screen.findByText('Teacher');
+    const fill = async () => {
+      await userEvent.clear(screen.getByLabelText('Display name'));
+      await userEvent.type(screen.getByLabelText('Display name'), 'New');
+      await userEvent.clear(screen.getByLabelText('Teacher email address'));
+      await userEvent.type(screen.getByLabelText('Teacher email address'), 'new@example.test');
+      await userEvent.clear(screen.getByLabelText('Initial password'));
+      await userEvent.type(screen.getByLabelText('Initial password'), 'password1');
+      await userEvent.clear(screen.getByLabelText('Confirm password'));
+      await userEvent.type(screen.getByLabelText('Confirm password'), 'password1');
+    };
+    await fill();
+    await userEvent.click(screen.getByRole('button', { name: 'Create Teacher' }));
+    expect(await screen.findByText('The change could not be completed.')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Teacher created and verified in the active staff list.'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create Teacher' })).toBeEnabled();
+    fetch
+      .mockResolvedValueOnce(response({ ok: true, teacher: { membershipId: 'created' } }, 201))
+      .mockRejectedValueOnce(new Error('reload'));
+    await userEvent.click(screen.getByRole('button', { name: 'Create Teacher' }));
+    expect(await screen.findByText(/updated staff list could not be verified/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create Teacher' })).toBeEnabled();
+  });
   it('shows success, empty states, and disables controls while switching', async () => {
     sessionState.switching = true;
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ members: [], invitations: [] })));
+    const fetch = vi.fn().mockResolvedValue(response({ members: [], invitations: [] }));
+    vi.stubGlobal('fetch', fetch);
     renderStaff();
     expect(await screen.findByText('No matching members.')).toBeInTheDocument();
     expect(screen.getByText('No matching invitations.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Send invitation' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Create Teacher' })).toBeDisabled();
+    expect(fetch).toHaveBeenCalledOnce();
   });
   it('shows localized success after a completed membership mutation', async () => {
     vi.stubGlobal(
@@ -201,6 +341,10 @@ describe('Staff administration UI', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(data)));
     renderStaff();
     expect(await screen.findAllByText('Davet durumu: Bekliyor')).toHaveLength(2);
+    expect(
+      screen.getByRole('heading', { name: 'Öğretmeni Manuel Olarak Ekle' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('İlk parola')).toHaveAttribute('autocomplete', 'new-password');
     expect(screen.getByText('Davet durumu: Kabul edildi')).toBeInTheDocument();
     expect(
       screen.getByText('E-posta gönderimi: Bekliyor — henüz gönderilmedi'),

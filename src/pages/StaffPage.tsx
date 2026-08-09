@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, Badge, Button, Card } from '../components/ui';
 import { useSession } from '../features/auth/SessionProvider';
+import { validatePasswordPolicy } from '../../shared/auth/password-policy';
 
 type Role = 'system_admin' | 'organization_admin' | 'teacher' | 'read_only';
 type Member = {
@@ -21,6 +22,7 @@ type Invitation = {
   revokedAt: string | null;
   deliveryStatus: 'pending' | 'sent' | 'failed';
 };
+type StaffData = { members: Member[]; invitations: Invitation[] };
 const roles: Role[] = ['organization_admin', 'teacher', 'read_only'];
 export function StaffPage() {
   const { t } = useTranslation();
@@ -34,25 +36,34 @@ export function StaffPage() {
     [busy, setBusy] = useState(''),
     [search, setSearch] = useState(''),
     [email, setEmail] = useState(''),
+    [teacherName, setTeacherName] = useState(''),
+    [teacherEmail, setTeacherEmail] = useState(''),
+    [teacherPassword, setTeacherPassword] = useState(''),
+    [teacherConfirmation, setTeacherConfirmation] = useState(''),
     [role, setRole] = useState<Role>('teacher'),
     [roleFilter, setRoleFilter] = useState('all'),
     [statusFilter, setStatusFilter] = useState('all'),
     [invitationFilter, setInvitationFilter] = useState('all');
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const r = await fetch('/api/v1/organization/staff', { cache: 'no-store' });
-      if (!r.ok) throw new Error();
-      const j = (await r.json()) as { members: Member[]; invitations: Invitation[] };
-      setMembers(j.members);
-      setInvitations(j.invitations);
-    } catch {
-      setError(t('staff.loadError'));
-    } finally {
-      setLoading(false);
-    }
-  }, [t]);
+  const load = useCallback(
+    async (showError = true) => {
+      setLoading(true);
+      setError('');
+      try {
+        const r = await fetch('/api/v1/organization/staff', { cache: 'no-store' });
+        if (!r.ok) throw new Error();
+        const j = (await r.json()) as StaffData;
+        setMembers(j.members);
+        setInvitations(j.invitations);
+        return j;
+      } catch {
+        if (showError) setError(t('staff.loadError'));
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [t],
+  );
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
@@ -124,6 +135,80 @@ export function StaffPage() {
     (i) => invitationFilter === 'all' || invitationState(i) === invitationFilter,
   );
   const label = (r: Role) => t(`roles.${r}`);
+  const createTeacher = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (busy || organizationSwitching) return;
+    setError('');
+    setSuccess('');
+    const displayName = teacherName.trim();
+    const normalizedEmail = teacherEmail.trim().toLowerCase();
+    if (!displayName || !normalizedEmail || !teacherPassword || !teacherConfirmation) {
+      setError(t('staff.manualRequired'));
+      return;
+    }
+    if (teacherPassword !== teacherConfirmation) {
+      setError(t('staff.passwordMismatch'));
+      return;
+    }
+    const policy = validatePasswordPolicy(teacherPassword, normalizedEmail);
+    if (policy) {
+      setError(t(`staff.errors.${policy}`));
+      return;
+    }
+    setBusy('manual-teacher');
+    try {
+      const response = await fetch('/api/v1/organization/teachers', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          displayName,
+          email: normalizedEmail,
+          password: teacherPassword,
+          passwordConfirmation: teacherConfirmation,
+          expectedOrganizationId: organizationId,
+        }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: { code?: string };
+        } | null;
+        const code = body?.error?.code ?? 'GENERAL';
+        const known = [
+          'STALE_ORGANIZATION',
+          'EXISTING_MEMBERSHIP',
+          'INACTIVE_MEMBERSHIP',
+          'PENDING_INVITATION',
+          'EXISTING_USER',
+        ];
+        throw new Error(t(`staff.errors.${known.includes(code) ? code : 'GENERAL'}`));
+      }
+      const created = (await response.json()) as {
+        teacher?: { membershipId?: string; email?: string; role?: string; active?: boolean };
+      };
+      const refreshed = await load(false);
+      const verifiedMember = refreshed?.members.find(
+        (member) => member.id === created.teacher?.membershipId,
+      );
+      if (
+        !verifiedMember ||
+        verifiedMember.email !== normalizedEmail ||
+        verifiedMember.role !== 'teacher' ||
+        !verifiedMember.active
+      ) {
+        setError(t('staff.manualVerificationFailed'));
+        return;
+      }
+      setTeacherName('');
+      setTeacherEmail('');
+      setTeacherPassword('');
+      setTeacherConfirmation('');
+      setSuccess(t('staff.manualSuccess'));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t('staff.actionError'));
+    } finally {
+      setBusy('');
+    }
+  };
   if (loading) return <p role="status">{t('staff.loading')}</p>;
   return (
     <div className="space-y-6">
@@ -134,6 +219,7 @@ export function StaffPage() {
       {error && <Alert tone="error" title={error} />}
       {success && <Alert tone="success" title={success} />}
       <Card>
+        <h3 className="mb-3 text-lg font-bold">{t('staff.inviteStaff')}</h3>
         <form
           className="grid gap-3 md:grid-cols-[1fr_14rem_auto]"
           onSubmit={(e) => {
@@ -174,6 +260,65 @@ export function StaffPage() {
             {t('staff.invite')}
           </Button>
         </form>
+      </Card>
+      <Card>
+        <section aria-labelledby="manual-teacher-title">
+          <h3 id="manual-teacher-title" className="mb-1 text-lg font-bold">
+            {t('staff.addTeacherManually')}
+          </h3>
+          <p className="mb-3 text-sm text-text-secondary">{t('staff.manualDescription')}</p>
+          <form className="grid gap-3 md:grid-cols-2" onSubmit={createTeacher}>
+            <label>
+              {t('staff.displayName')}
+              <input
+                className="input mt-1 w-full"
+                required
+                maxLength={100}
+                value={teacherName}
+                onChange={(event) => setTeacherName(event.target.value)}
+              />
+            </label>
+            <label>
+              {t('staff.manualEmail')}
+              <input
+                className="input mt-1 w-full"
+                type="email"
+                required
+                value={teacherEmail}
+                onChange={(event) => setTeacherEmail(event.target.value)}
+              />
+            </label>
+            <label>
+              {t('staff.initialPassword')}
+              <input
+                className="input mt-1 w-full"
+                type="password"
+                autoComplete="new-password"
+                required
+                value={teacherPassword}
+                onChange={(event) => setTeacherPassword(event.target.value)}
+              />
+            </label>
+            <label>
+              {t('staff.confirmPassword')}
+              <input
+                className="input mt-1 w-full"
+                type="password"
+                autoComplete="new-password"
+                required
+                value={teacherConfirmation}
+                onChange={(event) => setTeacherConfirmation(event.target.value)}
+              />
+            </label>
+            <Button
+              className="md:col-span-2 md:justify-self-start"
+              disabled={!!busy || organizationSwitching}
+              type="submit"
+            >
+              {busy === 'manual-teacher' ? t('staff.creatingTeacher') : t('staff.createTeacher')}
+            </Button>
+          </form>
+        </section>
       </Card>
       <label className="block max-w-md">
         {t('staff.search')}
