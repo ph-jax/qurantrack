@@ -209,6 +209,18 @@ describe('Pilot MVP API', () => {
     expect((await app.fetch(req('/api/v1/students/stu-b/summary'), env(db))).status).toBe(404);
     const students = (await (await app.fetch(req('/api/v1/students'), env(db))).json()) as any;
     expect(students.students).toHaveLength(1);
+    expect(
+      (
+        await app.fetch(
+          req('/api/v1/student-track-levels', 'POST', {
+            student_id: 'stu-a',
+            track_id: 'track-a',
+            current_level_id: 'level-a',
+          }),
+          env(db),
+        )
+      ).status,
+    ).toBe(403);
   });
   it('denies system administrators access to organization-owned Pilot APIs', async () => {
     auth('system_admin', 'org-a', 'admin');

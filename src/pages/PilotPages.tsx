@@ -854,14 +854,6 @@ export function StudentProgressPage() {
           reload={refresh}
         />
       )}
-      {!admin && (
-        <TrackLevelControl
-          studentId={id!}
-          assignedTracks={summary.data.tracks}
-          program={program.data}
-          reload={summary.reload}
-        />
-      )}
       <Card>
         <h3 className="font-bold">{t('pilot.assignedTracks')}</h3>
         {summary.data.tracks.map((track: Any) => (
@@ -998,75 +990,6 @@ export function StudentProgressPage() {
         ))}
       </Card>
     </div>
-  );
-}
-function TrackLevelControl({
-  studentId,
-  assignedTracks,
-  program,
-  reload,
-}: {
-  studentId: string;
-  assignedTracks: Any[];
-  program: Any;
-  reload: () => Promise<void>;
-}) {
-  const { t } = useTranslation();
-  const [trackId, setTrackId] = useState(assignedTracks[0]?.track_id ?? '');
-  const [levelId, setLevelId] = useState('');
-  return (
-    <Card>
-      <h3 className="font-bold">{t('pilot.changeLevel')}</h3>
-      <div className="grid gap-3 md:grid-cols-2">
-        <SelectField
-          id="teacher-track"
-          label={t('pilot.track')}
-          value={trackId}
-          onChange={(value) => {
-            setTrackId(value);
-            setLevelId('');
-          }}
-        >
-          <option value="">{t('pilot.select')}</option>
-          {assignedTracks.map((track) => (
-            <option key={track.track_id} value={track.track_id}>
-              {track.track_name}
-            </option>
-          ))}
-        </SelectField>
-        <SelectField
-          id="teacher-level"
-          label={t('pilot.currentLevel')}
-          value={levelId}
-          onChange={setLevelId}
-        >
-          <option value="">{t('pilot.select')}</option>
-          {program.levels
-            .filter((level: Any) => level.track_id === trackId && level.active)
-            .map((level: Any) => (
-              <option key={level.id} value={level.id}>
-                {level.name}
-              </option>
-            ))}
-        </SelectField>
-      </div>
-      <Button
-        type="button"
-        disabled={!trackId || !levelId}
-        onClick={() =>
-          api('/api/v1/student-track-levels', {
-            method: 'POST',
-            body: JSON.stringify({
-              student_id: studentId,
-              track_id: trackId,
-              current_level_id: levelId,
-            }),
-          }).then(reload)
-        }
-      >
-        {t('pilot.changeLevel')}
-      </Button>
-    </Card>
   );
 }
 function StudentSetup({

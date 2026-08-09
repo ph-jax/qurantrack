@@ -152,11 +152,7 @@ app.get('/api/v1/program', requireAuth(['organization_admin', 'teacher']), curri
 app.post('/api/v1/program/tracks', requireAuth(['organization_admin']), saveTrack);
 app.post('/api/v1/program/levels', requireAuth(['organization_admin']), saveLevel);
 app.post('/api/v1/program/lessons', requireAuth(['organization_admin']), saveLesson);
-app.post(
-  '/api/v1/student-track-levels',
-  requireAuth(['organization_admin', 'teacher']),
-  assignTrack,
-);
+app.post('/api/v1/student-track-levels', requireAuth(['organization_admin']), assignTrack);
 app.get(
   '/api/v1/students/:id/summary',
   requireAuth(['organization_admin', 'teacher']),
