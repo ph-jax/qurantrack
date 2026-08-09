@@ -139,6 +139,67 @@ describe('Staff administration UI', () => {
     expect(screen.getByText('Email submission: Failed — resend available')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Resend' }).length).toBeGreaterThan(0);
   });
+  it('keeps manual teacher creation separate, fixed-role, and validates password matching locally', async () => {
+    const fetch = vi.fn().mockResolvedValue(response(data));
+    vi.stubGlobal('fetch', fetch);
+    renderStaff();
+    await screen.findByText('Teacher');
+    expect(screen.getByRole('heading', { name: 'Invite Staff' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Add Teacher Manually' })).toBeInTheDocument();
+    expect(screen.getAllByLabelText('Role')).toHaveLength(1);
+    await userEvent.type(screen.getByLabelText('Display name'), 'New Teacher');
+    await userEvent.type(screen.getByLabelText('Teacher email address'), 'new@example.test');
+    await userEvent.type(screen.getByLabelText('Initial password'), 'password1');
+    await userEvent.type(screen.getByLabelText('Confirm password'), 'password2');
+    await userEvent.click(screen.getByRole('button', { name: 'Create Teacher' }));
+    expect(await screen.findByText('The passwords do not match.')).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('submits once, reloads before success, shows the active teacher, and clears secrets', async () => {
+    const refreshed = {
+      ...data,
+      members: [
+        ...data.members,
+        {
+          id: 'new',
+          displayName: 'New Teacher',
+          email: 'new@example.test',
+          role: 'teacher',
+          active: 1,
+          isSelf: 0,
+        },
+      ],
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(response(data))
+      .mockResolvedValueOnce(response({ ok: true, teacher: { role: 'teacher' } }, 201))
+      .mockResolvedValueOnce(response(refreshed));
+    vi.stubGlobal('fetch', fetch);
+    renderStaff();
+    await screen.findByText('Teacher');
+    const name = screen.getByLabelText('Display name');
+    const email = screen.getByLabelText('Teacher email address');
+    const password = screen.getByLabelText('Initial password');
+    const confirmation = screen.getByLabelText('Confirm password');
+    await userEvent.type(name, 'New Teacher');
+    await userEvent.type(email, ' NEW@EXAMPLE.TEST ');
+    await userEvent.type(password, 'password1');
+    await userEvent.type(confirmation, 'password1');
+    await userEvent.click(screen.getByRole('button', { name: 'Create Teacher' }));
+    expect(
+      await screen.findByText('Teacher created and verified in the active staff list.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('new@example.test')).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(String(fetch.mock.calls[1][1]?.body))).toMatchObject({
+      email: 'new@example.test',
+    });
+    expect(name).toHaveValue('');
+    expect(email).toHaveValue('');
+    expect(password).toHaveValue('');
+    expect(confirmation).toHaveValue('');
+  });
   it('shows success, empty states, and disables controls while switching', async () => {
     sessionState.switching = true;
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ members: [], invitations: [] })));

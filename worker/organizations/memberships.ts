@@ -72,6 +72,119 @@ export async function listStaff(env: Env, auth: AuthContext) {
   return { members: members.results ?? [], invitations: invitations.results ?? [] };
 }
 
+export type ManualTeacherConflict =
+  'existing_membership' | 'inactive_membership' | 'pending_invitation' | 'existing_user';
+
+/** Creates the identity, password credential, membership, and audit event as one D1 transaction. */
+export async function createTeacherManually(
+  env: Env,
+  auth: AuthContext,
+  displayName: string,
+  emailInput: string,
+  password: string,
+  requestId?: string,
+) {
+  const email = normalizeEmail(emailInput);
+  const timestamp = new Date().toISOString();
+  const existingMembership = await env.DB.prepare(
+    `SELECT m.active FROM organization_memberships m JOIN users u ON u.id=m.user_id
+     WHERE m.organization_id=? AND u.email=? COLLATE NOCASE`,
+  )
+    .bind(auth.organizationId, email)
+    .first<{ active: number }>();
+  if (existingMembership)
+    return {
+      conflict: (existingMembership.active
+        ? 'existing_membership'
+        : 'inactive_membership') as ManualTeacherConflict,
+    };
+
+  const pendingInvitation = await env.DB.prepare(
+    `SELECT 1 present FROM organization_invitations
+     WHERE organization_id=? AND normalized_email=? COLLATE NOCASE AND accepted_at IS NULL
+       AND revoked_at IS NULL AND expires_at>?`,
+  )
+    .bind(auth.organizationId, email, timestamp)
+    .first();
+  if (pendingInvitation) return { conflict: 'pending_invitation' as const };
+  const existingUser = await env.DB.prepare(
+    'SELECT 1 present FROM users WHERE email=? COLLATE NOCASE',
+  )
+    .bind(email)
+    .first();
+  if (existingUser) return { conflict: 'existing_user' as const };
+
+  const userId = crypto.randomUUID();
+  const membershipId = crypto.randomUUID();
+  const credential = await hashPassword(
+    password,
+    requireSecret(env.PASSWORD_HASH_PEPPER, 'PASSWORD_HASH_PEPPER'),
+  );
+  const metadata = JSON.stringify({ role: 'teacher', creationMethod: 'manual', userId });
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        'INSERT INTO users (id,email,display_name,active,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+      ).bind(userId, email, displayName, 1, timestamp, timestamp),
+      env.DB.prepare(
+        `INSERT INTO user_password_credentials
+         (user_id,algorithm,work_factor,salt,password_hash,created_at,updated_at,password_changed_at)
+         VALUES (?,?,?,?,?,?,?,?)`,
+      ).bind(
+        userId,
+        credential.algorithm,
+        credential.work_factor,
+        credential.salt,
+        credential.password_hash,
+        timestamp,
+        timestamp,
+        timestamp,
+      ),
+      env.DB.prepare(
+        `INSERT INTO organization_memberships
+         (id,organization_id,user_id,role,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?)`,
+      ).bind(membershipId, auth.organizationId, userId, 'teacher', 1, timestamp, timestamp),
+      env.DB.prepare(
+        `INSERT INTO audit_log
+         (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      ).bind(
+        crypto.randomUUID(),
+        auth.organizationId,
+        auth.userId,
+        'teacher_created_manually',
+        'organization_membership',
+        membershipId,
+        'teacher created manually',
+        metadata,
+        requestId ?? null,
+        timestamp,
+      ),
+    ]);
+  } catch (error) {
+    // A concurrently created identity or membership is an expected conflict; D1 batch rolled back.
+    const racedUser = await env.DB.prepare(
+      'SELECT 1 present FROM users WHERE email=? COLLATE NOCASE',
+    )
+      .bind(email)
+      .first();
+    if (racedUser) return { conflict: 'existing_user' as const };
+    throw error;
+  }
+  return {
+    teacher: {
+      userId,
+      membershipId,
+      organizationId: auth.organizationId,
+      displayName,
+      email,
+      role: 'teacher' as const,
+      active: true,
+      createdAt: timestamp,
+    },
+  };
+}
+
 async function organization(env: Env, id: string) {
   return env.DB.prepare(
     'SELECT id,name,default_locale,email_sender_name,email_reply_to,email_sender_alias FROM organizations WHERE id=? AND active=1',
