@@ -1,24 +1,44 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, Badge, Button, Card, FormField, Input, Spinner } from '../components/ui';
+import { useSession } from '../features/auth/SessionProvider';
 
 type Row = Record<string, string | number | null>;
 
 export function NotificationCenterPage() {
   const { t } = useTranslation();
+  const { session, organizationSwitching } = useSession();
+  const organizationId = session?.activeOrganizationId ?? '';
   const [rows, setRows] = useState<Row[]>([]);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [status, setStatus] = useState('');
   const [type, setType] = useState('');
   const [search, setSearch] = useState('');
+  const [studentId, setStudentId] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [students, setStudents] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState('');
+  const [notice, setNotice] = useState('');
+  const generation = useRef(0);
   const load = useCallback(async () => {
+    if (!organizationId || organizationSwitching) return;
+    const current = ++generation.current;
     setLoading(true);
     setError(false);
-    const query = new URLSearchParams({ page: String(page), pageSize: '20', status, type, search });
+    const query = new URLSearchParams({
+      page: String(page),
+      pageSize: '20',
+      status,
+      type,
+      search,
+      studentId,
+      from,
+      to,
+    });
     try {
       const response = await fetch(`/api/v1/notifications?${query}`, { cache: 'no-store' });
       if (!response.ok) throw new Error();
@@ -26,18 +46,26 @@ export function NotificationCenterPage() {
         notifications: Row[];
         pagination: { pages: number };
       };
+      if (current !== generation.current) return;
       setRows(value.notifications);
+      setStudents((value as typeof value & { students: Row[] }).students);
       setPages(value.pagination.pages);
     } catch {
+      if (current !== generation.current) return;
       setError(true);
       setRows([]);
     } finally {
-      setLoading(false);
+      if (current === generation.current) setLoading(false);
     }
-  }, [page, search, status, type]);
+  }, [from, organizationId, organizationSwitching, page, search, status, studentId, to, type]);
   useEffect(() => {
-    // The effect synchronizes server-side filters and pagination.
+    generation.current += 1;
+    // Organization-specific state must be cleared before the next request can repopulate it.
     // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRows([]);
+    setStudents([]);
+    setBusy('');
+    setNotice('');
     void load();
     return () => setRows([]);
   }, [load]);
@@ -47,6 +75,8 @@ export function NotificationCenterPage() {
     try {
       const response = await fetch(`/api/v1/notifications/${id}/retry`, { method: 'POST' });
       if (!response.ok) throw new Error();
+      const value = (await response.json()) as { aggregate: { code: string } };
+      setNotice(value.aggregate.code);
       await load();
     } catch {
       setError(true);
@@ -71,6 +101,47 @@ export function NotificationCenterPage() {
               onChange={(e) => {
                 setPage(1);
                 setSearch(e.target.value);
+              }}
+            />
+          </FormField>
+          <FormField id="notification-student" label={t('notificationCenter.student')}>
+            <select
+              id="notification-student"
+              className="settings-select"
+              value={studentId}
+              onChange={(e) => {
+                setPage(1);
+                setStudentId(e.target.value);
+              }}
+            >
+              <option value="">{t('notificationCenter.all')}</option>
+              {students.map((student) => (
+                <option key={String(student.id)} value={String(student.id)}>
+                  {student.display_name}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField id="notification-from" label={t('notificationCenter.from')}>
+            <Input
+              id="notification-from"
+              type="date"
+              value={from}
+              onChange={(e) => {
+                setPage(1);
+                setFrom(e.target.value);
+              }}
+            />
+          </FormField>
+          <FormField id="notification-to" label={t('notificationCenter.to')}>
+            <Input
+              id="notification-to"
+              type="date"
+              value={to}
+              min={from}
+              onChange={(e) => {
+                setPage(1);
+                setTo(e.target.value);
               }}
             />
           </FormField>
@@ -112,6 +183,12 @@ export function NotificationCenterPage() {
         </div>
       </Card>
       {error && <Alert tone="error" title={t('notificationCenter.error')} />}
+      {notice && (
+        <Alert
+          tone={notice === 'notifications_submitted' ? 'success' : 'warning'}
+          title={t(`pilot.messages.${notice}`)}
+        />
+      )}
       {loading ? (
         <Spinner label={t('pilot.loading')} />
       ) : (
@@ -144,6 +221,7 @@ export function NotificationCenterPage() {
                   {t('notificationCenter.attempts', { count: row.attempt_count })} ·{' '}
                   {row.attempted_at}
                 </p>
+                {row.failure_reference && <p className="text-sm">{row.failure_reference}</p>}
                 {row.status === 'failed' && (
                   <Button
                     className="mt-2"

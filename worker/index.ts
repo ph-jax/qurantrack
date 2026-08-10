@@ -170,7 +170,7 @@ app.get(
 );
 app.post('/api/v1/progress-updates', requireAuth(['organization_admin', 'teacher']), saveProgress);
 app.get(
-  '/api/v1/progress-updates/:id/recipients',
+  '/api/v1/students/:id/notification-recipients',
   requireAuth(['organization_admin', 'teacher']),
   previewProgressRecipients,
 );

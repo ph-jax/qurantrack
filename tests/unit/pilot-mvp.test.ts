@@ -572,12 +572,7 @@ describe('Pilot MVP API', () => {
     ]);
     expect(submitRelayMail).toHaveBeenCalledTimes(1);
     for (const response of alreadySubmittedRetries) {
-      const body = (await response.json()) as any;
-      expect(body.results[0]).toMatchObject({ status: 'submitted', already: true });
-      expect(body.aggregate).toMatchObject({
-        code: 'already_notified',
-        counts: { submitted: 0, alreadySubmitted: 1 },
-      });
+      expect(response.status).toBe(400);
     }
   });
   it('does not retry a failed submission without an explicit retry flag', async () => {
@@ -925,12 +920,12 @@ describe('Pilot MVP API', () => {
     });
     db.failBatchAt = 0;
     await app.fetch(req(`/api/v1/progress-updates/${first.id}/notify`, 'POST'), env(db));
-    const retry = (await (
-      await app.fetch(req(`/api/v1/progress-updates/${first.id}/notify?retry=1`, 'POST'), env(db))
-    ).json()) as any;
+    const retry = await app.fetch(
+      req(`/api/v1/progress-updates/${first.id}/notify?retry=1`, 'POST'),
+      env(db),
+    );
     expect(submitRelayMail).toHaveBeenCalledTimes(1);
-    expect(retry.results[0]).toMatchObject({ status: 'ambiguous' });
-    expect(retry.aggregate.code).toBe('notification_ambiguous');
+    expect(retry.status).toBe(400);
   });
   it('reports publish-only and no-recipient outcomes accurately', async () => {
     auth('teacher', 'org-a', 'teacher');
@@ -1043,14 +1038,11 @@ describe('Pilot MVP API', () => {
       env(db),
     );
     auth('teacher', 'org-a', 'teacher');
-    const retry = (await (
-      await app.fetch(
-        req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'),
-        env(db),
-      )
-    ).json()) as any;
-    expect(retry.results[0].status).toBe('not_retryable');
-    expect(retry.aggregate.code).toBe('notification_not_retryable');
+    const retry = await app.fetch(
+      req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'),
+      env(db),
+    );
+    expect(retry.status).toBe(400);
     expect(submitRelayMail).not.toHaveBeenCalled();
   });
   it('returns truthful structured counts for mixed guardian submissions', async () => {
@@ -1109,14 +1101,9 @@ describe('Pilot MVP API', () => {
     expect(submitRelayMail).toHaveBeenCalledTimes(3);
     expect(retry.aggregate).toMatchObject({
       code: 'notifications_submitted',
-      counts: { total: 2, submitted: 1, alreadySubmitted: 1 },
+      counts: { total: 1, submitted: 1, alreadySubmitted: 0 },
     });
-    expect(retry.results).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ status: 'submitted', already: true }),
-        expect.objectContaining({ status: 'submitted' }),
-      ]),
-    );
+    expect(retry.results).toEqual([expect.objectContaining({ status: 'submitted' })]);
     expect(db.count('notification_attempts')).toBe(3);
     expect(
       db.db.prepare("SELECT count(*) count FROM notification_attempts WHERE status='failed'").get(),
@@ -1167,14 +1154,242 @@ describe('Pilot MVP API', () => {
     ).json()) as any;
     expect(submitRelayMail).toHaveBeenCalledTimes(3);
     expect(retry.aggregate).toMatchObject({
-      code: 'notification_partial',
-      counts: { total: 2, submitted: 0, alreadySubmitted: 1, failed: 1 },
+      code: 'notification_failed',
+      counts: { total: 1, submitted: 0, alreadySubmitted: 0, failed: 1 },
     });
-    expect(retry.results).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ status: 'submitted', already: true }),
-        expect.objectContaining({ status: 'failed', retryAvailable: true }),
-      ]),
+    expect(retry.results).toEqual([
+      expect.objectContaining({ status: 'failed', retryAvailable: true }),
+    ]);
+  });
+
+  it('previews only authoritative tenant and teacher scoped recipients with resolved locale', async () => {
+    auth();
+    const guardian = (await (
+      await app.fetch(
+        req('/api/v1/guardians', 'POST', {
+          name: 'Preview Parent',
+          email: 'preview@example.com',
+          active: true,
+          preferred_locale: 'tr',
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    await app.fetch(
+      req('/api/v1/student-guardians', 'POST', {
+        student_id: 'stu-a',
+        guardian_id: guardian.id,
+        receive_notifications: true,
+      }),
+      env(db),
     );
+    auth('teacher', 'org-a', 'teacher');
+    const response = await app.fetch(
+      req('/api/v1/students/stu-a/notification-recipients?classId=class-a'),
+      env(db),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      count: 1,
+      recipients: [{ name: 'Preview Parent', email: 'preview@example.com', resolved_locale: 'tr' }],
+    });
+    auth('teacher', 'org-b', 'other');
+    expect(
+      (
+        await app.fetch(
+          req('/api/v1/students/stu-a/notification-recipients?classId=class-a'),
+          env(db),
+        )
+      ).status,
+    ).toBe(404);
+  });
+
+  it('stores a material homework revision and audit atomically without notification', async () => {
+    auth('teacher', 'org-a', 'teacher');
+    const published = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          operation_key: 'homework-base',
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          status: 'published',
+          homework: 'Old',
+          items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    submitRelayMail.mockClear();
+    const result = (await (
+      await app.fetch(
+        req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', {
+          homework: ' New homework ',
+          notifyGuardians: false,
+          operationKey: 'homework-op-one',
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    expect(result.storage.status).toBe('updated');
+    expect(
+      db.db.prepare('SELECT homework FROM progress_updates WHERE id=?').get(published.id),
+    ).toMatchObject({ homework: 'New homework' });
+    expect(db.count('homework_revisions')).toBe(1);
+    expect(
+      db.db
+        .prepare("SELECT count(*) count FROM audit_log WHERE action='progress.homework_updated'")
+        .get(),
+    ).toMatchObject({ count: 1 });
+    expect(submitRelayMail).not.toHaveBeenCalled();
+  });
+
+  it('rolls back progress, revision, and audit when the homework batch fails', async () => {
+    auth('teacher', 'org-a', 'teacher');
+    const published = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          operation_key: 'rollback-base',
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          status: 'published',
+          homework: 'Before',
+          items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    const audits = db.count('audit_log');
+    db.failBatchAt = 2;
+    const response = await app.fetch(
+      req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', {
+        homework: 'After',
+        notifyGuardians: false,
+        operationKey: 'rollback-operation',
+      }),
+      env(db),
+    );
+    expect(response.status).toBe(500);
+    expect(
+      db.db.prepare('SELECT homework FROM progress_updates WHERE id=?').get(published.id),
+    ).toMatchObject({ homework: 'Before' });
+    expect(db.count('homework_revisions')).toBe(0);
+    expect(db.count('audit_log')).toBe(audits);
+  });
+
+  it('returns the same revision for same-key retries and rejects different payload reuse', async () => {
+    auth('teacher', 'org-a', 'teacher');
+    const published = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          operation_key: 'idem-base',
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          status: 'published',
+          homework: 'Before',
+          items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    const path = `/api/v1/progress-updates/${published.id}/homework`;
+    const first = (await (
+      await app.fetch(
+        req(path, 'PATCH', {
+          homework: 'After',
+          notifyGuardians: false,
+          operationKey: 'stable-operation',
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    const repeat = (await (
+      await app.fetch(
+        req(path, 'PATCH', {
+          homework: ' After ',
+          notifyGuardians: false,
+          operationKey: 'stable-operation',
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    expect(repeat.storage.status).toBe('idempotent');
+    expect(repeat.storage.revision.id).toBe(first.storage.revision.id);
+    expect(db.count('homework_revisions')).toBe(1);
+    expect(
+      (
+        await app.fetch(
+          req(path, 'PATCH', {
+            homework: 'Different',
+            notifyGuardians: false,
+            operationKey: 'stable-operation',
+          }),
+          env(db),
+        )
+      ).status,
+    ).toBe(409);
+  });
+
+  it('sends one escaped localized homework email and reports its aggregate truthfully', async () => {
+    auth();
+    const guardian = (await (
+      await app.fetch(
+        req('/api/v1/guardians', 'POST', {
+          name: 'Veli',
+          email: 'veli@example.com',
+          active: true,
+          preferred_locale: 'tr',
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    await app.fetch(
+      req('/api/v1/student-guardians', 'POST', {
+        student_id: 'stu-a',
+        guardian_id: guardian.id,
+        receive_notifications: true,
+      }),
+      env(db),
+    );
+    auth('teacher', 'org-a', 'teacher');
+    const published = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          operation_key: 'mail-base',
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          status: 'published',
+          homework: 'Before',
+          items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    submitRelayMail.mockClear();
+    const result = (await (
+      await app.fetch(
+        req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', {
+          homework: '<b>Yeni & ödev</b>',
+          notifyGuardians: true,
+          operationKey: 'mail-operation',
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    expect(result.notificationAggregate.code).toBe('notifications_submitted');
+    expect(submitRelayMail).toHaveBeenCalledTimes(1);
+    expect(submitRelayMail.mock.calls[0][1].subject).toContain('ödev güncellemesi');
+    expect(submitRelayMail.mock.calls[0][1].html).toContain('&lt;b&gt;Yeni &amp; ödev&lt;/b&gt;');
+    const repeat = (await (
+      await app.fetch(
+        req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', {
+          homework: '<b>Yeni & ödev</b>',
+          notifyGuardians: true,
+          operationKey: 'mail-operation',
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    expect(repeat.notificationAggregate.code).toBe('already_notified');
+    expect(submitRelayMail).toHaveBeenCalledTimes(1);
   });
 });

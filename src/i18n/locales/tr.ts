@@ -364,11 +364,14 @@ export default {
       count: 'Yayınlama {{count}} veliye bildirim gönderecek.',
       none: 'Uygun veli bulunamadı. Yayınlama e-posta göndermeyecek.',
       confirm: 'Onayla ve yayınla',
+      loading: 'Uygun veliler kontrol ediliyor…',
+      error: 'Uygun veliler kontrol edilemedi. Onaylama kullanılamıyor.',
     },
     homeworkEditor: {
       edit: 'Ödevi Düzenle',
       title: 'Yayınlanmış ödevi düzenle',
       notify: 'Bu değişikliği velilere bildir',
+      saveError: 'Ödev isteği doğrulanamadı. Değişiklikleriniz korundu; güvenle yeniden deneyin.',
     },
     messages: {
       homework_unchanged: 'Değişiklik algılanmadı.',
@@ -376,6 +379,15 @@ export default {
       homework_updated_no_recipients: 'Ödev güncellendi ancak uygun veli bulunamadı.',
       homework_updated_notified: 'Ödev güncellendi ve bildirimler gönderildi.',
       homework_updated_partial: 'Ödev güncellendi ancak bir veya daha fazla gönderim başarısız.',
+      homework_updated_already_notified:
+        'Ödev güncellendi; veli bildirimleri daha önce gönderildi.',
+      homework_updated_failed: 'Ödev güncellendi ancak veli e-posta gönderimi başarısız.',
+      homework_updated_preparation_failed:
+        'Ödev güncellendi ancak bildirim hazırlanamadı. E-posta gönderilmedi.',
+      homework_updated_ambiguous:
+        'Ödev güncellendi. Veli gönderim durumu belirsiz ve otomatik yeniden denenemez.',
+      homework_updated_not_retryable:
+        'Ödev güncellendi ancak bildirim yeniden denemeye uygun değildi.',
 
       saving: 'Kaydediliyor…',
       draftSaved: 'Taslak kaydedildi.',
@@ -406,6 +418,9 @@ export default {
     title: 'Bildirim Merkezi',
     description: 'Kuruluşun veli e-posta gönderim geçmişi.',
     search: 'Veli veya e-posta',
+    student: 'Öğrenci',
+    from: 'Başlangıç tarihi',
+    to: 'Bitiş tarihi',
     status: 'Durum',
     type: 'Bildirim türü',
     all: 'Tümü',

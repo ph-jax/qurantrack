@@ -9,6 +9,8 @@ import {
   FamiliesPage,
   ProgressForm,
   StudentsPage,
+  homeworkResultCode,
+  HomeworkEditor,
 } from '../../../src/pages/PilotPages';
 import {
   pilotResultPresentation,
@@ -110,6 +112,23 @@ describe('Pilot administrator editors', () => {
 });
 
 describe('Pilot progress result lifecycle', () => {
+  it.each([
+    ['notifications_submitted', 'homework_updated_notified'],
+    ['already_notified', 'homework_updated_already_notified'],
+    ['no_recipients', 'homework_updated_no_recipients'],
+    ['notification_partial', 'homework_updated_partial'],
+    ['notification_failed', 'homework_updated_failed'],
+    ['notification_preparation_failed', 'homework_updated_preparation_failed'],
+    ['notification_ambiguous', 'homework_updated_ambiguous'],
+    ['notification_not_retryable', 'homework_updated_not_retryable'],
+  ])('maps homework aggregate %s truthfully', (aggregate, expected) => {
+    expect(
+      homeworkResultCode(
+        { storage: { status: 'updated' }, notificationAggregate: { code: aggregate } },
+        true,
+      ),
+    ).toBe(expected);
+  });
   const summary = {
     classes: [{ id: 'class-a', name: 'Class A' }],
     lessons: [
@@ -127,10 +146,12 @@ describe('Pilot progress result lifecycle', () => {
     const [result, setResult] = useState('');
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        fail
-          ? new Response(JSON.stringify({ error: { message: 'safe' } }), { status: 500 })
-          : Response.json({ ok: true, id: 'progress-a', publication: 'notifications_submitted' }),
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).includes('notification-recipients')
+          ? Response.json({ ok: true, count: 0, recipients: [] })
+          : fail
+            ? new Response(JSON.stringify({ error: { message: 'safe' } }), { status: 500 })
+            : Response.json({ ok: true, id: 'progress-a', publication: 'notifications_submitted' }),
       ),
     );
     const presentation = result ? pilotResultPresentation(result) : null;
@@ -230,6 +251,49 @@ describe('Pilot progress result lifecycle', () => {
     await user.click(screen.getByRole('button', { name: 'Confirm and publish' }));
     expect(await screen.findByTestId('result')).toHaveAttribute('data-tone', 'error');
     expect(screen.getByLabelText('Teacher comment')).toHaveValue('Keep this comment');
+  });
+
+  it('preserves homework, notification choice, and operation key after an uncertain save failure', async () => {
+    const user = userEvent.setup();
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('notification-recipients'))
+          return Response.json({
+            ok: true,
+            count: 1,
+            recipients: [
+              { id: 'g', name: 'Guardian', email: 'g@example.com', resolved_locale: 'en' },
+            ],
+          });
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return Response.json({ error: { message: 'uncertain' } }, { status: 500 });
+      }),
+    );
+    render(
+      <I18nextProvider i18n={i18n}>
+        <HomeworkEditor
+          update={{ id: 'p', student_id: 'student-a', class_id: 'class-a', homework: 'Old' }}
+          onCancel={vi.fn()}
+          onSaved={vi.fn()}
+        />
+      </I18nextProvider>,
+    );
+    const field = screen.getByLabelText('Homework / current assignment');
+    await user.clear(field);
+    await user.type(field, 'Preserve me');
+    const checkbox = screen.getByRole('checkbox', { name: 'Notify guardians about this change' });
+    expect(checkbox).not.toBeChecked();
+    await user.click(checkbox);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.click(await screen.findByRole('button', { name: 'Confirm and publish' }));
+    expect(await screen.findByText(/changes are preserved/i)).toBeVisible();
+    expect(field).toHaveValue('Preserve me');
+    expect(checkbox).toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Confirm and publish' }));
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1].operationKey).toBe(bodies[0].operationKey);
   });
 });
 

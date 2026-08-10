@@ -366,11 +366,15 @@ export default {
       count: 'Publishing will notify {{count}} guardians.',
       none: 'No eligible guardians were found. Publishing will not send email.',
       confirm: 'Confirm and publish',
+      loading: 'Checking eligible guardians…',
+      error: 'Eligible guardians could not be checked. Confirmation is unavailable.',
     },
     homeworkEditor: {
       edit: 'Edit Homework',
       title: 'Edit published homework',
       notify: 'Notify guardians about this change',
+      saveError:
+        'The homework request could not be confirmed. Your changes are preserved; try again safely.',
     },
     messages: {
       homework_unchanged: 'No change was detected.',
@@ -378,6 +382,15 @@ export default {
       homework_updated_no_recipients: 'Homework updated, but no eligible guardians were found.',
       homework_updated_notified: 'Homework updated and notifications submitted.',
       homework_updated_partial: 'Homework updated, but one or more submissions failed.',
+      homework_updated_already_notified:
+        'Homework updated; guardian notifications were already submitted.',
+      homework_updated_failed: 'Homework updated, but guardian email submission failed.',
+      homework_updated_preparation_failed:
+        'Homework updated, but notification preparation failed. No email was submitted.',
+      homework_updated_ambiguous:
+        'Homework updated. Guardian submission status is uncertain and cannot be retried automatically.',
+      homework_updated_not_retryable:
+        'Homework updated, but the notification was not eligible for retry.',
 
       saving: 'Saving…',
       draftSaved: 'Draft saved.',
@@ -408,6 +421,9 @@ export default {
     title: 'Notification Center',
     description: 'Organization guardian email submission history.',
     search: 'Guardian or email',
+    student: 'Student',
+    from: 'From date',
+    to: 'To date',
     status: 'Status',
     type: 'Notification type',
     all: 'All',
