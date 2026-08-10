@@ -142,4 +142,113 @@ describe('Notification Center', () => {
     expect(screen.queryByText(/Retry submitted to the email relay/)).not.toBeInTheDocument();
     expect(fetcher.mock.calls.length).toBe(callsBefore);
   });
+
+  it.each([
+    ['notifications_submitted', 'Retry submitted to the email relay'],
+    ['notification_failed', 'Retry submission definitively failed'],
+    ['notification_ambiguous', 'Retry status is pending or uncertain'],
+  ])('clears busy after %s and renders the actual English retry notice', async (code, message) => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes('/retry')
+        ? Response.json({ ok: true, aggregate: { code } })
+        : page([failed]),
+    );
+    vi.stubGlobal('fetch', fetcher);
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <NotificationCenterPage />
+      </I18nextProvider>,
+    );
+    const button = await screen.findByRole('button', { name: 'Retry submission' });
+    await user.click(button);
+    expect(await screen.findByText(new RegExp(message))).toBeVisible();
+    await waitFor(() => expect(button).toBeEnabled());
+  });
+
+  it('preserves retry feedback and restores controls when the following list refresh fails', async () => {
+    let lists = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/retry'))
+        return Response.json({ ok: true, aggregate: { code: 'notification_failed' } });
+      return ++lists === 1 ? page([failed]) : new Response('{}', { status: 500 });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <NotificationCenterPage />
+      </I18nextProvider>,
+    );
+    const button = await screen.findByRole('button', { name: 'Retry submission' });
+    await user.click(button);
+    expect(await screen.findByText('Retry submission definitively failed.')).toBeVisible();
+    expect(await screen.findByText('Notification history could not be loaded.')).toBeVisible();
+    expect(button).toBeEnabled();
+  });
+
+  it('maps stale and failed retry requests without replacing them with list errors', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes('/retry') ? new Response('{}', { status: 404 }) : page([failed]),
+    );
+    vi.stubGlobal('fetch', fetcher);
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <NotificationCenterPage />
+      </I18nextProvider>,
+    );
+    const button = await screen.findByRole('button', { name: 'Retry submission' });
+    await user.click(button);
+    expect(await screen.findByText('This notification is not eligible for retry.')).toBeVisible();
+    expect(button).toBeEnabled();
+  });
+
+  it('prevents duplicate retry posts and disables every retry while one is active', async () => {
+    let resolve!: (value: Response) => void;
+    const pending = new Promise<Response>((done) => {
+      resolve = done;
+    });
+    const second = { ...failed, id: 'notification-b', recipient_email: 'b@example.com' };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes('/retry') ? pending : page([failed, second]),
+    );
+    vi.stubGlobal('fetch', fetcher);
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <NotificationCenterPage />
+      </I18nextProvider>,
+    );
+    const buttons = await screen.findAllByRole('button', { name: 'Retry submission' });
+    await user.click(buttons[0]);
+    await user.click(buttons[0]);
+    expect(fetcher.mock.calls.filter(([input]) => String(input).includes('/retry'))).toHaveLength(
+      1,
+    );
+    expect(buttons[0]).toBeDisabled();
+    expect(buttons[1]).toBeDisabled();
+    resolve(Response.json({ ok: true, aggregate: { code: 'notification_ambiguous' } }));
+    await waitFor(() => expect(buttons[0]).toBeEnabled());
+  });
+
+  it('renders Turkish retry feedback through the component flow', async () => {
+    await i18n.changeLanguage('tr');
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes('/retry')
+        ? Response.json({ ok: true, aggregate: { code: 'notification_preparation_failed' } })
+        : page([failed]),
+    );
+    vi.stubGlobal('fetch', fetcher);
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <NotificationCenterPage />
+      </I18nextProvider>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Gönderimi yeniden dene' }));
+    expect(
+      await screen.findByText('Yeniden deneme hazırlanamadı. E-posta gönderilmedi.'),
+    ).toBeVisible();
+  });
 });

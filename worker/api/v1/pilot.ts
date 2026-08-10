@@ -1149,16 +1149,14 @@ export async function updatePublishedHomework(c: Ctx) {
       Boolean(prior.notification_requested) !== (b.notifyGuardians === true)
     )
       return json(c, 409, 'This operation key was already used with different homework data.');
-    const notification = prior.notification_requested
-      ? await homeworkRevisionNotificationResults(c, prior.id)
+    const state = prior.notification_requested
+      ? await homeworkRevisionNotificationState(c, prior.id)
       : null;
     return c.json({
       ok: true,
       storage: { status: 'idempotent', revision: prior },
-      notification,
-      notificationAggregate: prior.notification_requested
-        ? aggregateNotificationResults(notification)
-        : null,
+      notification: state?.notification ?? null,
+      notificationAggregate: state?.aggregate ?? null,
     });
   }
   const normalized = normalizedHomework(b.homework);
@@ -1218,14 +1216,12 @@ export async function updatePublishedHomework(c: Ctx) {
         Boolean(raced.notification_requested) !== requested
       )
         return json(c, 409, 'This operation key was already used with different homework data.');
-      const notification = requested
-        ? await homeworkRevisionNotificationResults(c, raced.id)
-        : null;
+      const state = requested ? await homeworkRevisionNotificationState(c, raced.id) : null;
       return c.json({
         ok: true,
         storage: { status: 'idempotent', revision: raced },
-        notification,
-        notificationAggregate: requested ? aggregateNotificationResults(notification) : null,
+        notification: state?.notification ?? null,
+        notificationAggregate: state?.aggregate ?? null,
       });
     }
     return json(c, 500, `Homework could not be updated. Reference ${c.get('requestId')}`);
@@ -1247,18 +1243,21 @@ export async function updatePublishedHomework(c: Ctx) {
         Boolean(winner.notification_requested) !== requested
       )
         return json(c, 409, 'This operation key was already used with different homework data.');
-      const notification = requested
-        ? await homeworkRevisionNotificationResults(c, winner.id)
-        : null;
+      const state = requested ? await homeworkRevisionNotificationState(c, winner.id) : null;
       return c.json({
         ok: true,
         storage: { status: 'idempotent', revision: winner },
-        notification,
-        notificationAggregate: requested ? aggregateNotificationResults(notification) : null,
+        notification: state?.notification ?? null,
+        notificationAggregate: state?.aggregate ?? null,
       });
     }
     return json(c, 409, 'Homework changed before this request could be stored.');
   }
+  await (
+    c.env.DB as D1Database & {
+      afterHomeworkRevisionCommit?: (revisionId: string) => Promise<void>;
+    }
+  ).afterHomeworkRevisionCommit?.(revisionId);
   const notification = requested ? await submitHomeworkNotifications(c, revisionId) : null;
   if (notification instanceof Response) return notification;
   return c.json({
@@ -1273,19 +1272,46 @@ function normalizedHomework(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-async function homeworkRevisionNotificationResults(c: Ctx, revisionId: string) {
+async function homeworkRevisionNotificationState(c: Ctx, revisionId: string) {
   const rows = await c.env.DB.prepare(
     `SELECT nl.status,nl.guardian_id,g.name guardian_name FROM notification_log nl JOIN guardians g ON g.id=nl.guardian_id AND g.organization_id=nl.organization_id WHERE nl.organization_id=? AND nl.source_revision_id=? AND nl.notification_type='homework_update' ORDER BY nl.created_at`,
   )
     .bind(c.get('auth').organizationId, revisionId)
     .all<any>();
-  return rows.results.map((row: any) => ({
+  const notification = rows.results.map((row: any) => ({
     guardianId: row.guardian_id,
     guardianName: row.guardian_name,
     status: row.status === 'sent' ? 'submitted' : row.status === 'failed' ? 'failed' : 'ambiguous',
     already: row.status === 'sent',
     retryAvailable: row.status === 'failed',
   }));
+  if (notification.length)
+    return { notification, aggregate: aggregateNotificationResults(notification) };
+  const source = await c.env.DB.prepare(
+    `SELECT hr.progress_update_id,pu.student_id FROM homework_revisions hr JOIN progress_updates pu ON pu.id=hr.progress_update_id AND pu.organization_id=hr.organization_id WHERE hr.id=? AND hr.organization_id=? AND hr.notification_requested=1`,
+  )
+    .bind(revisionId, c.get('auth').organizationId)
+    .first<any>();
+  if (!source) return { notification, aggregate: aggregateNotificationResults(notification) };
+  const eligible = await eligibleRecipients(c, source.student_id);
+  return {
+    notification,
+    aggregate: eligible.length
+      ? {
+          code: 'notification_in_progress',
+          counts: {
+            total: eligible.length,
+            submitted: 0,
+            alreadySubmitted: 0,
+            failed: 0,
+            ambiguous: 0,
+            notReserved: 0,
+            notRetryable: 0,
+            skipped: 0,
+          },
+        }
+      : aggregateNotificationResults(notification),
+  };
 }
 
 export async function listNotifications(c: Ctx) {

@@ -121,6 +121,7 @@ describe('Pilot progress result lifecycle', () => {
     ['notification_preparation_failed', 'homework_updated_preparation_failed'],
     ['notification_ambiguous', 'homework_updated_ambiguous'],
     ['notification_not_retryable', 'homework_updated_not_retryable'],
+    ['notification_in_progress', 'homework_updated_notification_in_progress'],
   ])('maps homework aggregate %s truthfully', (aggregate, expected) => {
     expect(
       homeworkResultCode(

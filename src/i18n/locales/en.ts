@@ -392,6 +392,8 @@ export default {
         'Homework updated. Guardian submission status is uncertain and cannot be retried automatically.',
       homework_updated_not_retryable:
         'Homework updated, but the notification was not eligible for retry.',
+      homework_updated_notification_in_progress:
+        'Homework updated. Guardian notification processing is still in progress or its status is uncertain.',
 
       saving: 'Saving…',
       draftSaved: 'Draft saved.',

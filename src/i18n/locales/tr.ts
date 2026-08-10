@@ -389,6 +389,8 @@ export default {
         'Ödev güncellendi. Veli gönderim durumu belirsiz ve otomatik yeniden denenemez.',
       homework_updated_not_retryable:
         'Ödev güncellendi ancak bildirim yeniden denemeye uygun değildi.',
+      homework_updated_notification_in_progress:
+        'Ödev güncellendi. Veli bildirimi hâlâ işleniyor veya durumu belirsiz.',
 
       saving: 'Kaydediliyor…',
       draftSaved: 'Taslak kaydedildi.',

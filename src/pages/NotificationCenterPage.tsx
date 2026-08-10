@@ -36,11 +36,13 @@ export function NotificationCenterPage() {
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('');
-  const generation = useRef(0);
+  const tenantGeneration = useRef(0);
+  const listGeneration = useRef(0);
   const previousOrganization = useRef(organizationId);
   const load = useCallback(async () => {
     if (!organizationId || organizationSwitching) return;
-    const current = ++generation.current;
+    const currentTenant = tenantGeneration.current;
+    const currentList = ++listGeneration.current;
     setLoading(true);
     setError(false);
     const query = new URLSearchParams({
@@ -60,22 +62,25 @@ export function NotificationCenterPage() {
         notifications: Row[];
         pagination: { pages: number };
       };
-      if (current !== generation.current) return;
+      if (currentTenant !== tenantGeneration.current || currentList !== listGeneration.current)
+        return;
       setRows(value.notifications);
       setStudents((value as typeof value & { students: Row[] }).students);
       setPages(value.pagination.pages);
     } catch {
-      if (current !== generation.current) return;
+      if (currentTenant !== tenantGeneration.current || currentList !== listGeneration.current)
+        return;
       setError(true);
-      setRows([]);
     } finally {
-      if (current === generation.current) setLoading(false);
+      if (currentTenant === tenantGeneration.current && currentList === listGeneration.current)
+        setLoading(false);
     }
   }, [from, organizationId, organizationSwitching, page, search, status, studentId, to, type]);
   useEffect(() => {
     if (previousOrganization.current !== organizationId || organizationSwitching) {
       previousOrganization.current = organizationId;
-      generation.current += 1;
+      tenantGeneration.current += 1;
+      listGeneration.current += 1;
       // Organization-specific data and filters cannot survive a tenant change.
       setRows([]);
       setStudents([]);
@@ -98,34 +103,47 @@ export function NotificationCenterPage() {
   async function retry(id: string) {
     if (busy || organizationSwitching || !organizationId) return;
     const startedOrganization = organizationId;
-    const startedGeneration = generation.current;
+    const startedTenantGeneration = tenantGeneration.current;
     setBusy(id);
     try {
       const response = await fetch(`/api/v1/notifications/${id}/retry`, { method: 'POST' });
       if (
-        startedGeneration !== generation.current ||
+        startedTenantGeneration !== tenantGeneration.current ||
         startedOrganization !== previousOrganization.current
       )
         return;
-      if (!response.ok) throw new Error();
-      const value = (await response.json()) as { aggregate: { code: string } };
+      const value = (await response.json().catch(() => null)) as {
+        aggregate?: { code: string };
+      } | null;
+      if (!response.ok) {
+        if (
+          startedTenantGeneration === tenantGeneration.current &&
+          startedOrganization === previousOrganization.current
+        )
+          setNotice(
+            response.status === 404
+              ? 'notification_not_retryable'
+              : value?.aggregate?.code || 'notification_preparation_failed',
+          );
+        return;
+      }
       if (
-        startedGeneration !== generation.current ||
+        startedTenantGeneration !== tenantGeneration.current ||
         startedOrganization !== previousOrganization.current
       )
         return;
-      setNotice(value.aggregate.code);
+      setNotice(value?.aggregate?.code || 'notification_partial');
       await load();
     } catch {
       if (
-        startedGeneration !== generation.current ||
+        startedTenantGeneration !== tenantGeneration.current ||
         startedOrganization !== previousOrganization.current
       )
         return;
-      setError(true);
+      setNotice('notification_preparation_failed');
     } finally {
       if (
-        startedGeneration === generation.current &&
+        startedTenantGeneration === tenantGeneration.current &&
         startedOrganization === previousOrganization.current
       )
         setBusy('');
@@ -273,7 +291,7 @@ export function NotificationCenterPage() {
                   <Button
                     className="mt-2"
                     type="button"
-                    disabled={organizationSwitching || busy === row.id}
+                    disabled={organizationSwitching || Boolean(busy)}
                     onClick={() => retry(String(row.id))}
                   >
                     {t('notificationCenter.retry')}

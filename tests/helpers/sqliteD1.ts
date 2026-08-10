@@ -34,6 +34,7 @@ export class SqliteD1 {
   db = new DatabaseSync(':memory:');
   failBatchAt = 0;
   beforeBatch?: () => void;
+  afterHomeworkRevisionCommit?: (revisionId: string) => Promise<void>;
   private batchQueue: Promise<unknown> = Promise.resolve();
   constructor() {
     this.db.exec('PRAGMA foreign_keys=ON');

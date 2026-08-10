@@ -1438,6 +1438,7 @@ export function homeworkResultCode(result: Any, notify: boolean) {
         notification_preparation_failed: 'homework_updated_preparation_failed',
         notification_ambiguous: 'homework_updated_ambiguous',
         notification_not_retryable: 'homework_updated_not_retryable',
+        notification_in_progress: 'homework_updated_notification_in_progress',
       } as Record<string, string>
     )[code] ?? 'homework_updated_partial'
   );

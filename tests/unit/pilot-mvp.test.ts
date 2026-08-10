@@ -1433,20 +1433,39 @@ describe('Pilot MVP API', () => {
       notifyGuardians: true,
       operationKey: 'same-concurrent-operation',
     };
-    // The deterministic D1 batch queue lets both handlers complete their reads before serializing writes.
-    db.beforeBatch = () => undefined;
-    const responses = await Promise.all([
-      app.fetch(
-        req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', payload),
-        env(db),
-      ),
-      app.fetch(
-        req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', payload),
-        env(db),
-      ),
-    ]);
-    expect(responses.map((response) => response.status)).toEqual([200, 200]);
-    const values = await Promise.all(responses.map((response) => response.json() as Promise<any>));
+    let announceCommit!: () => void;
+    let releaseWinner!: () => void;
+    const committed = new Promise<void>((resolve) => (announceCommit = resolve));
+    const winnerMayNotify = new Promise<void>((resolve) => (releaseWinner = resolve));
+    db.afterHomeworkRevisionCommit = async () => {
+      announceCommit();
+      await winnerMayNotify;
+    };
+    const winnerRequest = app.fetch(
+      req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', payload),
+      env(db),
+    );
+    await committed;
+    const loserResponse = await app.fetch(
+      req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', payload),
+      env(db),
+    );
+    const loser = (await loserResponse.json()) as any;
+    expect(loserResponse.status).toBe(200);
+    expect(loser.storage.status).toBe('idempotent');
+    expect(loser.notificationAggregate.code).toBe('notification_in_progress');
+    expect(['no_recipients', 'notifications_submitted', 'notification_failed']).not.toContain(
+      loser.notificationAggregate.code,
+    );
+    expect(
+      db.db
+        .prepare('SELECT count(*) count FROM notification_log WHERE source_revision_id IS NOT NULL')
+        .get(),
+    ).toMatchObject({ count: 0 });
+    releaseWinner();
+    const winnerResponse = await winnerRequest;
+    const winner = (await winnerResponse.json()) as any;
+    const values = [winner, loser];
     expect(new Set(values.map((value) => value.storage.revision.id)).size).toBe(1);
     expect(values.map((value) => value.storage.status).sort()).toEqual(['idempotent', 'updated']);
     expect(db.count('homework_revisions')).toBe(1);
@@ -1470,6 +1489,50 @@ describe('Pilot MVP API', () => {
         .get(),
     ).toMatchObject({ count: 1 });
     expect(submitRelayMail).toHaveBeenCalledTimes(1);
+    const replay = (await (
+      await app.fetch(
+        req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', payload),
+        env(db),
+      )
+    ).json()) as any;
+    expect(replay.notificationAggregate.code).toBe('already_notified');
+  });
+
+  it('reports true zero-recipient idempotent homework operations as no recipients', async () => {
+    auth('teacher', 'org-a', 'teacher');
+    const published = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          operation_key: 'zero-homework-base',
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          status: 'published',
+          homework: 'Before',
+          items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    const payload = {
+      homework: 'After',
+      notifyGuardians: true,
+      operationKey: 'zero-homework-operation',
+    };
+    const first = (await (
+      await app.fetch(
+        req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', payload),
+        env(db),
+      )
+    ).json()) as any;
+    expect(first.notificationAggregate.code).toBe('no_recipients');
+    const replay = (await (
+      await app.fetch(
+        req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', payload),
+        env(db),
+      )
+    ).json()) as any;
+    expect(replay.storage.status).toBe('idempotent');
+    expect(replay.notificationAggregate.code).toBe('no_recipients');
   });
 
   it('leaves no residue when a different operation key loses the concurrent homework race', async () => {
