@@ -5,6 +5,19 @@ import { useSession } from '../features/auth/SessionProvider';
 
 type Row = Record<string, string | number | null>;
 
+// eslint-disable-next-line react-refresh/only-export-components
+export function notificationRetryMessage(code: string) {
+  const known = [
+    'notifications_submitted',
+    'notification_failed',
+    'notification_ambiguous',
+    'notification_preparation_failed',
+    'notification_not_retryable',
+    'notification_partial',
+  ];
+  return `notificationCenter.retryResults.${known.includes(code) ? code : 'notification_partial'}`;
+}
+
 export function NotificationCenterPage() {
   const { t } = useTranslation();
   const { session, organizationSwitching } = useSession();
@@ -24,6 +37,7 @@ export function NotificationCenterPage() {
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('');
   const generation = useRef(0);
+  const previousOrganization = useRef(organizationId);
   const load = useCallback(async () => {
     if (!organizationId || organizationSwitching) return;
     const current = ++generation.current;
@@ -59,29 +73,62 @@ export function NotificationCenterPage() {
     }
   }, [from, organizationId, organizationSwitching, page, search, status, studentId, to, type]);
   useEffect(() => {
-    generation.current += 1;
-    // Organization-specific state must be cleared before the next request can repopulate it.
+    if (previousOrganization.current !== organizationId || organizationSwitching) {
+      previousOrganization.current = organizationId;
+      generation.current += 1;
+      // Organization-specific data and filters cannot survive a tenant change.
+      setRows([]);
+      setStudents([]);
+      setBusy('');
+      setNotice('');
+      setStatus('');
+      setType('');
+      setSearch('');
+      setStudentId('');
+      setFrom('');
+      setTo('');
+      setPage(1);
+      setPages(1);
+    }
+  }, [organizationId, organizationSwitching]);
+  useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRows([]);
-    setStudents([]);
-    setBusy('');
-    setNotice('');
     void load();
-    return () => setRows([]);
   }, [load]);
   async function retry(id: string) {
-    if (busy) return;
+    if (busy || organizationSwitching || !organizationId) return;
+    const startedOrganization = organizationId;
+    const startedGeneration = generation.current;
     setBusy(id);
     try {
       const response = await fetch(`/api/v1/notifications/${id}/retry`, { method: 'POST' });
+      if (
+        startedGeneration !== generation.current ||
+        startedOrganization !== previousOrganization.current
+      )
+        return;
       if (!response.ok) throw new Error();
       const value = (await response.json()) as { aggregate: { code: string } };
+      if (
+        startedGeneration !== generation.current ||
+        startedOrganization !== previousOrganization.current
+      )
+        return;
       setNotice(value.aggregate.code);
       await load();
     } catch {
+      if (
+        startedGeneration !== generation.current ||
+        startedOrganization !== previousOrganization.current
+      )
+        return;
       setError(true);
     } finally {
-      setBusy('');
+      if (
+        startedGeneration === generation.current &&
+        startedOrganization === previousOrganization.current
+      )
+        setBusy('');
     }
   }
   return (
@@ -186,7 +233,7 @@ export function NotificationCenterPage() {
       {notice && (
         <Alert
           tone={notice === 'notifications_submitted' ? 'success' : 'warning'}
-          title={t(`pilot.messages.${notice}`)}
+          title={t(notificationRetryMessage(notice))}
         />
       )}
       {loading ? (
@@ -226,7 +273,7 @@ export function NotificationCenterPage() {
                   <Button
                     className="mt-2"
                     type="button"
-                    disabled={busy === row.id}
+                    disabled={organizationSwitching || busy === row.id}
                     onClick={() => retry(String(row.id))}
                   >
                     {t('notificationCenter.retry')}

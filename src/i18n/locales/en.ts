@@ -381,7 +381,8 @@ export default {
       homework_updated_no_email: 'Homework updated; no email sent.',
       homework_updated_no_recipients: 'Homework updated, but no eligible guardians were found.',
       homework_updated_notified: 'Homework updated and notifications submitted.',
-      homework_updated_partial: 'Homework updated, but one or more submissions failed.',
+      homework_updated_partial:
+        'Homework updated. Guardian notification results were mixed; review the notification status for details.',
       homework_updated_already_notified:
         'Homework updated; guardian notifications were already submitted.',
       homework_updated_failed: 'Homework updated, but guardian email submission failed.',
@@ -430,6 +431,15 @@ export default {
     empty: 'No notifications match these filters.',
     error: 'Notification history could not be loaded.',
     retry: 'Retry submission',
+    retryResults: {
+      notifications_submitted: 'Retry submitted to the email relay (not confirmed inbox delivery).',
+      notification_failed: 'Retry submission definitively failed.',
+      notification_ambiguous:
+        'Retry status is pending or uncertain and cannot be retried automatically.',
+      notification_preparation_failed: 'Retry preparation failed. No email was submitted.',
+      notification_not_retryable: 'This notification is not eligible for retry.',
+      notification_partial: 'Retry results were mixed; review notification status for details.',
+    },
     attempts: 'Attempts: {{count}}',
     types: { progress_update: 'Progress update', homework_update: 'Homework update' },
     statuses: {

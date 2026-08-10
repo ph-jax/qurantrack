@@ -378,7 +378,8 @@ export default {
       homework_updated_no_email: 'Ödev güncellendi; e-posta gönderilmedi.',
       homework_updated_no_recipients: 'Ödev güncellendi ancak uygun veli bulunamadı.',
       homework_updated_notified: 'Ödev güncellendi ve bildirimler gönderildi.',
-      homework_updated_partial: 'Ödev güncellendi ancak bir veya daha fazla gönderim başarısız.',
+      homework_updated_partial:
+        'Ödev güncellendi. Veli bildirim sonuçları farklılık gösteriyor; ayrıntılar için bildirim durumunu inceleyin.',
       homework_updated_already_notified:
         'Ödev güncellendi; veli bildirimleri daha önce gönderildi.',
       homework_updated_failed: 'Ödev güncellendi ancak veli e-posta gönderimi başarısız.',
@@ -427,6 +428,17 @@ export default {
     empty: 'Bu filtrelerle eşleşen bildirim yok.',
     error: 'Bildirim geçmişi yüklenemedi.',
     retry: 'Gönderimi yeniden dene',
+    retryResults: {
+      notifications_submitted:
+        'Yeniden deneme e-posta aktarımına gönderildi (gelen kutusu teslimatı doğrulanmadı).',
+      notification_failed: 'Yeniden deneme gönderimi kesin olarak başarısız oldu.',
+      notification_ambiguous:
+        'Yeniden deneme durumu bekliyor veya belirsiz; otomatik olarak yeniden denenemez.',
+      notification_preparation_failed: 'Yeniden deneme hazırlanamadı. E-posta gönderilmedi.',
+      notification_not_retryable: 'Bu bildirim yeniden denemeye uygun değil.',
+      notification_partial:
+        'Yeniden deneme sonuçları farklılık gösteriyor; ayrıntılar için bildirim durumunu inceleyin.',
+    },
     attempts: 'Deneme: {{count}}',
     types: { progress_update: 'İlerleme güncellemesi', homework_update: 'Ödev güncellemesi' },
     statuses: {

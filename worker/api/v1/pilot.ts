@@ -1235,7 +1235,30 @@ export async function updatePublishedHomework(c: Ctx) {
   )
     .bind(revisionId, org)
     .first<any>();
-  if (!revision) return json(c, 409, 'Homework changed before this request could be stored.');
+  if (!revision) {
+    const winner = await c.env.DB.prepare(
+      'SELECT * FROM homework_revisions WHERE organization_id=? AND progress_update_id=? AND operation_key=?',
+    )
+      .bind(org, progressId, operationKey)
+      .first<any>();
+    if (winner) {
+      if (
+        (winner.new_homework ?? '').trim() !== normalized ||
+        Boolean(winner.notification_requested) !== requested
+      )
+        return json(c, 409, 'This operation key was already used with different homework data.');
+      const notification = requested
+        ? await homeworkRevisionNotificationResults(c, winner.id)
+        : null;
+      return c.json({
+        ok: true,
+        storage: { status: 'idempotent', revision: winner },
+        notification,
+        notificationAggregate: requested ? aggregateNotificationResults(notification) : null,
+      });
+    }
+    return json(c, 409, 'Homework changed before this request could be stored.');
+  }
   const notification = requested ? await submitHomeworkNotifications(c, revisionId) : null;
   if (notification instanceof Response) return notification;
   return c.json({

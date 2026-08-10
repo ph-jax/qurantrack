@@ -129,6 +129,22 @@ describe('Pilot progress result lifecycle', () => {
       ),
     ).toBe(expected);
   });
+  it('uses neutral wording for a mixed aggregate without a definitive failure', () => {
+    const code = homeworkResultCode(
+      {
+        storage: { status: 'updated' },
+        notificationAggregate: {
+          code: 'notification_partial',
+          counts: { submitted: 1, ambiguous: 1, failed: 0 },
+        },
+      },
+      true,
+    );
+    expect(code).toBe('homework_updated_partial');
+    expect(i18n.t(`pilot.messages.${code}`)).toBe(
+      'Homework updated. Guardian notification results were mixed; review the notification status for details.',
+    );
+  });
   const summary = {
     classes: [{ id: 'class-a', name: 'Class A' }],
     lessons: [
