@@ -211,7 +211,8 @@ describe('Pilot progress result lifecycle', () => {
       </I18nextProvider>,
     );
     await user.selectOptions(screen.getByLabelText('Lesson'), 'lesson-a');
-    await user.click(screen.getByRole('button', { name: 'Publish & notify guardians' }));
+    await user.click(screen.getByRole('button', { name: 'Publish' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm and publish' }));
     expect(await screen.findByTestId('result')).toHaveAttribute('data-tone', 'success');
     expect(screen.getByTestId('result')).toHaveTextContent('Published and submitted');
   });
@@ -226,6 +227,7 @@ describe('Pilot progress result lifecycle', () => {
     await user.selectOptions(screen.getByLabelText('Lesson'), 'lesson-a');
     await user.type(screen.getByLabelText('Teacher comment'), 'Keep this comment');
     await user.click(screen.getByRole('button', { name: 'Publish' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm and publish' }));
     expect(await screen.findByTestId('result')).toHaveAttribute('data-tone', 'error');
     expect(screen.getByLabelText('Teacher comment')).toHaveValue('Keep this comment');
   });

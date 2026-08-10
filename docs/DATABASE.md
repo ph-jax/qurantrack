@@ -54,3 +54,7 @@ Migration `0008_progress_idempotency.sql` adds a tenant-scoped unique progress-o
 Notification `pending` represents a committed submission reservation at the external-relay boundary. It is non-retryable because the relay may have accepted the message even if D1 could not persist final acceptance; only a definitively recorded `failed` attempt permits explicit retry. `sent` continues to mean relay-accepted/submitted, never confirmed inbox delivery.
 
 Publication collision recovery verifies the stored row reached the caller's requested state and identity. A rolled-back draft-to-publication batch that leaves a draft returns a safe error; only a concurrent request that actually published the same operation can satisfy the retry. Progress activity dates are authoritatively validated as real, exact `YYYY-MM-DD` calendar dates before any write.
+
+## Migration 0010 — published homework revisions
+
+`0010_homework_revisions.sql` adds append-only `homework_revisions`, unique by organization, progress update, and operation key. Each row records previous/new homework, actor, notification choice, and timestamp. The progress update, revision, and audit are written in one conditional D1 batch. `notification_log.source_revision_id` links homework notifications to their immutable source without changing existing rows. Deduplication uses `homework-revision:{revisionId}:guardian:{guardianId}` within the active organization.

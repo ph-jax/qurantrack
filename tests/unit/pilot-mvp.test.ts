@@ -850,12 +850,15 @@ describe('Pilot MVP API', () => {
           operation_key: 'reserve-progress',
           student_id: 'stu-a',
           class_id: 'class-a',
-          status: 'published',
+          status: 'draft',
           items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
         }),
         env(db),
       )
     ).json()) as any;
+    db.db
+      .prepare("UPDATE progress_updates SET status='published',published_at=? WHERE id=?")
+      .run(now, published.id);
     db.failBatchAt = 1;
     const result = (await (
       await app.fetch(
@@ -943,7 +946,7 @@ describe('Pilot MVP API', () => {
         env(db),
       )
     ).json()) as any;
-    expect(publishOnly.publication).toBe('published_only');
+    expect(publishOnly.publication).toBe('no_recipients');
     const noRecipients = (await (
       await app.fetch(
         req('/api/v1/progress-updates', 'POST', {

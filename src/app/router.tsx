@@ -26,6 +26,7 @@ import { RoleProtectedRoute } from '../features/auth/RoleProtectedRoute';
 import { showcasePaths } from './showcaseGate';
 import { educatorPilotRoles, organizationPilotRoles } from './navigation';
 import { administrativeRoles } from '../../shared/roles';
+import { NotificationCenterPage } from '../pages/NotificationCenterPage';
 const uiPreviewEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_UI_PREVIEW === 'true';
 const appChildren = [
   { index: true, element: <DashboardPage /> },
@@ -69,10 +70,18 @@ const appChildren = [
       </RoleProtectedRoute>
     ),
   },
-  ...['reports', 'notifications'].map((path) => ({
+  ...['reports'].map((path) => ({
     path,
     element: <PlaceholderPage />,
   })),
+  {
+    path: 'notifications',
+    element: (
+      <RoleProtectedRoute roles={organizationPilotRoles}>
+        <NotificationCenterPage />
+      </RoleProtectedRoute>
+    ),
+  },
   {
     path: 'families',
     element: (

@@ -838,6 +838,7 @@ export function StudentProgressPage() {
   const [notice, setNotice] = useState('');
   const [operationResult, setOperationResult] = useState('');
   const [notificationBusy, setNotificationBusy] = useState('');
+  const [homeworkEdit, setHomeworkEdit] = useState<Any | null>(null);
   const notificationBusyRef = useRef(false);
   if (summary.error || program.error || (admin && setup.error))
     return <Alert tone="error" title={t('pilot.loadError')} />;
@@ -929,29 +930,39 @@ export function StudentProgressPage() {
                   {t('pilot.editDraft')}
                 </Button>
               )}
+              {update.status === 'published' &&
+                !summary.data!.notifications.some(
+                  (n: Any) =>
+                    n.progress_update_id === update.id &&
+                    (n.status === 'sent' || n.status === 'pending'),
+                ) && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={notificationBusy === update.id}
+                    onClick={async () => {
+                      if (notificationBusyRef.current) return;
+                      notificationBusyRef.current = true;
+                      setNotificationBusy(update.id);
+                      try {
+                        setNotice(
+                          await requestNotificationAction(
+                            `/api/v1/progress-updates/${update.id}/notify`,
+                          ),
+                        );
+                        await summary.reload();
+                      } finally {
+                        notificationBusyRef.current = false;
+                        setNotificationBusy('');
+                      }
+                    }}
+                  >
+                    {t('pilot.sendUpdate')}
+                  </Button>
+                )}
               {update.status === 'published' && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={notificationBusy === update.id}
-                  onClick={async () => {
-                    if (notificationBusyRef.current) return;
-                    notificationBusyRef.current = true;
-                    setNotificationBusy(update.id);
-                    try {
-                      setNotice(
-                        await requestNotificationAction(
-                          `/api/v1/progress-updates/${update.id}/notify`,
-                        ),
-                      );
-                      await summary.reload();
-                    } finally {
-                      notificationBusyRef.current = false;
-                      setNotificationBusy('');
-                    }
-                  }}
-                >
-                  {t('pilot.sendUpdate')}
+                <Button type="button" variant="secondary" onClick={() => setHomeworkEdit(update)}>
+                  {t('pilot.homeworkEditor.edit')}
                 </Button>
               )}
               {update.status === 'published' &&
@@ -985,6 +996,18 @@ export function StudentProgressPage() {
           </div>
         ))}
       </Card>
+      {homeworkEdit && (
+        <HomeworkEditor
+          update={homeworkEdit}
+          guardians={summary.data.guardians}
+          onCancel={() => setHomeworkEdit(null)}
+          onSaved={async (code) => {
+            setOperationResult(code);
+            setHomeworkEdit(null);
+            await summary.reload();
+          }}
+        />
+      )}
       <Card>
         <h3 className="font-bold">{t('pilot.guardians.notifications')}</h3>
         {summary.data.guardians.map((guardian: Any) => (
@@ -1199,6 +1222,7 @@ export function ProgressForm({
         },
   );
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   async function save(status: string, notify = false) {
     if (busy) return;
     setBusy(true);
@@ -1347,19 +1371,149 @@ export function ProgressForm({
           <Button
             type="button"
             disabled={!value.class_id || busy}
-            onClick={() => save('published')}
+            onClick={() => setConfirming(true)}
           >
             {t('pilot.publish')}
           </Button>
-          <Button
-            type="button"
-            disabled={!value.class_id || busy}
-            onClick={() => save('published', true)}
+        </div>
+        {confirming && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="publish-confirm-title"
+            className="rounded border border-border p-4"
           >
-            {t('pilot.publishNotify')}
+            <h4 id="publish-confirm-title" className="font-bold">
+              {t('pilot.publishConfirmation.title')}
+            </h4>
+            <p>
+              {(summary.guardians ?? []).filter((g: Any) => g.receive_notifications).length
+                ? t('pilot.publishConfirmation.count', {
+                    count: (summary.guardians ?? []).filter((g: Any) => g.receive_notifications)
+                      .length,
+                  })
+                : t('pilot.publishConfirmation.none')}
+            </p>
+            <ul>
+              {(summary.guardians ?? [])
+                .filter((g: Any) => g.receive_notifications)
+                .map((g: Any) => (
+                  <li key={g.id}>
+                    {g.name} · {g.email} · {g.preferred_locale || '—'}
+                  </li>
+                ))}
+            </ul>
+            <div className="mt-3 flex gap-2">
+              <Button type="button" disabled={busy} onClick={() => save('published', true)}>
+                {t('pilot.publishConfirmation.confirm')}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy}
+                onClick={() => setConfirming(false)}
+              >
+                {t('pilot.cancel')}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function HomeworkEditor({
+  update,
+  guardians,
+  onCancel,
+  onSaved,
+}: {
+  update: Any;
+  guardians: Any[];
+  onCancel: () => void;
+  onSaved: (code: string) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [homework, setHomework] = useState(update.homework ?? '');
+  const [notify, setNotify] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await api(`/api/v1/progress-updates/${update.id}/homework`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          homework,
+          notifyGuardians: notify,
+          operationKey: crypto.randomUUID(),
+        }),
+      });
+      const code =
+        result.storage.status === 'unchanged'
+          ? 'homework_unchanged'
+          : !notify
+            ? 'homework_updated_no_email'
+            : result.notificationAggregate?.code === 'no_recipients'
+              ? 'homework_updated_no_recipients'
+              : result.notificationAggregate?.counts?.failed
+                ? 'homework_updated_partial'
+                : 'homework_updated_notified';
+      await onSaved(code);
+    } catch {
+      await onSaved('saveError');
+    } finally {
+      setBusy(false);
+    }
+  }
+  const recipients = guardians.filter((g) => g.receive_notifications);
+  return (
+    <Card>
+      <h3 className="font-bold">{t('pilot.homeworkEditor.title')}</h3>
+      <FormField id={`published-homework-${update.id}`} label={t('pilot.homework')}>
+        <Textarea
+          id={`published-homework-${update.id}`}
+          value={homework}
+          onChange={(e) => setHomework(e.target.value)}
+        />
+      </FormField>
+      <label className="flex min-h-11 items-center gap-2">
+        <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
+        {t('pilot.homeworkEditor.notify')}
+      </label>
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          disabled={busy}
+          onClick={() => (notify ? setConfirming(true) : void save())}
+        >
+          {t('pilot.save')}
+        </Button>
+        <Button type="button" variant="secondary" disabled={busy} onClick={onCancel}>
+          {t('pilot.cancel')}
+        </Button>
+      </div>
+      {confirming && (
+        <div role="dialog" aria-modal="true" className="mt-3 rounded border border-border p-3">
+          <p>
+            {recipients.length
+              ? t('pilot.publishConfirmation.count', { count: recipients.length })
+              : t('pilot.publishConfirmation.none')}
+          </p>
+          <ul>
+            {recipients.map((g) => (
+              <li key={g.id}>
+                {g.name} · {g.email} · {g.preferred_locale || '—'}
+              </li>
+            ))}
+          </ul>
+          <Button type="button" disabled={busy} onClick={() => void save()}>
+            {t('pilot.publishConfirmation.confirm')}
           </Button>
         </div>
-      </div>
+      )}
     </Card>
   );
 }

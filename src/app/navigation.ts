@@ -6,6 +6,7 @@ import {
   Settings,
   Users,
   UsersRound,
+  Bell,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '../features/auth/SessionProvider';
@@ -21,6 +22,7 @@ export const navigation: NavigationItem[] = [
   { key: 'classes', to: '/app/classes', icon: School, roles: educatorPilotRoles },
   { key: 'program', to: '/app/program', icon: BookOpen, roles: organizationPilotRoles },
   { key: 'families', to: '/app/families', icon: UsersRound, roles: organizationPilotRoles },
+  { key: 'notifications', to: '/app/notifications', icon: Bell, roles: organizationPilotRoles },
   { key: 'settings', to: '/app/settings', icon: Settings, roles: administrativeRoles },
 ];
 export const visibleNavigation = (role: Role) =>

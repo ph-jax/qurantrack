@@ -135,6 +135,7 @@ describe('navigation, language and shared accessibility', () => {
       'classes',
       'program',
       'families',
+      'notifications',
       'settings',
     ]);
     expect(visibleNavigation('teacher').map((x) => x.key)).toEqual([
