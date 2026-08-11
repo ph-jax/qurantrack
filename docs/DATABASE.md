@@ -58,3 +58,7 @@ Publication collision recovery verifies the stored row reached the caller's requ
 ## Migration 0010 — published homework revisions
 
 `0010_homework_revisions.sql` adds append-only `homework_revisions`, unique by organization, progress update, and operation key. Each row records previous/new homework, actor, notification choice, and timestamp. The progress update, revision, and audit are written in one conditional D1 batch. `notification_log.source_revision_id` links homework notifications to their immutable source without changing existing rows. Deduplication uses `homework-revision:{revisionId}:guardian:{guardianId}` within the active organization.
+
+## Migration 0011 — homework notification recipient snapshots
+
+`0011_homework_revision_recipients.sql` durably records the eligible guardian set, resolved locale, and original recipient address for a notification-requested homework revision. This snapshot is created in the same conditional batch as the revision, allowing an idempotent replay to resume an interrupted reservation without notifying guardians linked later. Current guardian eligibility is still revalidated before an explicit failed-row retry.

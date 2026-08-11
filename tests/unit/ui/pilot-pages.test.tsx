@@ -312,6 +312,75 @@ describe('Pilot progress result lifecycle', () => {
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies[1].operationKey).toBe(bodies[0].operationKey);
   });
+
+  it('resets homework editor state and operation key when switching updates', async () => {
+    const user = userEvent.setup();
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return Response.json({
+          ok: true,
+          storage: { status: 'updated', revision: { id: 'revision' } },
+          notificationAggregate: null,
+        });
+      }),
+    );
+    const onSaved = vi.fn(async () => undefined);
+    const view = render(
+      <I18nextProvider i18n={i18n}>
+        <HomeworkEditor
+          key="first"
+          update={{ id: 'first', student_id: 'student-a', class_id: 'class-a', homework: 'First' }}
+          onCancel={vi.fn()}
+          onSaved={onSaved}
+        />
+      </I18nextProvider>,
+    );
+    const firstField = screen.getByLabelText('Homework / current assignment');
+    await user.clear(firstField);
+    await user.type(firstField, 'Changed first');
+    await user.click(screen.getByRole('checkbox', { name: 'Notify guardians about this change' }));
+
+    view.rerender(
+      <I18nextProvider i18n={i18n}>
+        <HomeworkEditor
+          key="second"
+          update={{
+            id: 'second',
+            student_id: 'student-a',
+            class_id: 'class-a',
+            homework: 'Second',
+          }}
+          onCancel={vi.fn()}
+          onSaved={onSaved}
+        />
+      </I18nextProvider>,
+    );
+    expect(screen.getByLabelText('Homework / current assignment')).toHaveValue('Second');
+    expect(
+      screen.getByRole('checkbox', { name: 'Notify guardians about this change' }),
+    ).not.toBeChecked();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    const secondKey = bodies[0].operationKey;
+
+    view.rerender(
+      <I18nextProvider i18n={i18n}>
+        <HomeworkEditor
+          key="third"
+          update={{ id: 'third', student_id: 'student-a', class_id: 'class-a', homework: 'Third' }}
+          onCancel={vi.fn()}
+          onSaved={onSaved}
+        />
+      </I18nextProvider>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1].operationKey).not.toBe(secondKey);
+  });
 });
 
 describe('Pilot first-use and Families workflows', () => {

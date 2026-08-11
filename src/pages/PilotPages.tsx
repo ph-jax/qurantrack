@@ -986,6 +986,7 @@ export function StudentProgressPage() {
       </Card>
       {homeworkEdit && (
         <HomeworkEditor
+          key={homeworkEdit.id}
           update={homeworkEdit}
           onCancel={() => setHomeworkEdit(null)}
           onSaved={async (code) => {

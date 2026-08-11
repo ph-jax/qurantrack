@@ -116,3 +116,4 @@ All notable changes to QuranTrack will be documented in this file.
 - Progress publication now uses one combined, localized progress/comment/homework email per eligible guardian and reports authoritative relay-submission results.
 - Added explicit, immutable published-homework revisions with optional guardian notification and organization notification history/retry controls.
 - Added migration `0010_homework_revisions.sql`; cancellation notifications, reminders, and parent access remain excluded.
+- Added migration `0011_homework_revision_recipients.sql` so interrupted homework-notification reservations can resume from the original recipient set, while explicit retries revalidate current guardian eligibility.
