@@ -14,8 +14,16 @@ export function notificationRetryMessage(code: string) {
     'notification_preparation_failed',
     'notification_not_retryable',
     'notification_partial',
+    'notification_in_progress',
+    'already_notified',
   ];
   return `notificationCenter.retryResults.${known.includes(code) ? code : 'notification_partial'}`;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function notificationRetryTone(code: string) {
+  if (code === 'notifications_submitted' || code === 'already_notified') return 'success' as const;
+  return 'warning' as const;
 }
 
 export function NotificationCenterPage() {
@@ -249,10 +257,7 @@ export function NotificationCenterPage() {
       </Card>
       {error && <Alert tone="error" title={t('notificationCenter.error')} />}
       {notice && (
-        <Alert
-          tone={notice === 'notifications_submitted' ? 'success' : 'warning'}
-          title={t(notificationRetryMessage(notice))}
-        />
+        <Alert tone={notificationRetryTone(notice)} title={t(notificationRetryMessage(notice))} />
       )}
       {loading ? (
         <Spinner label={t('pilot.loading')} />

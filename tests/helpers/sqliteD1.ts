@@ -33,7 +33,8 @@ class SqliteStatement {
 export class SqliteD1 {
   db = new DatabaseSync(':memory:');
   failBatchAt = 0;
-  beforeBatch?: () => void;
+  preparedSql: string[] = [];
+  beforeBatch?: (statements: readonly { readonly sql: string }[]) => void;
   afterHomeworkRevisionCommit?: (revisionId: string) => Promise<void>;
   private batchQueue: Promise<unknown> = Promise.resolve();
   constructor() {
@@ -54,6 +55,7 @@ export class SqliteD1 {
       this.db.exec(readFileSync(`migrations/${migration}`, 'utf8'));
   }
   prepare(sql: string) {
+    this.preparedSql.push(sql);
     return new SqliteStatement(this, sql);
   }
   async batch(statements: SqliteStatement[]) {
@@ -64,7 +66,7 @@ export class SqliteD1 {
   private async executeBatch(statements: SqliteStatement[]) {
     const beforeBatch = this.beforeBatch;
     this.beforeBatch = undefined;
-    beforeBatch?.();
+    beforeBatch?.(statements);
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const results = [];

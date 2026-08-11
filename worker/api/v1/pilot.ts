@@ -1184,24 +1184,26 @@ export async function updatePublishedHomework(c: Ctx) {
   const revisionId = id('hwr');
   const timestamp = now();
   const requested = b.notifyGuardians === true;
-  try {
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        "UPDATE progress_updates SET homework=?,updated_at=? WHERE id=? AND organization_id=? AND status='published' AND COALESCE(trim(homework),'')=?",
-      ).bind(normalized || null, timestamp, progressId, org, (progress.homework ?? '').trim()),
-      c.env.DB.prepare(
-        `INSERT INTO homework_revisions (id,organization_id,progress_update_id,previous_homework,new_homework,changed_by_user_id,notification_requested,operation_key,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE changes()=1`,
-      ).bind(
-        revisionId,
-        org,
-        progressId,
-        progress.homework,
-        normalized || null,
-        auth.userId,
-        requested ? 1 : 0,
-        operationKey,
-        timestamp,
-      ),
+  const statements: D1PreparedStatement[] = [
+    c.env.DB.prepare(
+      "UPDATE progress_updates SET homework=?,updated_at=? WHERE id=? AND organization_id=? AND status='published' AND COALESCE(trim(homework),'')=?",
+    ).bind(normalized || null, timestamp, progressId, org, (progress.homework ?? '').trim()),
+    c.env.DB.prepare(
+      `INSERT INTO homework_revisions (id,organization_id,progress_update_id,previous_homework,new_homework,changed_by_user_id,notification_requested,operation_key,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE changes()=1`,
+    ).bind(
+      revisionId,
+      org,
+      progressId,
+      progress.homework,
+      normalized || null,
+      auth.userId,
+      requested ? 1 : 0,
+      operationKey,
+      timestamp,
+    ),
+  ];
+  if (requested) {
+    statements.push(
       c.env.DB.prepare(
         `INSERT INTO homework_revision_recipients (organization_id,homework_revision_id,guardian_id,recipient_name,recipient_email,resolved_locale,created_at)
          SELECT g.organization_id,?,g.id,g.name,g.email,CASE WHEN g.preferred_locale IN ('en','tr') THEN g.preferred_locale WHEN o.default_locale IN ('en','tr') THEN o.default_locale ELSE 'en' END,?
@@ -1212,23 +1214,28 @@ export async function updatePublishedHomework(c: Ctx) {
          WHERE EXISTS (SELECT 1 FROM homework_revisions WHERE id=? AND organization_id=? AND notification_requested=1)
            AND sg.student_id=? AND g.organization_id=? AND g.active=1 AND s.active=1 AND sg.receive_notifications=1 AND trim(g.email)<>''`,
       ).bind(revisionId, timestamp, revisionId, org, progress.student_id, org),
-      c.env.DB.prepare(
-        `INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM homework_revisions WHERE id=? AND organization_id=?)`,
-      ).bind(
-        id('audit'),
-        org,
-        auth.userId,
-        'progress.homework_updated',
-        'homework_revision',
-        revisionId,
-        'Published homework updated',
-        JSON.stringify({ progressUpdateId: progressId, notificationRequested: requested }),
-        c.get('requestId'),
-        timestamp,
-        revisionId,
-        org,
-      ),
-    ]);
+    );
+  }
+  statements.push(
+    c.env.DB.prepare(
+      `INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM homework_revisions WHERE id=? AND organization_id=?)`,
+    ).bind(
+      id('audit'),
+      org,
+      auth.userId,
+      'progress.homework_updated',
+      'homework_revision',
+      revisionId,
+      'Published homework updated',
+      JSON.stringify({ progressUpdateId: progressId, notificationRequested: requested }),
+      c.get('requestId'),
+      timestamp,
+      revisionId,
+      org,
+    ),
+  );
+  try {
+    await c.env.DB.batch(statements);
   } catch {
     const raced = await c.env.DB.prepare(
       'SELECT * FROM homework_revisions WHERE organization_id=? AND progress_update_id=? AND operation_key=?',

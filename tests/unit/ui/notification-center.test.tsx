@@ -6,6 +6,7 @@ import { i18n } from '../../../src/i18n';
 import {
   NotificationCenterPage,
   notificationRetryMessage,
+  notificationRetryTone,
 } from '../../../src/pages/NotificationCenterPage';
 
 let organizationId = 'org-a';
@@ -52,11 +53,20 @@ describe('Notification Center', () => {
     ['notification_preparation_failed', 'Retry preparation failed'],
     ['notification_not_retryable', 'not eligible for retry'],
     ['notification_partial', 'Retry results were mixed'],
+    ['notification_in_progress', 'Another retry is being processed'],
+    ['already_notified', 'Another request already submitted or handled'],
   ])('uses dedicated English and Turkish retry wording for %s', async (code, english) => {
     expect(i18n.t(notificationRetryMessage(code))).toContain(english);
     await i18n.changeLanguage('tr');
     expect(i18n.t(notificationRetryMessage(code))).not.toMatch(/Published|Retry submitted|failed/i);
     expect(i18n.t(notificationRetryMessage(code))).toBeTruthy();
+  });
+
+  it('uses the mixed fallback for unknown retry outcomes', () => {
+    expect(notificationRetryMessage('unknown_result')).toBe(
+      'notificationCenter.retryResults.notification_partial',
+    );
+    expect(notificationRetryTone('unknown_result')).toBe('warning');
   });
 
   it('exposes filters, resets the page, paginates, and shows retry only for failed rows', async () => {
@@ -147,6 +157,9 @@ describe('Notification Center', () => {
     ['notifications_submitted', 'Retry submitted to the email relay'],
     ['notification_failed', 'Retry submission definitively failed'],
     ['notification_ambiguous', 'Retry status is pending or uncertain'],
+    ['notification_in_progress', 'Another retry is being processed'],
+    ['already_notified', 'Another request already submitted or handled'],
+    ['unknown_result', 'Retry results were mixed'],
   ])('clears busy after %s and renders the actual English retry notice', async (code, message) => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) =>
       String(input).includes('/retry')
@@ -162,7 +175,45 @@ describe('Notification Center', () => {
     );
     const button = await screen.findByRole('button', { name: 'Retry submission' });
     await user.click(button);
-    expect(await screen.findByText(new RegExp(message))).toBeVisible();
+    const notice = await screen.findByText(new RegExp(message));
+    expect(notice).toBeVisible();
+    expect(notice.closest('.alert')).toHaveClass(
+      code === 'already_notified' || code === 'notifications_submitted'
+        ? 'alert-success'
+        : 'alert-warning',
+    );
+    await waitFor(() => expect(button).toBeEnabled());
+  });
+
+  it.each([
+    [
+      'notification_in_progress',
+      'Başka bir yeniden deneme işleniyor veya gönderim durumu bekliyor.',
+      'alert-warning',
+    ],
+    [
+      'already_notified',
+      'Başka bir istek bu bildirimi zaten gönderdi veya işledi.',
+      'alert-success',
+    ],
+  ])('renders %s truthfully in Turkish through the component', async (code, message, tone) => {
+    await i18n.changeLanguage('tr');
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes('/retry')
+        ? Response.json({ ok: true, aggregate: { code } })
+        : page([failed]),
+    );
+    vi.stubGlobal('fetch', fetcher);
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <NotificationCenterPage />
+      </I18nextProvider>,
+    );
+    const button = await screen.findByRole('button', { name: 'Gönderimi yeniden dene' });
+    await user.click(button);
+    const notice = await screen.findByText(new RegExp(message));
+    expect(notice.closest('.alert')).toHaveClass(tone);
     await waitFor(() => expect(button).toBeEnabled());
   });
 

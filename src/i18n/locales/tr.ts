@@ -438,6 +438,10 @@ export default {
         'Yeniden deneme durumu bekliyor veya belirsiz; otomatik olarak yeniden denenemez.',
       notification_preparation_failed: 'Yeniden deneme hazırlanamadı. E-posta gönderilmedi.',
       notification_not_retryable: 'Bu bildirim yeniden denemeye uygun değil.',
+      notification_in_progress:
+        'Başka bir yeniden deneme işleniyor veya gönderim durumu bekliyor. Başarılı gönderim iddia edilmiyor.',
+      already_notified:
+        'Başka bir istek bu bildirimi zaten gönderdi veya işledi. Yinelenen e-posta gönderilmedi.',
       notification_partial:
         'Yeniden deneme sonuçları farklılık gösteriyor; ayrıntılar için bildirim durumunu inceleyin.',
     },

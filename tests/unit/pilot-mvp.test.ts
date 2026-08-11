@@ -1239,6 +1239,11 @@ describe('Pilot MVP API', () => {
       )
     ).json()) as any;
     submitRelayMail.mockClear();
+    db.preparedSql = [];
+    let homeworkBatchSql: string[] = [];
+    db.beforeBatch = (statements) => {
+      homeworkBatchSql = statements.map((statement) => statement.sql);
+    };
     const result = (await (
       await app.fetch(
         req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', {
@@ -1260,6 +1265,14 @@ describe('Pilot MVP API', () => {
         .get(),
     ).toMatchObject({ count: 1 });
     expect(db.count('homework_revision_recipients')).toBe(0);
+    expect(homeworkBatchSql).toHaveLength(3);
+    expect(homeworkBatchSql.join('\n')).not.toMatch(
+      /homework_revision_recipients|\bguardians\b|student_guardians|recipient_email|preferred_locale|resolved_locale/i,
+    );
+    expect(db.preparedSql.join('\n')).not.toMatch(
+      /homework_revision_recipients|\bguardians\b|student_guardians|recipient_email|preferred_locale|resolved_locale/i,
+    );
+    db.preparedSql = [];
     const replay = (await (
       await app.fetch(
         req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', {
@@ -1272,6 +1285,9 @@ describe('Pilot MVP API', () => {
     ).json()) as any;
     expect(replay.storage.status).toBe('idempotent');
     expect(db.count('homework_revision_recipients')).toBe(0);
+    expect(db.preparedSql.join('\n')).not.toMatch(
+      /homework_revision_recipients|\bguardians\b|student_guardians|recipient_email|preferred_locale|resolved_locale/i,
+    );
     expect(submitRelayMail).not.toHaveBeenCalled();
   });
 
@@ -1397,6 +1413,11 @@ describe('Pilot MVP API', () => {
       )
     ).json()) as any;
     submitRelayMail.mockClear();
+    db.preparedSql = [];
+    let notificationBatchSql: string[] = [];
+    db.beforeBatch = (statements) => {
+      notificationBatchSql = statements.map((statement) => statement.sql);
+    };
     const result = (await (
       await app.fetch(
         req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', {
@@ -1408,6 +1429,9 @@ describe('Pilot MVP API', () => {
       )
     ).json()) as any;
     expect(result.notificationAggregate.code).toBe('notifications_submitted');
+    expect(notificationBatchSql).toHaveLength(4);
+    expect(notificationBatchSql.join('\n')).toContain('homework_revision_recipients');
+    expect(db.count('homework_revision_recipients')).toBe(1);
     expect(submitRelayMail).toHaveBeenCalledTimes(1);
     expect(submitRelayMail.mock.calls[0][1].subject).toContain('ödev güncellemesi');
     expect(submitRelayMail.mock.calls[0][1].html).toContain('&lt;b&gt;Yeni &amp; ödev&lt;/b&gt;');

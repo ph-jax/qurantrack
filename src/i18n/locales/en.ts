@@ -440,6 +440,10 @@ export default {
         'Retry status is pending or uncertain and cannot be retried automatically.',
       notification_preparation_failed: 'Retry preparation failed. No email was submitted.',
       notification_not_retryable: 'This notification is not eligible for retry.',
+      notification_in_progress:
+        'Another retry is being processed or its submission status is pending. No successful submission is being claimed.',
+      already_notified:
+        'Another request already submitted or handled this notification. No duplicate email was submitted.',
       notification_partial: 'Retry results were mixed; review notification status for details.',
     },
     attempts: 'Attempts: {{count}}',
