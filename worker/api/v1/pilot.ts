@@ -1044,6 +1044,69 @@ export function aggregateNotificationResults(results: AnyNotificationResult[] | 
   return { code, counts };
 }
 
+async function finalizeRelayRejection(
+  c: Ctx,
+  values: {
+    logId: string;
+    attemptId: string;
+    completedAt: string;
+    safeMessage: string;
+    metadata: Record<string, unknown>;
+  },
+) {
+  const org = c.get('auth').organizationId;
+  const auditId = `audit_relay_failed:${values.attemptId}`;
+  const finalize = () =>
+    c.env.DB.batch([
+      c.env.DB.prepare(
+        "UPDATE notification_log SET status='failed',error_code='RELAY_REJECTED',error_message=? WHERE id=? AND organization_id=? AND status='pending'",
+      ).bind(values.safeMessage, values.logId, org),
+      c.env.DB.prepare(
+        "UPDATE notification_attempts SET status='failed',error_code='RELAY_REJECTED',error_message=?,completed_at=? WHERE id=? AND notification_log_id=? AND organization_id=? AND status='pending'",
+      ).bind(values.safeMessage, values.completedAt, values.attemptId, values.logId, org),
+      c.env.DB.prepare(
+        `INSERT OR IGNORE INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at)
+         SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (
+           SELECT 1 FROM notification_log nl
+           JOIN notification_attempts na ON na.notification_log_id=nl.id AND na.organization_id=nl.organization_id
+           WHERE nl.id=? AND nl.organization_id=? AND nl.status='failed' AND nl.error_code='RELAY_REJECTED'
+             AND na.id=? AND na.status='failed' AND na.error_code='RELAY_REJECTED'
+         )`,
+      ).bind(
+        auditId,
+        org,
+        c.get('auth').userId,
+        'notification.relay_failed',
+        'notification',
+        values.logId,
+        'Notification relay submission failed',
+        JSON.stringify(values.metadata),
+        c.get('requestId'),
+        values.completedAt,
+        values.logId,
+        org,
+        values.attemptId,
+      ),
+    ]);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await finalize();
+      break;
+    } catch {
+      if (attempt === 1) break;
+    }
+  }
+  const confirmed = await c.env.DB.prepare(
+    `SELECT 1 FROM notification_log nl
+     JOIN notification_attempts na ON na.notification_log_id=nl.id AND na.organization_id=nl.organization_id
+     WHERE nl.id=? AND nl.organization_id=? AND nl.status='failed' AND nl.error_code='RELAY_REJECTED'
+       AND na.id=? AND na.status='failed' AND na.error_code='RELAY_REJECTED'`,
+  )
+    .bind(values.logId, org, values.attemptId)
+    .first();
+  return Boolean(confirmed);
+}
+
 const outcomeLabels: Record<string, Record<string, string>> = {
   en: {
     passed: 'Passed',
@@ -1676,28 +1739,18 @@ async function submitHomeworkNotifications(c: Ctx, revisionId: string, onlyLogId
     const completed = now();
     if (relay.status === 'rejected_before_send') {
       const safe = `Email relay submission failed. Reference ${c.get('requestId')}`;
-      await c.env.DB.batch([
-        c.env.DB.prepare(
-          "UPDATE notification_log SET status='failed',error_code='RELAY_REJECTED',error_message=? WHERE id=? AND organization_id=? AND status='pending'",
-        ).bind(safe, logId, org),
-        c.env.DB.prepare(
-          "UPDATE notification_attempts SET status='failed',error_code='RELAY_REJECTED',error_message=?,completed_at=? WHERE id=? AND organization_id=? AND status='pending'",
-        ).bind(safe, completed, attemptId, org),
-        auditStatement(
-          c,
-          'notification.relay_failed',
-          'notification',
-          logId,
-          'Notification relay submission failed',
-          completed,
-          { revisionId, attemptNumber },
-        ),
-      ]);
+      const finalized = await finalizeRelayRejection(c, {
+        logId,
+        attemptId,
+        completedAt: completed,
+        safeMessage: safe,
+        metadata: { revisionId, attemptNumber },
+      });
       results.push({
         guardianId: recipient.id,
         guardianName: recipient.name,
-        status: 'failed',
-        retryAvailable: true,
+        status: finalized ? 'failed' : 'ambiguous',
+        retryAvailable: finalized,
         requestId: c.get('requestId'),
       });
       continue;
@@ -1988,39 +2041,20 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean, o
     if (relayResult.status === 'rejected_before_send') {
       const completed = now();
       const safeMessage = `Email relay submission failed. Reference ${c.get('requestId')}`;
-      try {
-        await c.env.DB.batch([
-          c.env.DB.prepare(
-            "UPDATE notification_log SET status='failed',error_code='RELAY_REJECTED',error_message=? WHERE id=? AND organization_id=? AND status='pending'",
-          ).bind(safeMessage, logId, org),
-          c.env.DB.prepare(
-            "UPDATE notification_attempts SET status='failed',error_code='RELAY_REJECTED',error_message=?,completed_at=? WHERE id=? AND organization_id=? AND status='pending'",
-          ).bind(safeMessage, completed, attemptId, org),
-          auditStatement(
-            c,
-            'notification.relay_failed',
-            'notification',
-            logId,
-            'Notification relay submission failed',
-            completed,
-            { attemptNumber },
-          ),
-        ]);
-        results.push({
-          guardianId: recipient.guardian_id,
-          guardianName: recipient.guardian_name,
-          status: 'failed',
-          retryAvailable: true,
-          requestId: c.get('requestId'),
-        });
-      } catch {
-        results.push({
-          guardianId: recipient.guardian_id,
-          guardianName: recipient.guardian_name,
-          status: 'ambiguous',
-          requestId: c.get('requestId'),
-        });
-      }
+      const finalized = await finalizeRelayRejection(c, {
+        logId,
+        attemptId,
+        completedAt: completed,
+        safeMessage,
+        metadata: { attemptNumber },
+      });
+      results.push({
+        guardianId: recipient.guardian_id,
+        guardianName: recipient.guardian_name,
+        status: finalized ? 'failed' : 'ambiguous',
+        retryAvailable: finalized,
+        requestId: c.get('requestId'),
+      });
       continue;
     }
 

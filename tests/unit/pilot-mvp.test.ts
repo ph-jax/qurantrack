@@ -2113,6 +2113,146 @@ describe('Pilot MVP API', () => {
     },
   );
 
+  it.each(['progress_update', 'homework_update'])(
+    'recovers %s relay-rejection finalization without resubmitting',
+    async (notificationType) => {
+      auth();
+      for (const suffix of ['recovery-selected', 'recovery-other']) {
+        const guardian = (await (
+          await app.fetch(
+            req('/api/v1/guardians', 'POST', {
+              name: suffix,
+              email: `${suffix}-${notificationType}@example.com`,
+              active: true,
+            }),
+            env(db),
+          )
+        ).json()) as any;
+        await app.fetch(
+          req('/api/v1/student-guardians', 'POST', {
+            student_id: 'stu-a',
+            guardian_id: guardian.id,
+            receive_notifications: true,
+          }),
+          env(db),
+        );
+      }
+      auth('teacher', 'org-a', 'teacher');
+      submitRelayMail.mockResolvedValue(
+        notificationType === 'progress_update'
+          ? { status: 'rejected_before_send' }
+          : { status: 'accepted' },
+      );
+      if (notificationType === 'progress_update') db.failRejectionFinalizationOnce = true;
+      const published = (await (
+        await app.fetch(
+          req('/api/v1/progress-updates', 'POST', {
+            operation_key: `rejection-recovery-${notificationType}`,
+            student_id: 'stu-a',
+            class_id: 'class-a',
+            status: 'published',
+            homework: 'Before',
+            items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+          }),
+          env(db),
+        )
+      ).json()) as any;
+      let initialResult = published;
+      if (notificationType === 'homework_update') {
+        submitRelayMail.mockClear();
+        submitRelayMail.mockResolvedValue({ status: 'rejected_before_send' });
+        db.failRejectionFinalizationOnce = true;
+        initialResult = (await (
+          await app.fetch(
+            req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', {
+              homework: 'After rejection',
+              notifyGuardians: true,
+              operationKey: 'homework-rejection-recovery',
+            }),
+            env(db),
+          )
+        ).json()) as any;
+      }
+      expect(initialResult.notificationAggregate.code).toBe('notification_failed');
+      expect(submitRelayMail).toHaveBeenCalledTimes(2);
+      const logs = db.db
+        .prepare(
+          `SELECT id,status,error_code FROM notification_log
+           WHERE progress_update_id=? AND notification_type=? ORDER BY recipient_email`,
+        )
+        .all(published.id, notificationType) as {
+        id: string;
+        status: string;
+        error_code: string;
+      }[];
+      expect(logs).toHaveLength(2);
+      expect(logs).toEqual([
+        expect.objectContaining({ status: 'failed', error_code: 'RELAY_REJECTED' }),
+        expect.objectContaining({ status: 'failed', error_code: 'RELAY_REJECTED' }),
+      ]);
+      const selectedId = logs[0].id;
+      const otherId = logs[1].id;
+      expect(
+        db.db
+          .prepare(
+            `SELECT count(*) count FROM notification_attempts
+             WHERE notification_log_id IN (?,?) AND status='failed' AND error_code='RELAY_REJECTED'`,
+          )
+          .get(selectedId, otherId),
+      ).toMatchObject({ count: 2 });
+      expect(
+        db.db
+          .prepare(
+            "SELECT count(*) count FROM audit_log WHERE action='notification.relay_failed' AND entity_id IN (?,?)",
+          )
+          .get(selectedId, otherId),
+      ).toMatchObject({ count: 2 });
+
+      submitRelayMail.mockClear();
+      submitRelayMail.mockResolvedValue({ status: 'rejected_before_send' });
+      db.throwAfterRejectionFinalizationCommitOnce = true;
+      auth();
+      const retry = (await (
+        await app.fetch(req(`/api/v1/notifications/${selectedId}/retry`, 'POST'), env(db))
+      ).json()) as any;
+      expect(retry.aggregate.code).toBe('notification_failed');
+      expect(retry.results).toEqual([
+        expect.objectContaining({ status: 'failed', retryAvailable: true }),
+      ]);
+      expect(submitRelayMail).toHaveBeenCalledTimes(1);
+      expect(
+        db.db
+          .prepare('SELECT count(*) count FROM notification_attempts WHERE notification_log_id=?')
+          .get(selectedId),
+      ).toMatchObject({ count: 2 });
+      expect(
+        db.db
+          .prepare(
+            "SELECT count(*) count FROM audit_log WHERE action='notification.relay_failed' AND entity_id=?",
+          )
+          .get(selectedId),
+      ).toMatchObject({ count: 2 });
+      expect(
+        db.db.prepare('SELECT status FROM notification_log WHERE id=?').get(otherId),
+      ).toMatchObject({ status: 'failed' });
+      expect(
+        db.db
+          .prepare('SELECT count(*) count FROM notification_attempts WHERE notification_log_id=?')
+          .get(otherId),
+      ).toMatchObject({ count: 1 });
+
+      submitRelayMail.mockResolvedValue({ status: 'accepted' });
+      expect(
+        (await app.fetch(req(`/api/v1/notifications/${selectedId}/retry`, 'POST'), env(db))).status,
+      ).toBe(200);
+      expect(submitRelayMail).toHaveBeenCalledTimes(2);
+      auth('organization_admin', 'org-b', 'admin-b');
+      expect(
+        (await app.fetch(req(`/api/v1/notifications/${otherId}/retry`, 'POST'), env(db))).status,
+      ).toBe(404);
+    },
+  );
+
   it('rejects retries when the selected guardian is no longer eligible', async () => {
     auth();
     const guardians: any[] = [];

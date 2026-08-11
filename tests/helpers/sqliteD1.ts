@@ -33,6 +33,8 @@ class SqliteStatement {
 export class SqliteD1 {
   db = new DatabaseSync(':memory:');
   failBatchAt = 0;
+  failRejectionFinalizationOnce = false;
+  throwAfterRejectionFinalizationCommitOnce = false;
   preparedSql: string[] = [];
   beforeBatch?: (statements: readonly { readonly sql: string }[]) => void;
   afterHomeworkRevisionCommit?: (revisionId: string) => Promise<void>;
@@ -68,19 +70,33 @@ export class SqliteD1 {
     const beforeBatch = this.beforeBatch;
     this.beforeBatch = undefined;
     beforeBatch?.(statements);
+    const rejectionFinalization = statements.some(
+      (statement) =>
+        statement.sql.includes("UPDATE notification_log SET status='failed'") &&
+        statement.sql.includes('RELAY_REJECTED'),
+    );
+    if (rejectionFinalization && this.failRejectionFinalizationOnce) {
+      this.failRejectionFinalizationOnce = false;
+      throw new Error('injected_rejection_finalization_failure');
+    }
     this.db.exec('BEGIN IMMEDIATE');
+    let results;
     try {
-      const results = [];
+      results = [];
       for (let index = 0; index < statements.length; index++) {
         if (this.failBatchAt === index + 1) throw new Error('injected_sql_failure');
         results.push(await statements[index].run());
       }
       this.db.exec('COMMIT');
-      return results;
     } catch (error) {
       this.db.exec('ROLLBACK');
       throw error;
     }
+    if (rejectionFinalization && this.throwAfterRejectionFinalizationCommitOnce) {
+      this.throwAfterRejectionFinalizationCommitOnce = false;
+      throw new Error('injected_post_commit_rejection_failure');
+    }
+    return results;
   }
   close() {
     this.db.close();
