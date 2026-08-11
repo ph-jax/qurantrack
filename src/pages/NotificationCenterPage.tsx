@@ -84,6 +84,10 @@ export function NotificationCenterPage() {
         setLoading(false);
     }
   }, [from, organizationId, organizationSwitching, page, search, status, studentId, to, type]);
+  const loadLatest = useRef(load);
+  useEffect(() => {
+    loadLatest.current = load;
+  }, [load]);
   useEffect(() => {
     if (previousOrganization.current !== organizationId || organizationSwitching) {
       previousOrganization.current = organizationId;
@@ -141,7 +145,7 @@ export function NotificationCenterPage() {
       )
         return;
       setNotice(value?.aggregate?.code || 'notification_partial');
-      await load();
+      await loadLatest.current();
     } catch {
       if (
         startedTenantGeneration !== tenantGeneration.current ||

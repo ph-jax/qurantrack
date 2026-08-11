@@ -1424,6 +1424,9 @@ export async function retryNotification(c: Ctx) {
     .bind(param(c, 'id'), c.get('auth').organizationId)
     .first<any>();
   if (!row) return json(c, 404);
+  await (
+    c.env.DB as D1Database & { afterRetrySelection?: (notificationId: string) => Promise<void> }
+  ).afterRetrySelection?.(row.id);
   const results = row.source_revision_id
     ? await submitHomeworkNotifications(c, row.source_revision_id, row.id)
     : await submitNotifications(c, row.progress_update_id, true, row.id);
@@ -1449,27 +1452,40 @@ async function submitHomeworkNotifications(c: Ctx, revisionId: string, onlyLogId
       .all<any>()
   ).results;
   if (onlyLogId) {
-    const original = await c.env.DB.prepare(
-      `SELECT nl.guardian_id id,g.name,nl.recipient_email email,hrr.resolved_locale preferred_locale
+    const selected = await c.env.DB.prepare(
+      `SELECT nl.guardian_id id,g.name,nl.recipient_email email,hrr.resolved_locale preferred_locale,nl.status
        FROM notification_log nl
-       JOIN guardians g ON g.id=nl.guardian_id AND g.organization_id=nl.organization_id AND g.active=1
-       JOIN student_guardians sg ON sg.guardian_id=nl.guardian_id AND sg.student_id=nl.student_id AND sg.organization_id=nl.organization_id AND sg.receive_notifications=1
-       JOIN students s ON s.id=nl.student_id AND s.organization_id=nl.organization_id AND s.active=1
+       JOIN guardians g ON g.id=nl.guardian_id AND g.organization_id=nl.organization_id
        JOIN homework_revision_recipients hrr ON hrr.homework_revision_id=nl.source_revision_id AND hrr.guardian_id=nl.guardian_id AND hrr.organization_id=nl.organization_id
-       WHERE nl.id=? AND nl.organization_id=? AND nl.source_revision_id=? AND nl.progress_update_id=? AND nl.student_id=? AND nl.notification_type='homework_update' AND nl.status='failed' AND trim(g.email)<>''`,
+       WHERE nl.id=? AND nl.organization_id=? AND nl.source_revision_id=? AND nl.progress_update_id=? AND nl.student_id=? AND nl.notification_type='homework_update'`,
     )
       .bind(onlyLogId, org, revisionId, revision.progress_update_id, revision.student_id)
       .first<any>();
-    if (!original) {
-      const historical = await c.env.DB.prepare(
-        "SELECT guardian_id FROM notification_log WHERE id=? AND organization_id=? AND source_revision_id=? AND progress_update_id=? AND student_id=? AND notification_type='homework_update' AND status='failed'",
-      )
-        .bind(onlyLogId, org, revisionId, revision.progress_update_id, revision.student_id)
-        .first<any>();
-      if (historical) return [{ guardianId: historical.guardian_id, status: 'not_retryable' }];
-      return json(c, 404);
-    }
-    recipients = [original];
+    if (!selected) return json(c, 404);
+    if (selected.status === 'pending')
+      return [{ guardianId: selected.id, guardianName: selected.name, status: 'in_progress' }];
+    if (selected.status === 'sent')
+      return [
+        {
+          guardianId: selected.id,
+          guardianName: selected.name,
+          status: 'submitted',
+          already: true,
+        },
+      ];
+    if (selected.status !== 'failed')
+      return [{ guardianId: selected.id, guardianName: selected.name, status: 'not_retryable' }];
+    const eligible = await c.env.DB.prepare(
+      `SELECT 1 FROM guardians g
+       JOIN student_guardians sg ON sg.guardian_id=g.id AND sg.organization_id=g.organization_id AND sg.student_id=? AND sg.receive_notifications=1
+       JOIN students s ON s.id=sg.student_id AND s.organization_id=sg.organization_id AND s.active=1
+       WHERE g.id=? AND g.organization_id=? AND g.active=1 AND trim(g.email)<>''`,
+    )
+      .bind(revision.student_id, selected.id, org)
+      .first();
+    if (!eligible)
+      return [{ guardianId: selected.id, guardianName: selected.name, status: 'not_retryable' }];
+    recipients = [selected];
   }
   const sender = resolveSender(c.env, revision);
   const results: AnyNotificationResult[] = [];
@@ -1739,26 +1755,44 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean, o
       .all<any>()
   ).results;
   if (onlyLogId) {
-    const original = await c.env.DB.prepare(
-      `SELECT nl.guardian_id,g.name guardian_name,nl.recipient_email email,g.preferred_locale
+    const selected = await c.env.DB.prepare(
+      `SELECT nl.guardian_id,g.name guardian_name,nl.recipient_email email,g.preferred_locale,nl.status
        FROM notification_log nl
-       JOIN guardians g ON g.id=nl.guardian_id AND g.organization_id=nl.organization_id AND g.active=1
-       JOIN student_guardians sg ON sg.guardian_id=nl.guardian_id AND sg.student_id=nl.student_id AND sg.organization_id=nl.organization_id AND sg.receive_notifications=1
-       JOIN students s ON s.id=nl.student_id AND s.organization_id=nl.organization_id AND s.active=1
-       WHERE nl.id=? AND nl.organization_id=? AND nl.progress_update_id=? AND nl.student_id=? AND nl.notification_type='progress_update' AND nl.source_revision_id IS NULL AND nl.status='failed' AND trim(g.email)<>''`,
+       JOIN guardians g ON g.id=nl.guardian_id AND g.organization_id=nl.organization_id
+       WHERE nl.id=? AND nl.organization_id=? AND nl.progress_update_id=? AND nl.student_id=? AND nl.notification_type='progress_update' AND nl.source_revision_id IS NULL`,
     )
       .bind(onlyLogId, org, progressId, pu.student_id)
       .first<any>();
-    if (!original) {
-      const historical = await c.env.DB.prepare(
-        "SELECT guardian_id FROM notification_log WHERE id=? AND organization_id=? AND progress_update_id=? AND student_id=? AND notification_type='progress_update' AND source_revision_id IS NULL AND status='failed'",
-      )
-        .bind(onlyLogId, org, progressId, pu.student_id)
-        .first<any>();
-      if (historical) return [{ guardianId: historical.guardian_id, status: 'not_retryable' }];
-      return json(c, 404);
-    }
-    recipients = [original];
+    if (!selected) return json(c, 404);
+    if (selected.status === 'pending')
+      return [
+        {
+          guardianId: selected.guardian_id,
+          guardianName: selected.guardian_name,
+          status: 'in_progress',
+        },
+      ];
+    if (selected.status === 'sent')
+      return [
+        {
+          guardianId: selected.guardian_id,
+          guardianName: selected.guardian_name,
+          status: 'submitted',
+          already: true,
+        },
+      ];
+    if (selected.status !== 'failed')
+      return [{ guardianId: selected.guardian_id, status: 'not_retryable' }];
+    const eligible = await c.env.DB.prepare(
+      `SELECT 1 FROM guardians g
+       JOIN student_guardians sg ON sg.guardian_id=g.id AND sg.organization_id=g.organization_id AND sg.student_id=? AND sg.receive_notifications=1
+       JOIN students s ON s.id=sg.student_id AND s.organization_id=sg.organization_id AND s.active=1
+       WHERE g.id=? AND g.organization_id=? AND g.active=1 AND trim(g.email)<>''`,
+    )
+      .bind(pu.student_id, selected.guardian_id, org)
+      .first();
+    if (!eligible) return [{ guardianId: selected.guardian_id, status: 'not_retryable' }];
+    recipients = [selected];
   }
   const sender = resolveSender(c.env, pu);
   const results: AnyNotificationResult[] = [];

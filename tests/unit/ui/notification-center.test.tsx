@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -151,6 +151,59 @@ describe('Notification Center', () => {
     await Promise.resolve();
     expect(screen.queryByText(/Retry submitted to the email relay/)).not.toBeInTheDocument();
     expect(fetcher.mock.calls.length).toBe(callsBefore);
+  });
+
+  it('reloads current filters after a deferred retry and ignores older filter results', async () => {
+    let resolveRetry!: (value: Response) => void;
+    let resolveOlderList!: (value: Response) => void;
+    const retryResponse = new Promise<Response>((resolve) => (resolveRetry = resolve));
+    const olderList = new Promise<Response>((resolve) => (resolveOlderList = resolve));
+    const latest = { ...failed, id: 'latest-row', guardian_name: 'Latest Guardian' };
+    const older = { ...failed, id: 'older-row', guardian_name: 'Older Guardian' };
+    const listUrls: string[] = [];
+    let initial = true;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/retry')) return retryResponse;
+      listUrls.push(url);
+      if (initial) {
+        initial = false;
+        return page([failed]);
+      }
+      if (url.includes('status=failed') && url.includes('search=&')) return olderList;
+      return page([latest]);
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <NotificationCenterPage />
+      </I18nextProvider>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Retry submission' }));
+    await user.selectOptions(screen.getByLabelText('Status'), 'failed');
+    await waitFor(() => expect(listUrls.some((url) => url.includes('status=failed'))).toBe(true));
+    fireEvent.change(screen.getByLabelText('Guardian or email'), {
+      target: { value: 'Latest' },
+    });
+    expect(await screen.findByText(/Latest Guardian/)).toBeVisible();
+
+    resolveRetry(Response.json({ ok: true, aggregate: { code: 'already_notified' } }));
+    await waitFor(() =>
+      expect(
+        listUrls.filter((url) => url.includes('status=failed') && url.includes('search=Latest'))
+          .length,
+      ).toBeGreaterThanOrEqual(2),
+    );
+    resolveOlderList(page([older]));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(screen.getByLabelText('Status')).toHaveValue('failed');
+    expect(screen.getByLabelText('Guardian or email')).toHaveValue('Latest');
+    expect(screen.getByText(/Latest Guardian/)).toBeVisible();
+    expect(screen.queryByText(/Older Guardian/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Another request already submitted or handled/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Retry submission' })).toBeEnabled();
   });
 
   it.each([

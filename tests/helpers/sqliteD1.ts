@@ -36,6 +36,7 @@ export class SqliteD1 {
   preparedSql: string[] = [];
   beforeBatch?: (statements: readonly { readonly sql: string }[]) => void;
   afterHomeworkRevisionCommit?: (revisionId: string) => Promise<void>;
+  afterRetrySelection?: (notificationId: string) => Promise<void>;
   private batchQueue: Promise<unknown> = Promise.resolve();
   constructor() {
     this.db.exec('PRAGMA foreign_keys=ON');
