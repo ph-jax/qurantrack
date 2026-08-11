@@ -1205,6 +1205,25 @@ describe('Pilot MVP API', () => {
   });
 
   it('stores a material homework revision and audit atomically without notification', async () => {
+    auth();
+    const guardian = (await (
+      await app.fetch(
+        req('/api/v1/guardians', 'POST', {
+          name: 'No-notification Parent',
+          email: 'no-notification@example.com',
+          active: true,
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    await app.fetch(
+      req('/api/v1/student-guardians', 'POST', {
+        student_id: 'stu-a',
+        guardian_id: guardian.id,
+        receive_notifications: true,
+      }),
+      env(db),
+    );
     auth('teacher', 'org-a', 'teacher');
     const published = (await (
       await app.fetch(
@@ -1240,6 +1259,19 @@ describe('Pilot MVP API', () => {
         .prepare("SELECT count(*) count FROM audit_log WHERE action='progress.homework_updated'")
         .get(),
     ).toMatchObject({ count: 1 });
+    expect(db.count('homework_revision_recipients')).toBe(0);
+    const replay = (await (
+      await app.fetch(
+        req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', {
+          homework: 'New homework',
+          notifyGuardians: false,
+          operationKey: 'homework-op-one',
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    expect(replay.storage.status).toBe('idempotent');
+    expect(db.count('homework_revision_recipients')).toBe(0);
     expect(submitRelayMail).not.toHaveBeenCalled();
   });
 

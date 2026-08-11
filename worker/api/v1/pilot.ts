@@ -1209,9 +1209,9 @@ export async function updatePublishedHomework(c: Ctx) {
          JOIN organizations o ON o.id=g.organization_id
          JOIN student_guardians sg ON sg.guardian_id=g.id AND sg.organization_id=g.organization_id
          JOIN students s ON s.id=sg.student_id AND s.organization_id=sg.organization_id
-         WHERE sg.student_id=? AND g.organization_id=? AND g.active=1 AND s.active=1 AND sg.receive_notifications=1 AND trim(g.email)<>''
-           AND EXISTS (SELECT 1 FROM homework_revisions WHERE id=? AND organization_id=?)`,
-      ).bind(revisionId, timestamp, progress.student_id, org, revisionId, org),
+         WHERE EXISTS (SELECT 1 FROM homework_revisions WHERE id=? AND organization_id=? AND notification_requested=1)
+           AND sg.student_id=? AND g.organization_id=? AND g.active=1 AND s.active=1 AND sg.receive_notifications=1 AND trim(g.email)<>''`,
+      ).bind(revisionId, timestamp, revisionId, org, progress.student_id, org),
       c.env.DB.prepare(
         `INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM homework_revisions WHERE id=? AND organization_id=?)`,
       ).bind(
