@@ -1,7 +1,28 @@
+type PilotResultTone = 'success' | 'warning' | 'error' | 'info';
+
+const homeworkResultTones = {
+  homework_updated_no_email: 'success',
+  homework_updated_notified: 'success',
+  homework_updated_already_notified: 'success',
+  homework_unchanged: 'info',
+  homework_updated_no_recipients: 'info',
+  homework_updated_partial: 'warning',
+  homework_updated_ambiguous: 'warning',
+  homework_updated_not_retryable: 'warning',
+  homework_updated_notification_in_progress: 'warning',
+  homework_updated_failed: 'error',
+  homework_updated_preparation_failed: 'error',
+} as const satisfies Record<string, PilotResultTone>;
+
 export function pilotResultPresentation(code: string): {
-  tone: 'success' | 'warning' | 'error' | 'info';
+  tone: PilotResultTone;
   key: string;
 } {
+  if (Object.prototype.hasOwnProperty.call(homeworkResultTones, code))
+    return {
+      tone: homeworkResultTones[code as keyof typeof homeworkResultTones],
+      key: `pilot.messages.${code}`,
+    };
   if (code === 'notifications_submitted' || code === 'draft_saved')
     return { tone: 'success', key: `pilot.messages.${code}` };
   if (code === 'notification_ambiguous' || code === 'notification_in_progress')

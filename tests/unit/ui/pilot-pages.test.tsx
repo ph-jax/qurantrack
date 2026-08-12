@@ -212,6 +212,69 @@ describe('Pilot progress result lifecycle', () => {
   });
 
   it.each([
+    ['homework_updated_no_email', 'success'],
+    ['homework_updated_notified', 'success'],
+    ['homework_updated_already_notified', 'success'],
+    ['homework_unchanged', 'info'],
+    ['homework_updated_no_recipients', 'info'],
+    ['homework_updated_partial', 'warning'],
+    ['homework_updated_ambiguous', 'warning'],
+    ['homework_updated_not_retryable', 'warning'],
+    ['homework_updated_notification_in_progress', 'warning'],
+    ['homework_updated_failed', 'error'],
+    ['homework_updated_preparation_failed', 'error'],
+  ])('classifies homework result %s as %s with its specific message', (code, tone) => {
+    expect(pilotResultPresentation(code)).toEqual({
+      tone,
+      key: `pilot.messages.${code}`,
+    });
+  });
+
+  it.each([
+    ['notifications_submitted', 'homework_updated_notified', 'success'],
+    ['notification_failed', 'homework_updated_failed', 'error'],
+    ['notification_preparation_failed', 'homework_updated_preparation_failed', 'error'],
+    ['notification_partial', 'homework_updated_partial', 'warning'],
+    ['notification_ambiguous', 'homework_updated_ambiguous', 'warning'],
+    ['notification_in_progress', 'homework_updated_notification_in_progress', 'warning'],
+    ['no_recipients', 'homework_updated_no_recipients', 'info'],
+  ])('renders aggregate %s through the real homework result flow', (aggregate, code, tone) => {
+    const resultCode = homeworkResultCode(
+      { storage: { status: 'updated' }, notificationAggregate: { code: aggregate } },
+      true,
+    );
+    expect(resultCode).toBe(code);
+    const presentation = pilotResultPresentation(resultCode);
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <div role="status" className={`alert-${presentation.tone}`}>
+          {i18n.t(presentation.key)}
+        </div>
+      </I18nextProvider>,
+    );
+    expect(container.querySelector('[role="status"]')).toHaveClass(`alert-${tone}`);
+    expect(container.textContent).not.toContain(presentation.key);
+  });
+
+  it('renders unchanged informationally and preserves English and Turkish homework messages', async () => {
+    const presentation = pilotResultPresentation('homework_unchanged');
+    expect(presentation).toEqual({ tone: 'info', key: 'pilot.messages.homework_unchanged' });
+    expect(i18n.t(presentation.key)).toBe('No change was detected.');
+    await i18n.changeLanguage('tr');
+    expect(i18n.t(presentation.key)).toBe('Değişiklik algılanmadı.');
+    expect(i18n.t(presentation.key)).not.toBe(presentation.key);
+  });
+
+  it('keeps the unknown homework aggregate fallback warning-styled', () => {
+    const code = homeworkResultCode(
+      { storage: { status: 'updated' }, notificationAggregate: { code: 'future_code' } },
+      true,
+    );
+    expect(code).toBe('homework_updated_partial');
+    expect(pilotResultPresentation(code).tone).toBe('warning');
+  });
+
+  it.each([
     ['en', 'Another notification retry is being processed or its submission status is pending.'],
     ['tr', 'Başka bir bildirim yeniden denemesi işleniyor veya gönderim durumu bekliyor.'],
   ])('renders the student retry in-progress result truthfully in %s', async (locale, message) => {
