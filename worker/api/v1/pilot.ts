@@ -956,6 +956,8 @@ export async function saveProgress(c: Ctx) {
       { operationKey },
     ),
   );
+  let savedUpdateId = updateId;
+  let idempotent = false;
   try {
     await c.env.DB.batch(statements);
   } catch {
@@ -978,28 +980,42 @@ export async function saveProgress(c: Ctx) {
         raced.student_id === studentId &&
         raced.class_id === classId &&
         raced.teacher_user_id === (existing?.teacher_user_id ?? auth.userId)
-      )
-        return c.json({
-          ok: true,
-          id: raced.id,
-          idempotent: true,
-          publication: raced.status === 'published' ? 'already_published' : 'draft_saved',
-          notification: null,
-        });
+      ) {
+        if (raced.status === 'draft')
+          return c.json({
+            ok: true,
+            id: raced.id,
+            idempotent: true,
+            publication: 'draft_saved',
+            notification: null,
+          });
+        savedUpdateId = raced.id;
+        idempotent = true;
+      } else {
+        return json(c, 500, `Progress could not be saved. Reference ${c.get('requestId')}`);
+      }
+    } else {
+      return json(c, 500, `Progress could not be saved. Reference ${c.get('requestId')}`);
     }
-    return json(c, 500, `Progress could not be saved. Reference ${c.get('requestId')}`);
   }
+
+  if (requestedStatus === 'published' && !idempotent)
+    await (
+      c.env.DB as D1Database & {
+        afterProgressPublicationCommit?: (progressId: string) => Promise<void>;
+      }
+    ).afterProgressPublicationCommit?.(savedUpdateId);
 
   let notification: AnyNotificationResult[] | null = null;
   if (requestedStatus === 'published') {
-    const result = await submitNotifications(c, updateId, false);
+    const result = await submitNotifications(c, savedUpdateId, false);
     if (result instanceof Response) return result;
     notification = result;
   }
   return c.json({
     ok: true,
-    id: updateId,
-    idempotent: false,
+    id: savedUpdateId,
+    idempotent,
     publication:
       requestedStatus === 'published'
         ? aggregateNotificationResults(notification).code
@@ -1597,13 +1613,21 @@ async function submitHomeworkNotifications(c: Ctx, revisionId: string, onlyLogId
           .first<any>()
       : { count: 0 };
     const attemptNumber = Number(count?.count ?? 0) + 1;
+    if (onlyLogId)
+      await (
+        c.env.DB as D1Database & {
+          afterHomeworkRetryPriorRead?: (notificationId: string) => Promise<void>;
+        }
+      ).afterHomeworkRetryPriorRead?.(logIdFromPrior(prior, onlyLogId));
     try {
       await c.env.DB.batch(
         prior
           ? [
               c.env.DB.prepare(
-                "UPDATE notification_log SET status='pending',attempted_at=?,error_code=NULL,error_message=NULL WHERE id=? AND organization_id=? AND status='failed'",
-              ).bind(timestamp, logId, org),
+                `UPDATE notification_log SET status='pending',attempted_at=?,error_code=NULL,error_message=NULL
+                 WHERE id=? AND organization_id=? AND status='failed'
+                   AND (SELECT count(*) FROM notification_attempts WHERE notification_log_id=? AND organization_id=?)=?`,
+              ).bind(timestamp, logId, org, logId, org, Number(count?.count ?? 0)),
               c.env.DB.prepare(
                 'INSERT INTO notification_attempts (id,notification_log_id,organization_id,attempt_number,status,request_id,attempted_at) SELECT ?,?,?,?,?,?,? WHERE changes()=1',
               ).bind(
@@ -1686,10 +1710,37 @@ async function submitHomeworkNotifications(c: Ctx, revisionId: string, onlyLogId
       .bind(attemptId, org)
       .first();
     if (!owned) {
+      const state = await c.env.DB.prepare(
+        `SELECT status FROM notification_log
+         WHERE id=? AND organization_id=? AND source_revision_id=? AND progress_update_id=?
+           AND student_id=? AND guardian_id=? AND notification_type='homework_update'
+           AND deduplication_key=?`,
+      )
+        .bind(
+          logId,
+          org,
+          revisionId,
+          revision.progress_update_id,
+          revision.student_id,
+          recipient.id,
+          dedup,
+        )
+        .first<{ status: string }>();
       results.push({
         guardianId: recipient.id,
         guardianName: recipient.name,
-        status: 'in_progress',
+        status:
+          state?.status === 'pending'
+            ? 'in_progress'
+            : state?.status === 'sent'
+              ? 'submitted'
+              : state?.status === 'failed'
+                ? 'failed'
+                : state
+                  ? 'not_retryable'
+                  : 'not_reserved',
+        already: state?.status === 'sent',
+        retryAvailable: state?.status === 'failed',
       });
       continue;
     }
@@ -1784,6 +1835,10 @@ async function submitHomeworkNotifications(c: Ctx, revisionId: string, onlyLogId
     }
   }
   return results;
+}
+
+function logIdFromPrior(prior: { id?: string } | null, fallback: string) {
+  return prior?.id ?? fallback;
 }
 async function submitNotifications(c: Ctx, progressId: string, retry: boolean, onlyLogId?: string) {
   const org = c.get('auth').organizationId;

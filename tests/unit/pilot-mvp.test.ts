@@ -1862,6 +1862,80 @@ describe('Pilot MVP API', () => {
     expect(submitRelayMail).not.toHaveBeenCalled();
   });
 
+  it('continues notification processing after a concurrent publication collision', async () => {
+    auth();
+    const guardian = (await (
+      await app.fetch(
+        req('/api/v1/guardians', 'POST', {
+          name: 'Collision Parent',
+          email: 'collision@example.com',
+          active: true,
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    await app.fetch(
+      req('/api/v1/student-guardians', 'POST', {
+        student_id: 'stu-a',
+        guardian_id: guardian.id,
+        receive_notifications: true,
+      }),
+      env(db),
+    );
+    auth('teacher', 'org-a', 'teacher');
+    submitRelayMail.mockClear();
+    let publicationCommitted!: () => void;
+    let releaseWinner!: () => void;
+    const committed = new Promise<void>((resolve) => (publicationCommitted = resolve));
+    const winnerMayContinue = new Promise<void>((resolve) => (releaseWinner = resolve));
+    db.afterProgressPublicationCommit = async () => {
+      db.afterProgressPublicationCommit = undefined;
+      publicationCommitted();
+      await winnerMayContinue;
+    };
+    const payload = {
+      operation_key: 'same-publication-collision-key',
+      student_id: 'stu-a',
+      class_id: 'class-a',
+      status: 'published',
+      homework: 'Included homework',
+      items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+    };
+    const winnerRequest = app.fetch(req('/api/v1/progress-updates', 'POST', payload), env(db));
+    await committed;
+    const loserResponse = await app.fetch(
+      req('/api/v1/progress-updates', 'POST', payload),
+      env(db),
+    );
+    const loser = (await loserResponse.json()) as any;
+    expect(loserResponse.status).toBe(200);
+    expect(loser.idempotent).toBe(true);
+    expect(loser.publication).toBe('notifications_submitted');
+    expect(loser.notificationAggregate.code).toBe('notifications_submitted');
+    expect(loser.notification).toHaveLength(1);
+    expect(loser.publication).not.toBe('already_published');
+    releaseWinner();
+    const winner = (await (await winnerRequest).json()) as any;
+    expect(winner.id).toBe(loser.id);
+    expect(winner.notificationAggregate.code).toBe('already_notified');
+    expect(submitRelayMail).toHaveBeenCalledTimes(1);
+    expect(
+      db.db
+        .prepare('SELECT count(*) count FROM notification_log WHERE progress_update_id=?')
+        .get(loser.id),
+    ).toMatchObject({ count: 1 });
+    expect(
+      db.db
+        .prepare(
+          'SELECT count(*) count FROM notification_attempts WHERE notification_log_id IN (SELECT id FROM notification_log WHERE progress_update_id=?)',
+        )
+        .get(loser.id),
+    ).toMatchObject({ count: 1 });
+    expect(
+      db.db.prepare("SELECT count(*) count FROM audit_log WHERE action='progress.publish'").get(),
+    ).toMatchObject({ count: 1 });
+  });
+
   it('scopes administrator, teacher, and concurrent retries to the selected notification row', async () => {
     auth();
     for (const [name, email] of [
@@ -2250,6 +2324,124 @@ describe('Pilot MVP API', () => {
       expect(
         (await app.fetch(req(`/api/v1/notifications/${otherId}/retry`, 'POST'), env(db))).status,
       ).toBe(404);
+    },
+  );
+
+  it.each([
+    ['pending', 'accepted', 'notification_in_progress'],
+    ['sent', 'accepted', 'already_notified'],
+    ['failed', 'rejected_before_send', 'notification_failed'],
+  ])(
+    're-reads a homework reservation loser after the winner becomes %s',
+    async (winnerState, relayOutcome, loserCode) => {
+      auth();
+      const guardian = (await (
+        await app.fetch(
+          req('/api/v1/guardians', 'POST', {
+            name: 'Reservation Parent',
+            email: `reservation-${winnerState}@example.com`,
+            active: true,
+          }),
+          env(db),
+        )
+      ).json()) as any;
+      await app.fetch(
+        req('/api/v1/student-guardians', 'POST', {
+          student_id: 'stu-a',
+          guardian_id: guardian.id,
+          receive_notifications: true,
+        }),
+        env(db),
+      );
+      auth('teacher', 'org-a', 'teacher');
+      const published = (await (
+        await app.fetch(
+          req('/api/v1/progress-updates', 'POST', {
+            operation_key: `reservation-base-${winnerState}`,
+            student_id: 'stu-a',
+            class_id: 'class-a',
+            status: 'published',
+            homework: 'Before',
+            items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+          }),
+          env(db),
+        )
+      ).json()) as any;
+      submitRelayMail.mockResolvedValue({ status: 'rejected_before_send' });
+      await app.fetch(
+        req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', {
+          homework: 'After',
+          notifyGuardians: true,
+          operationKey: `reservation-homework-${winnerState}`,
+        }),
+        env(db),
+      );
+      const log = db.db
+        .prepare(
+          "SELECT id FROM notification_log WHERE progress_update_id=? AND notification_type='homework_update'",
+        )
+        .get(published.id) as { id: string };
+      const attemptsBefore = db.count('notification_attempts');
+      const auditsBefore = Number(
+        (
+          db.db
+            .prepare(
+              "SELECT count(*) count FROM audit_log WHERE action='notification.retry_requested'",
+            )
+            .get() as { count: number }
+        ).count,
+      );
+      let firstRead!: () => void;
+      let bothRead!: () => void;
+      let releaseLoser!: () => void;
+      const firstHasRead = new Promise<void>((resolve) => (firstRead = resolve));
+      const bothHaveRead = new Promise<void>((resolve) => (bothRead = resolve));
+      const loserMayReserve = new Promise<void>((resolve) => (releaseLoser = resolve));
+      let reads = 0;
+      db.afterHomeworkRetryPriorRead = async () => {
+        reads += 1;
+        if (reads === 1) {
+          firstRead();
+          await bothHaveRead;
+        } else {
+          bothRead();
+          await loserMayReserve;
+        }
+      };
+      let relayStarted!: () => void;
+      let releaseRelay!: () => void;
+      const relayHasStarted = new Promise<void>((resolve) => (relayStarted = resolve));
+      const relayMayFinish = new Promise<void>((resolve) => (releaseRelay = resolve));
+      submitRelayMail.mockClear();
+      submitRelayMail.mockImplementationOnce(async () => {
+        relayStarted();
+        if (winnerState === 'pending') await relayMayFinish;
+        return { status: relayOutcome };
+      });
+      auth();
+      const winnerRequest = app.fetch(
+        req(`/api/v1/notifications/${log.id}/retry`, 'POST'),
+        env(db),
+      );
+      await firstHasRead;
+      const loserRequest = app.fetch(req(`/api/v1/notifications/${log.id}/retry`, 'POST'), env(db));
+      await relayHasStarted;
+      if (winnerState !== 'pending') await winnerRequest;
+      releaseLoser();
+      const loser = (await (await loserRequest).json()) as any;
+      expect(loser.aggregate.code).toBe(loserCode);
+      if (winnerState === 'pending') releaseRelay();
+      await winnerRequest;
+      expect(submitRelayMail).toHaveBeenCalledTimes(1);
+      expect(db.count('notification_attempts')).toBe(attemptsBefore + 1);
+      expect(
+        db.db
+          .prepare(
+            "SELECT count(*) count FROM audit_log WHERE action='notification.retry_requested'",
+          )
+          .get(),
+      ).toMatchObject({ count: auditsBefore + 1 });
+      db.afterHomeworkRetryPriorRead = undefined;
     },
   );
 
