@@ -408,6 +408,8 @@ export default {
       notification_failed: 'Published, but one or more guardian submissions failed.',
       notification_ambiguous:
         'Published. A guardian submission is uncertain and has been blocked from retry.',
+      notification_in_progress:
+        'Another notification retry is being processed or its submission status is pending. No successful submission is being claimed.',
       notification_preparation_failed:
         'Published, but guardian notification preparation failed. No email was submitted.',
       notification_partial:

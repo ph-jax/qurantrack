@@ -405,6 +405,8 @@ export default {
       notification_failed: 'Yayınlandı ancak bir veya daha fazla veli gönderimi başarısız.',
       notification_ambiguous:
         'Yayınlandı. Bir veli gönderiminin durumu belirsiz ve yeniden denemeye kapatıldı.',
+      notification_in_progress:
+        'Başka bir bildirim yeniden denemesi işleniyor veya gönderim durumu bekliyor. Başarılı gönderim iddia edilmiyor.',
       notification_preparation_failed:
         'Yayınlandı ancak veli bildirimi hazırlanamadı. E-posta gönderilmedi.',
       notification_partial:

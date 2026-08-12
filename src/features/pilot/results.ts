@@ -4,7 +4,8 @@ export function pilotResultPresentation(code: string): {
 } {
   if (code === 'notifications_submitted' || code === 'draft_saved')
     return { tone: 'success', key: `pilot.messages.${code}` };
-  if (code === 'notification_ambiguous') return { tone: 'warning', key: `pilot.messages.${code}` };
+  if (code === 'notification_ambiguous' || code === 'notification_in_progress')
+    return { tone: 'warning', key: `pilot.messages.${code}` };
   if (code === 'notification_partial') return { tone: 'warning', key: `pilot.messages.${code}` };
   if (
     code === 'notification_failed' ||

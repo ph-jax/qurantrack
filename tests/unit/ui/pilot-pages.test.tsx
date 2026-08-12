@@ -112,6 +112,9 @@ describe('Pilot administrator editors', () => {
 });
 
 describe('Pilot progress result lifecycle', () => {
+  beforeEach(() => {
+    void i18n.changeLanguage('en');
+  });
   it.each([
     ['notifications_submitted', 'homework_updated_notified'],
     ['already_notified', 'homework_updated_already_notified'],
@@ -199,9 +202,62 @@ describe('Pilot progress result lifecycle', () => {
     expect(pilotResultPresentation('already_notified').tone).toBe('info');
     expect(pilotResultPresentation('notification_failed').tone).toBe('error');
     expect(pilotResultPresentation('notification_ambiguous').tone).toBe('warning');
+    expect(pilotResultPresentation('notification_in_progress')).toEqual({
+      tone: 'warning',
+      key: 'pilot.messages.notification_in_progress',
+    });
     expect(pilotResultPresentation('notification_preparation_failed').tone).toBe('error');
     expect(pilotResultPresentation('notification_partial').tone).toBe('warning');
     expect(pilotResultPresentation('notification_request_failed').tone).toBe('error');
+  });
+
+  it.each([
+    ['en', 'Another notification retry is being processed or its submission status is pending.'],
+    ['tr', 'Başka bir bildirim yeniden denemesi işleniyor veya gönderim durumu bekliyor.'],
+  ])('renders the student retry in-progress result truthfully in %s', async (locale, message) => {
+    await i18n.changeLanguage(locale);
+    let resolveRetry!: (value: Response) => void;
+    const retry = new Promise<Response>((resolve) => (resolveRetry = resolve));
+    function RetryHarness() {
+      const [busy, setBusy] = useState(false);
+      const [result, setResult] = useState('');
+      const presentation = result ? pilotResultPresentation(result) : null;
+      return (
+        <>
+          <button
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                setResult(await requestNotificationAction('/notify', vi.fn(() => retry) as never));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Retry
+          </button>
+          {presentation && (
+            <div role="status" className={`alert-${presentation.tone}`}>
+              {i18n.t(presentation.key)}
+            </div>
+          )}
+        </>
+      );
+    }
+    const user = userEvent.setup();
+    render(<RetryHarness />);
+    const button = screen.getByRole('button', { name: 'Retry' });
+    await user.click(button);
+    expect(button).toBeDisabled();
+    resolveRetry(Response.json({ ok: true, aggregate: { code: 'notification_in_progress' } }));
+    const notice = await screen.findByRole('status');
+    expect(notice).toHaveTextContent(message);
+    expect(notice).not.toHaveTextContent('pilot.messages.notification_in_progress');
+    expect(notice).not.toHaveTextContent(/submitted|gönderildi/i);
+    expect(notice).toHaveClass('alert-warning');
+    expect(notice).not.toHaveClass('alert-success');
+    await waitFor(() => expect(button).toBeEnabled());
   });
 
   it('returns a visible safe error for standalone HTTP, network, and parsing failures', async () => {
