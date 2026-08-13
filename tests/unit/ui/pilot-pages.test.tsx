@@ -432,6 +432,117 @@ describe('Pilot progress result lifecycle', () => {
     expect(bodies[1].operationKey).toBe(bodies[0].operationKey);
   });
 
+  it('locks non-notification homework controls while one PATCH is pending', async () => {
+    const user = userEvent.setup();
+    let resolvePatch!: (value: Response) => void;
+    const patch = new Promise<Response>((resolve) => (resolvePatch = resolve));
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return patch;
+      }),
+    );
+    const onSaved = vi.fn(async () => undefined);
+    const onCancel = vi.fn();
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <HomeworkEditor
+          update={{ id: 'busy', student_id: 'student-a', class_id: 'class-a', homework: 'Old' }}
+          onCancel={onCancel}
+          onSaved={onSaved}
+        />
+      </I18nextProvider>,
+    );
+    const field = screen.getByLabelText('Homework / current assignment');
+    const checkbox = screen.getByRole('checkbox', { name: 'Notify guardians about this change' });
+    await user.clear(field);
+    await user.type(field, 'Captured homework');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(bodies).toEqual([
+      expect.objectContaining({ homework: 'Captured homework', notifyGuardians: false }),
+    ]);
+    expect(field).toBeDisabled();
+    expect(checkbox).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+    await user.type(field, ' ignored');
+    await user.click(checkbox);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(field).toHaveValue('Captured homework');
+    expect(checkbox).not.toBeChecked();
+    expect(bodies).toHaveLength(1);
+    resolvePatch(
+      Response.json({
+        ok: true,
+        storage: { status: 'updated', revision: { id: 'revision' } },
+        notificationAggregate: null,
+      }),
+    );
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith('homework_updated_no_email'));
+    expect(bodies).toHaveLength(1);
+  });
+
+  it('locks confirmation and editor controls during a notifying PATCH', async () => {
+    const user = userEvent.setup();
+    let resolvePatch!: (value: Response) => void;
+    const patch = new Promise<Response>((resolve) => (resolvePatch = resolve));
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('notification-recipients'))
+          return Response.json({ ok: true, count: 0, recipients: [] });
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return patch;
+      }),
+    );
+    const onSaved = vi.fn(async () => undefined);
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <HomeworkEditor
+          update={{
+            id: 'notify-busy',
+            student_id: 'student-a',
+            class_id: 'class-a',
+            homework: 'Old',
+          }}
+          onCancel={vi.fn()}
+          onSaved={onSaved}
+        />
+      </I18nextProvider>,
+    );
+    const field = screen.getByLabelText('Homework / current assignment');
+    const checkbox = screen.getByRole('checkbox', { name: 'Notify guardians about this change' });
+    await user.clear(field);
+    await user.type(field, 'Notify capture');
+    await user.click(checkbox);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    const confirm = await screen.findByRole('button', { name: 'Confirm and publish' });
+    await user.click(confirm);
+    expect(bodies).toEqual([
+      expect.objectContaining({ homework: 'Notify capture', notifyGuardians: true }),
+    ]);
+    expect(field).toBeDisabled();
+    expect(checkbox).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(confirm).toBeDisabled();
+    expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+    await user.click(confirm);
+    expect(bodies).toHaveLength(1);
+    resolvePatch(
+      Response.json({
+        ok: true,
+        storage: { status: 'updated', revision: { id: 'revision' } },
+        notificationAggregate: { code: 'no_recipients' },
+      }),
+    );
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith('homework_updated_no_recipients'));
+  });
+
   it('resets homework editor state and operation key when switching updates', async () => {
     const user = userEvent.setup();
     const bodies: Record<string, unknown>[] = [];

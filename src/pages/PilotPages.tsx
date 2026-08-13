@@ -1498,17 +1498,23 @@ export function HomeworkEditor({
     }
   }
   return (
-    <Card>
+    <Card aria-busy={busy}>
       <h3 className="font-bold">{t('pilot.homeworkEditor.title')}</h3>
       <FormField id={`published-homework-${update.id}`} label={t('pilot.homework')}>
         <Textarea
           id={`published-homework-${update.id}`}
+          disabled={busy}
           value={homework}
           onChange={(e) => setHomework(e.target.value)}
         />
       </FormField>
       <label className="flex min-h-11 items-center gap-2">
-        <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
+        <input
+          type="checkbox"
+          disabled={busy}
+          checked={notify}
+          onChange={(e) => setNotify(e.target.checked)}
+        />
         {t('pilot.homeworkEditor.notify')}
       </label>
       <div className="flex gap-2">
