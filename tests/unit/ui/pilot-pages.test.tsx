@@ -477,20 +477,57 @@ describe('Pilot progress result lifecycle', () => {
     await user.type(field, 'Changed payload');
     await user.click(save);
     await waitFor(() => expect(bodies).toHaveLength(3));
-    expect(bodies[2].operationKey).not.toBe(firstKey);
+    const secondKey = bodies[2].operationKey;
+    expect(secondKey).not.toBe(firstKey);
 
     await user.clear(field);
     await user.type(field, 'First payload');
     await user.click(save);
     await waitFor(() => expect(bodies).toHaveLength(4));
-    expect(bodies[3].operationKey).toBe(firstKey);
+    const thirdKey = bodies[3].operationKey;
+    expect(thirdKey).not.toBe(firstKey);
+    expect(thirdKey).not.toBe(secondKey);
 
     await user.click(checkbox);
     await user.click(save);
     await user.click(await screen.findByRole('button', { name: 'Confirm and publish' }));
     await waitFor(() => expect(bodies).toHaveLength(5));
     expect(bodies[4]).toMatchObject({ homework: 'First payload', notifyGuardians: true });
-    expect(bodies[4].operationKey).not.toBe(firstKey);
+    expect(bodies[4].operationKey).not.toBe(thirdKey);
+  });
+
+  it('keeps the last key when inputs change and revert before another attempt', async () => {
+    const user = userEvent.setup();
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return Response.json({ error: { message: 'uncertain' } }, { status: 500 });
+      }),
+    );
+    render(
+      <I18nextProvider i18n={i18n}>
+        <HomeworkEditor
+          update={{ id: 'revert-key', student_id: 'student-a', class_id: 'class-a', homework: '' }}
+          onCancel={vi.fn()}
+          onSaved={vi.fn()}
+        />
+      </I18nextProvider>,
+    );
+    const field = screen.getByLabelText('Homework / current assignment');
+    const save = screen.getByRole('button', { name: 'Save' });
+    await user.type(field, 'Payload A');
+    await user.click(save);
+    await screen.findByText(/changes are preserved/i);
+    const firstKey = bodies[0].operationKey;
+    await user.clear(field);
+    await user.type(field, 'Payload B');
+    await user.clear(field);
+    await user.type(field, 'Payload A');
+    await user.click(save);
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1].operationKey).toBe(firstKey);
   });
 
   it('locks non-notification homework controls while one PATCH is pending', async () => {

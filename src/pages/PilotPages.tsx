@@ -1462,7 +1462,7 @@ export function HomeworkEditor({
   const [error, setError] = useState(false);
   const [previewError, setPreviewError] = useState(false);
   const [preview, setPreview] = useState<Any | null>(null);
-  const attemptedPayloads = useRef(new Map<string, string>());
+  const lastAttempt = useRef<{ semanticPayload: string; operationKey: string } | null>(null);
   async function openConfirmation() {
     setConfirming(true);
     setPreview(null);
@@ -1481,11 +1481,11 @@ export function HomeworkEditor({
   async function save() {
     if (busy) return;
     const semanticPayload = JSON.stringify({ homework: homework.trim(), notify });
-    let operationKey = attemptedPayloads.current.get(semanticPayload);
-    if (!operationKey) {
-      operationKey = crypto.randomUUID();
-      attemptedPayloads.current.set(semanticPayload, operationKey);
-    }
+    const operationKey =
+      lastAttempt.current?.semanticPayload === semanticPayload
+        ? lastAttempt.current.operationKey
+        : crypto.randomUUID();
+    lastAttempt.current = { semanticPayload, operationKey };
     const submittedHomework = homework;
     const submittedNotify = notify;
     setBusy(true);
