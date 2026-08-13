@@ -1392,8 +1392,7 @@ async function homeworkRevisionNotificationState(c: Ctx, revisionId: string) {
   const notification = rows.results.map((row: any) => ({
     guardianId: row.guardian_id,
     guardianName: row.guardian_name,
-    status:
-      row.status === 'sent' ? 'submitted' : row.status === 'failed' ? 'failed' : 'in_progress',
+    status: row.status === 'sent' ? 'submitted' : row.status === 'failed' ? 'failed' : 'ambiguous',
     already: row.status === 'sent',
     retryAvailable: row.status === 'failed',
   }));

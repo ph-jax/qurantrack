@@ -1648,7 +1648,7 @@ describe('Pilot MVP API', () => {
     expect(submitRelayMail.mock.calls[0][1].to).toBe('snapshot@example.com');
   });
 
-  it('reports in progress only while a durable homework reservation exists', async () => {
+  it('reports a persisted pending homework reservation as ambiguous', async () => {
     auth();
     const guardian = (await (
       await app.fetch(
@@ -1709,7 +1709,7 @@ describe('Pilot MVP API', () => {
       )
     ).json()) as any;
     expect(replay.storage.status).toBe('idempotent');
-    expect(replay.notificationAggregate.code).toBe('notification_in_progress');
+    expect(replay.notificationAggregate.code).toBe('notification_ambiguous');
     expect(
       db.db
         .prepare(
@@ -1823,6 +1823,82 @@ describe('Pilot MVP API', () => {
     ).json()) as any;
     expect(replay.storage.status).toBe('idempotent');
     expect(replay.notificationAggregate.code).toBe('no_recipients');
+  });
+
+  it('reports persisted ambiguous homework notification state without resubmitting', async () => {
+    auth();
+    const guardian = (await (
+      await app.fetch(
+        req('/api/v1/guardians', 'POST', {
+          name: 'Ambiguous Parent',
+          email: 'ambiguous-recovery@example.com',
+          active: true,
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    await app.fetch(
+      req('/api/v1/student-guardians', 'POST', {
+        student_id: 'stu-a',
+        guardian_id: guardian.id,
+        receive_notifications: true,
+      }),
+      env(db),
+    );
+    auth('teacher', 'org-a', 'teacher');
+    const published = (await (
+      await app.fetch(
+        req('/api/v1/progress-updates', 'POST', {
+          operation_key: 'ambiguous-recovery-base',
+          student_id: 'stu-a',
+          class_id: 'class-a',
+          status: 'published',
+          homework: 'Before',
+          items: [{ lesson_id: 'lesson-a', outcome: 'assigned' }],
+        }),
+        env(db),
+      )
+    ).json()) as any;
+    submitRelayMail.mockClear();
+    submitRelayMail.mockResolvedValue({ status: 'ambiguous' });
+    const payload = {
+      homework: 'Ambiguous homework',
+      notifyGuardians: true,
+      operationKey: 'ambiguous-homework-operation',
+    };
+    const first = (await (
+      await app.fetch(
+        req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', payload),
+        env(db),
+      )
+    ).json()) as any;
+    expect(first.notificationAggregate.code).toBe('notification_ambiguous');
+    expect(submitRelayMail).toHaveBeenCalledTimes(1);
+    const notifications = db.count('notification_log');
+    const attempts = db.count('notification_attempts');
+    const audits = db.count('audit_log');
+    expect(
+      db.db
+        .prepare(
+          "SELECT nl.status,na.status attempt_status FROM notification_log nl JOIN notification_attempts na ON na.notification_log_id=nl.id WHERE nl.notification_type='homework_update'",
+        )
+        .get(),
+    ).toMatchObject({ status: 'pending', attempt_status: 'pending' });
+    const replay = (await (
+      await app.fetch(
+        req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', payload),
+        env(db),
+      )
+    ).json()) as any;
+    expect(replay.storage.status).toBe('idempotent');
+    expect(replay.notificationAggregate.code).toBe('notification_ambiguous');
+    expect(replay.notification).toEqual([
+      expect.objectContaining({ status: 'ambiguous', retryAvailable: false }),
+    ]);
+    expect(submitRelayMail).toHaveBeenCalledTimes(1);
+    expect(db.count('notification_log')).toBe(notifications);
+    expect(db.count('notification_attempts')).toBe(attempts);
+    expect(db.count('audit_log')).toBe(audits);
   });
 
   it('leaves no residue when a different operation key loses the concurrent homework race', async () => {

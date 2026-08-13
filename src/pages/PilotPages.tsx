@@ -1462,7 +1462,7 @@ export function HomeworkEditor({
   const [error, setError] = useState(false);
   const [previewError, setPreviewError] = useState(false);
   const [preview, setPreview] = useState<Any | null>(null);
-  const operationKey = useRef(crypto.randomUUID());
+  const attemptedPayloads = useRef(new Map<string, string>());
   async function openConfirmation() {
     setConfirming(true);
     setPreview(null);
@@ -1480,17 +1480,25 @@ export function HomeworkEditor({
   }
   async function save() {
     if (busy) return;
+    const semanticPayload = JSON.stringify({ homework: homework.trim(), notify });
+    let operationKey = attemptedPayloads.current.get(semanticPayload);
+    if (!operationKey) {
+      operationKey = crypto.randomUUID();
+      attemptedPayloads.current.set(semanticPayload, operationKey);
+    }
+    const submittedHomework = homework;
+    const submittedNotify = notify;
     setBusy(true);
     try {
       const result = await api(`/api/v1/progress-updates/${update.id}/homework`, {
         method: 'PATCH',
         body: JSON.stringify({
-          homework,
-          notifyGuardians: notify,
-          operationKey: operationKey.current,
+          homework: submittedHomework,
+          notifyGuardians: submittedNotify,
+          operationKey,
         }),
       });
-      await onSaved(homeworkResultCode(result, notify));
+      await onSaved(homeworkResultCode(result, submittedNotify));
     } catch {
       setError(true);
     } finally {
