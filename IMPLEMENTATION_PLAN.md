@@ -175,3 +175,7 @@ Phase 3B2 will add groups/classes, student records, teacher assignments, enrollm
 - Phase 3B2 roster and teacher visibility requirements are implemented for the pilot: classes, students, teacher assignments, active enrollment/withdrawal history, guardians, and student-guardian notification flags are backed by active-organization-scoped API endpoints and teacher visibility checks.
 - Phase 3C is partially implemented as manual curriculum administration only. Tracks, levels, lessons, simple `sort_order`, active flags, and lesson default homework are available; default curriculum installation remains deferred and Phase 3C is not complete.
 - Progress entry and guardian email are implemented as pilot capabilities without completing later parent/reporting phases. Published progress updates update lesson summary state, preserve first-passed dates, and can be submitted to guardians through the existing relay.
+
+### Guardian notification center (implemented)
+
+Publication confirmation previews eligible guardians, while the server reselects recipients in the active tenant. Later published-homework changes are revisioned and only notify when explicitly selected. The admin-only Notification Center offers scoped, paginated filtering and failed-only retry. Relay acceptance means submitted, not delivered. Cancellation notifications, scheduled reminders, and parent access remain out of scope.

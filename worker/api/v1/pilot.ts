@@ -745,7 +745,7 @@ export async function studentSummary(c: Ctx) {
     .bind(studentId, org)
     .all();
   const notifications = await c.env.DB.prepare(
-    `SELECT progress_update_id,status,error_code,error_message,created_at,sent_at FROM notification_log WHERE student_id=? AND organization_id=? ORDER BY created_at DESC LIMIT 20`,
+    `SELECT nl.id,nl.progress_update_id,nl.notification_type,nl.status,nl.recipient_email,g.name guardian_name,nl.attempted_at,nl.sent_at,CASE WHEN nl.status='failed' THEN nl.error_message ELSE NULL END failure_reference,(SELECT count(*) FROM notification_attempts na WHERE na.notification_log_id=nl.id AND na.organization_id=nl.organization_id) attempt_count FROM notification_log nl JOIN guardians g ON g.id=nl.guardian_id AND g.organization_id=nl.organization_id WHERE nl.student_id=? AND nl.organization_id=? ORDER BY nl.created_at DESC LIMIT 50`,
   )
     .bind(studentId, org)
     .all();
@@ -822,17 +822,15 @@ export async function saveProgress(c: Ctx) {
     return json(c, 404);
   if (existing && !admin(auth) && existing.teacher_user_id !== auth.userId) return json(c, 404);
   if (existing?.status === 'published') {
-    const notification =
-      b.notify === true ? await submitNotifications(c, existing.id, false) : null;
+    const notification = await submitNotifications(c, existing.id, false);
     if (notification instanceof Response) return notification;
     return c.json({
       ok: true,
       id: existing.id,
       idempotent: true,
-      publication:
-        b.notify === true ? aggregateNotificationResults(notification).code : 'already_published',
+      publication: aggregateNotificationResults(notification).code,
       notification,
-      notificationAggregate: b.notify === true ? aggregateNotificationResults(notification) : null,
+      notificationAggregate: aggregateNotificationResults(notification),
     });
   }
 
@@ -958,6 +956,8 @@ export async function saveProgress(c: Ctx) {
       { operationKey },
     ),
   );
+  let savedUpdateId = updateId;
+  let idempotent = false;
   try {
     await c.env.DB.batch(statements);
   } catch {
@@ -980,39 +980,49 @@ export async function saveProgress(c: Ctx) {
         raced.student_id === studentId &&
         raced.class_id === classId &&
         raced.teacher_user_id === (existing?.teacher_user_id ?? auth.userId)
-      )
-        return c.json({
-          ok: true,
-          id: raced.id,
-          idempotent: true,
-          publication: raced.status === 'published' ? 'already_published' : 'draft_saved',
-          notification: null,
-        });
+      ) {
+        if (raced.status === 'draft')
+          return c.json({
+            ok: true,
+            id: raced.id,
+            idempotent: true,
+            publication: 'draft_saved',
+            notification: null,
+          });
+        savedUpdateId = raced.id;
+        idempotent = true;
+      } else {
+        return json(c, 500, `Progress could not be saved. Reference ${c.get('requestId')}`);
+      }
+    } else {
+      return json(c, 500, `Progress could not be saved. Reference ${c.get('requestId')}`);
     }
-    return json(c, 500, `Progress could not be saved. Reference ${c.get('requestId')}`);
   }
 
+  if (requestedStatus === 'published' && !idempotent)
+    await (
+      c.env.DB as D1Database & {
+        afterProgressPublicationCommit?: (progressId: string) => Promise<void>;
+      }
+    ).afterProgressPublicationCommit?.(savedUpdateId);
+
   let notification: AnyNotificationResult[] | null = null;
-  if (requestedStatus === 'published' && b.notify === true) {
-    const result = await submitNotifications(c, updateId, false);
+  if (requestedStatus === 'published') {
+    const result = await submitNotifications(c, savedUpdateId, false);
     if (result instanceof Response) return result;
     notification = result;
   }
   return c.json({
     ok: true,
-    id: updateId,
-    idempotent: false,
+    id: savedUpdateId,
+    idempotent,
     publication:
       requestedStatus === 'published'
-        ? b.notify === true
-          ? aggregateNotificationResults(notification).code
-          : 'published_only'
+        ? aggregateNotificationResults(notification).code
         : 'draft_saved',
     notification,
     notificationAggregate:
-      requestedStatus === 'published' && b.notify === true
-        ? aggregateNotificationResults(notification)
-        : null,
+      requestedStatus === 'published' ? aggregateNotificationResults(notification) : null,
   });
 }
 
@@ -1023,6 +1033,7 @@ export function aggregateNotificationResults(results: AnyNotificationResult[] | 
     alreadySubmitted: 0,
     failed: 0,
     ambiguous: 0,
+    inProgress: 0,
     notReserved: 0,
     notRetryable: 0,
     skipped: 0,
@@ -1031,12 +1042,14 @@ export function aggregateNotificationResults(results: AnyNotificationResult[] | 
     if (result.status === 'submitted') counts[result.already ? 'alreadySubmitted' : 'submitted']++;
     else if (result.status === 'failed') counts.failed++;
     else if (result.status === 'ambiguous') counts.ambiguous++;
+    else if (result.status === 'in_progress') counts.inProgress++;
     else if (result.status === 'not_reserved') counts.notReserved++;
     else if (result.status === 'not_retryable') counts.notRetryable++;
     else counts.skipped++;
   }
   let code = 'notification_partial';
   if (!counts.total) code = 'no_recipients';
+  else if (counts.inProgress === counts.total) code = 'notification_in_progress';
   else if (counts.ambiguous === counts.total) code = 'notification_ambiguous';
   else if (counts.failed === counts.total) code = 'notification_failed';
   else if (counts.notReserved === counts.total) code = 'notification_preparation_failed';
@@ -1045,6 +1058,69 @@ export function aggregateNotificationResults(results: AnyNotificationResult[] | 
   else if (counts.submitted + counts.alreadySubmitted === counts.total)
     code = 'notifications_submitted';
   return { code, counts };
+}
+
+async function finalizeRelayRejection(
+  c: Ctx,
+  values: {
+    logId: string;
+    attemptId: string;
+    completedAt: string;
+    safeMessage: string;
+    metadata: Record<string, unknown>;
+  },
+) {
+  const org = c.get('auth').organizationId;
+  const auditId = `audit_relay_failed:${values.attemptId}`;
+  const finalize = () =>
+    c.env.DB.batch([
+      c.env.DB.prepare(
+        "UPDATE notification_log SET status='failed',error_code='RELAY_REJECTED',error_message=? WHERE id=? AND organization_id=? AND status='pending'",
+      ).bind(values.safeMessage, values.logId, org),
+      c.env.DB.prepare(
+        "UPDATE notification_attempts SET status='failed',error_code='RELAY_REJECTED',error_message=?,completed_at=? WHERE id=? AND notification_log_id=? AND organization_id=? AND status='pending'",
+      ).bind(values.safeMessage, values.completedAt, values.attemptId, values.logId, org),
+      c.env.DB.prepare(
+        `INSERT OR IGNORE INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at)
+         SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (
+           SELECT 1 FROM notification_log nl
+           JOIN notification_attempts na ON na.notification_log_id=nl.id AND na.organization_id=nl.organization_id
+           WHERE nl.id=? AND nl.organization_id=? AND nl.status='failed' AND nl.error_code='RELAY_REJECTED'
+             AND na.id=? AND na.status='failed' AND na.error_code='RELAY_REJECTED'
+         )`,
+      ).bind(
+        auditId,
+        org,
+        c.get('auth').userId,
+        'notification.relay_failed',
+        'notification',
+        values.logId,
+        'Notification relay submission failed',
+        JSON.stringify(values.metadata),
+        c.get('requestId'),
+        values.completedAt,
+        values.logId,
+        org,
+        values.attemptId,
+      ),
+    ]);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await finalize();
+      break;
+    } catch {
+      if (attempt === 1) break;
+    }
+  }
+  const confirmed = await c.env.DB.prepare(
+    `SELECT 1 FROM notification_log nl
+     JOIN notification_attempts na ON na.notification_log_id=nl.id AND na.organization_id=nl.organization_id
+     WHERE nl.id=? AND nl.organization_id=? AND nl.status='failed' AND nl.error_code='RELAY_REJECTED'
+       AND na.id=? AND na.status='failed' AND na.error_code='RELAY_REJECTED'`,
+  )
+    .bind(values.logId, org, values.attemptId)
+    .first();
+  return Boolean(confirmed);
 }
 
 const outcomeLabels: Record<string, Record<string, string>> = {
@@ -1079,11 +1155,691 @@ function emailHtml(locale: string, data: any) {
   return `<h1>${esc(data.org_name)}</h1><p><strong>${tr ? 'Öğrenci' : 'Student'}:</strong> ${esc(data.student_name)}</p><p><strong>${tr ? 'Tarih' : 'Date'}:</strong> ${esc(data.update_date)}</p><p><strong>${tr ? 'Sınıf' : 'Class'}:</strong> ${esc(data.class_name || '')}<br><strong>${tr ? 'Öğretmen' : 'Teacher'}:</strong> ${esc(data.teacher_name)}</p><ul>${data.items.map((i: any) => `<li>${esc(i.lesson_name)}: ${esc(outcomeLabel(locale, i.outcome))}${i.item_comment ? ` — ${esc(i.item_comment)}` : ''}</li>`).join('')}</ul><p><strong>${tr ? 'Yorum' : 'Comment'}:</strong> ${esc(data.overall_comment || '')}</p><p><strong>${tr ? 'Ödev' : 'Homework'}:</strong> ${esc(data.homework || '')}</p>`;
 }
 export async function notifyProgress(c: Ctx) {
-  const results = await submitNotifications(c, param(c, 'id'), c.req.query('retry') === '1');
+  const retry = c.req.query('retry') === '1';
+  let notificationId = str(c.req.query('notificationId'), 120);
+  if (retry && !notificationId) {
+    const failed = await c.env.DB.prepare(
+      "SELECT id FROM notification_log WHERE organization_id=? AND progress_update_id=? AND notification_type='progress_update' AND status='failed' LIMIT 2",
+    )
+      .bind(c.get('auth').organizationId, param(c, 'id'))
+      .all<any>();
+    if (failed.results.length !== 1)
+      return json(c, 400, 'A notification ID is required for retry.');
+    notificationId = failed.results[0].id;
+  }
+  let sourceRevisionId: string | null = null;
+  if (retry && notificationId) {
+    const selected = await c.env.DB.prepare(
+      "SELECT source_revision_id FROM notification_log WHERE id=? AND organization_id=? AND progress_update_id=? AND status='failed'",
+    )
+      .bind(notificationId, c.get('auth').organizationId, param(c, 'id'))
+      .first<{ source_revision_id: string | null }>();
+    if (!selected) return json(c, 404);
+    sourceRevisionId = selected.source_revision_id;
+  }
+  const results = sourceRevisionId
+    ? await submitHomeworkNotifications(c, sourceRevisionId, notificationId)
+    : await submitNotifications(c, param(c, 'id'), retry, notificationId || undefined);
   if (results instanceof Response) return results;
   return c.json({ ok: true, results, aggregate: aggregateNotificationResults(results) });
 }
-async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
+
+export async function previewProgressRecipients(c: Ctx) {
+  const org = c.get('auth').organizationId;
+  const studentId = param(c, 'id');
+  const classId = str(c.req.query('classId'), 120);
+  if (!classId || !(await canSeeStudent(c, studentId, classId))) return json(c, 404);
+  const relationship = await c.env.DB.prepare(
+    `SELECT 1 FROM class_enrollments ce JOIN classes cl ON cl.id=ce.class_id AND cl.organization_id=ce.organization_id AND cl.active=1 JOIN students s ON s.id=ce.student_id AND s.organization_id=ce.organization_id AND s.active=1 WHERE ce.student_id=? AND ce.class_id=? AND ce.organization_id=? AND ce.active=1`,
+  )
+    .bind(studentId, classId, org)
+    .first();
+  if (!relationship) return json(c, 404);
+  const recipients = await eligibleRecipients(c, studentId);
+  return c.json({ ok: true, count: recipients.length, recipients });
+}
+
+async function eligibleRecipients(c: Ctx, studentId: string) {
+  const rows = await c.env.DB.prepare(
+    `SELECT g.id,g.name,g.email,g.preferred_locale,CASE WHEN g.preferred_locale IN ('en','tr') THEN g.preferred_locale WHEN o.default_locale IN ('en','tr') THEN o.default_locale ELSE 'en' END resolved_locale FROM guardians g JOIN organizations o ON o.id=g.organization_id JOIN student_guardians sg ON sg.guardian_id=g.id AND sg.organization_id=g.organization_id JOIN students s ON s.id=sg.student_id AND s.organization_id=sg.organization_id WHERE sg.student_id=? AND g.organization_id=? AND g.active=1 AND s.active=1 AND sg.receive_notifications=1 AND trim(g.email)<>'' ORDER BY g.name`,
+  )
+    .bind(studentId, c.get('auth').organizationId)
+    .all<any>();
+  return rows.results;
+}
+
+export async function updatePublishedHomework(c: Ctx) {
+  const b = await body(c);
+  const auth = c.get('auth');
+  const org = auth.organizationId;
+  const progressId = param(c, 'id');
+  const operationKey = str(b.operationKey, 120);
+  if (
+    !operationKey ||
+    operationKey.length < 8 ||
+    typeof b.homework !== 'string' ||
+    b.homework.length > 1000
+  )
+    return json(c, 400);
+  const progress = await c.env.DB.prepare(
+    "SELECT id,student_id,class_id,teacher_user_id,homework FROM progress_updates WHERE id=? AND organization_id=? AND status='published'",
+  )
+    .bind(progressId, org)
+    .first<any>();
+  if (
+    !progress ||
+    (!admin(auth) && progress.teacher_user_id !== auth.userId) ||
+    !(await canSeeStudent(c, progress.student_id, progress.class_id))
+  )
+    return json(c, 404);
+  const prior = await c.env.DB.prepare(
+    'SELECT * FROM homework_revisions WHERE organization_id=? AND progress_update_id=? AND operation_key=?',
+  )
+    .bind(org, progressId, operationKey)
+    .first<any>();
+  if (prior) {
+    if (
+      (prior.new_homework ?? '').trim() !== normalizedHomework(b.homework) ||
+      Boolean(prior.notification_requested) !== (b.notifyGuardians === true)
+    )
+      return json(c, 409, 'This operation key was already used with different homework data.');
+    const state = prior.notification_requested
+      ? await resumeHomeworkNotifications(c, prior.id)
+      : null;
+    return c.json({
+      ok: true,
+      storage: { status: 'idempotent', revision: prior },
+      notification: state?.notification ?? null,
+      notificationAggregate: state?.aggregate ?? null,
+    });
+  }
+  const normalized = normalizedHomework(b.homework);
+  if ((progress.homework ?? '').trim() === normalized)
+    return c.json({
+      ok: true,
+      storage: { status: 'unchanged', revision: null },
+      notification: null,
+    });
+  const revisionId = id('hwr');
+  const timestamp = now();
+  const requested = b.notifyGuardians === true;
+  const statements: D1PreparedStatement[] = [
+    c.env.DB.prepare(
+      "UPDATE progress_updates SET homework=?,updated_at=? WHERE id=? AND organization_id=? AND status='published' AND COALESCE(trim(homework),'')=?",
+    ).bind(normalized || null, timestamp, progressId, org, (progress.homework ?? '').trim()),
+    c.env.DB.prepare(
+      `INSERT INTO homework_revisions (id,organization_id,progress_update_id,previous_homework,new_homework,changed_by_user_id,notification_requested,operation_key,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE changes()=1`,
+    ).bind(
+      revisionId,
+      org,
+      progressId,
+      progress.homework,
+      normalized || null,
+      auth.userId,
+      requested ? 1 : 0,
+      operationKey,
+      timestamp,
+    ),
+  ];
+  if (requested) {
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO homework_revision_recipients (organization_id,homework_revision_id,guardian_id,recipient_name,recipient_email,resolved_locale,created_at)
+         SELECT g.organization_id,?,g.id,g.name,g.email,CASE WHEN g.preferred_locale IN ('en','tr') THEN g.preferred_locale WHEN o.default_locale IN ('en','tr') THEN o.default_locale ELSE 'en' END,?
+         FROM guardians g
+         JOIN organizations o ON o.id=g.organization_id
+         JOIN student_guardians sg ON sg.guardian_id=g.id AND sg.organization_id=g.organization_id
+         JOIN students s ON s.id=sg.student_id AND s.organization_id=sg.organization_id
+         WHERE EXISTS (SELECT 1 FROM homework_revisions WHERE id=? AND organization_id=? AND notification_requested=1)
+           AND sg.student_id=? AND g.organization_id=? AND g.active=1 AND s.active=1 AND sg.receive_notifications=1 AND trim(g.email)<>''`,
+      ).bind(revisionId, timestamp, revisionId, org, progress.student_id, org),
+    );
+  }
+  statements.push(
+    c.env.DB.prepare(
+      `INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM homework_revisions WHERE id=? AND organization_id=?)`,
+    ).bind(
+      id('audit'),
+      org,
+      auth.userId,
+      'progress.homework_updated',
+      'homework_revision',
+      revisionId,
+      'Published homework updated',
+      JSON.stringify({ progressUpdateId: progressId, notificationRequested: requested }),
+      c.get('requestId'),
+      timestamp,
+      revisionId,
+      org,
+    ),
+  );
+  try {
+    await c.env.DB.batch(statements);
+  } catch {
+    const raced = await c.env.DB.prepare(
+      'SELECT * FROM homework_revisions WHERE organization_id=? AND progress_update_id=? AND operation_key=?',
+    )
+      .bind(org, progressId, operationKey)
+      .first<any>();
+    if (raced) {
+      if (
+        (raced.new_homework ?? '').trim() !== normalized ||
+        Boolean(raced.notification_requested) !== requested
+      )
+        return json(c, 409, 'This operation key was already used with different homework data.');
+      const state = requested ? await resumeHomeworkNotifications(c, raced.id) : null;
+      return c.json({
+        ok: true,
+        storage: { status: 'idempotent', revision: raced },
+        notification: state?.notification ?? null,
+        notificationAggregate: state?.aggregate ?? null,
+      });
+    }
+    return json(c, 500, `Homework could not be updated. Reference ${c.get('requestId')}`);
+  }
+  const revision = await c.env.DB.prepare(
+    'SELECT id,progress_update_id,new_homework,notification_requested,operation_key,created_at FROM homework_revisions WHERE id=? AND organization_id=?',
+  )
+    .bind(revisionId, org)
+    .first<any>();
+  if (!revision) {
+    const winner = await c.env.DB.prepare(
+      'SELECT * FROM homework_revisions WHERE organization_id=? AND progress_update_id=? AND operation_key=?',
+    )
+      .bind(org, progressId, operationKey)
+      .first<any>();
+    if (winner) {
+      if (
+        (winner.new_homework ?? '').trim() !== normalized ||
+        Boolean(winner.notification_requested) !== requested
+      )
+        return json(c, 409, 'This operation key was already used with different homework data.');
+      const state = requested ? await resumeHomeworkNotifications(c, winner.id) : null;
+      return c.json({
+        ok: true,
+        storage: { status: 'idempotent', revision: winner },
+        notification: state?.notification ?? null,
+        notificationAggregate: state?.aggregate ?? null,
+      });
+    }
+    return json(c, 409, 'Homework changed before this request could be stored.');
+  }
+  await (
+    c.env.DB as D1Database & {
+      afterHomeworkRevisionCommit?: (revisionId: string) => Promise<void>;
+    }
+  ).afterHomeworkRevisionCommit?.(revisionId);
+  const notification = requested ? await submitHomeworkNotifications(c, revisionId) : null;
+  if (notification instanceof Response) return notification;
+  return c.json({
+    ok: true,
+    storage: { status: 'updated', revision },
+    notification,
+    notificationAggregate: requested ? aggregateNotificationResults(notification) : null,
+  });
+}
+
+function normalizedHomework(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+async function homeworkRevisionNotificationState(c: Ctx, revisionId: string) {
+  const rows = await c.env.DB.prepare(
+    `SELECT nl.status,nl.guardian_id,g.name guardian_name FROM notification_log nl JOIN guardians g ON g.id=nl.guardian_id AND g.organization_id=nl.organization_id WHERE nl.organization_id=? AND nl.source_revision_id=? AND nl.notification_type='homework_update' ORDER BY nl.created_at`,
+  )
+    .bind(c.get('auth').organizationId, revisionId)
+    .all<any>();
+  const notification = rows.results.map((row: any) => ({
+    guardianId: row.guardian_id,
+    guardianName: row.guardian_name,
+    status: row.status === 'sent' ? 'submitted' : row.status === 'failed' ? 'failed' : 'ambiguous',
+    already: row.status === 'sent',
+    retryAvailable: row.status === 'failed',
+  }));
+  const snapshot = await c.env.DB.prepare(
+    'SELECT count(*) count FROM homework_revision_recipients WHERE homework_revision_id=? AND organization_id=?',
+  )
+    .bind(revisionId, c.get('auth').organizationId)
+    .first<any>();
+  return {
+    notification,
+    aggregate: aggregateNotificationResults(notification),
+    snapshotCount: Number(snapshot?.count ?? 0),
+  };
+}
+
+async function resumeHomeworkNotifications(c: Ctx, revisionId: string) {
+  const before = await homeworkRevisionNotificationState(c, revisionId);
+  if (before.snapshotCount === 0 || before.notification.length === before.snapshotCount)
+    return before;
+  const notification = await submitHomeworkNotifications(c, revisionId);
+  if (notification instanceof Response)
+    return {
+      notification: [],
+      aggregate: {
+        ...aggregateNotificationResults([{ guardianId: '', status: 'not_reserved' }]),
+        code: 'notification_preparation_failed',
+      },
+    };
+  return { notification, aggregate: aggregateNotificationResults(notification) };
+}
+
+export async function listNotifications(c: Ctx) {
+  if (!admin(c.get('auth'))) return json(c, 403);
+  const org = c.get('auth').organizationId;
+  const page = Math.max(1, Number(c.req.query('page')) || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(c.req.query('pageSize')) || 20));
+  const status = str(c.req.query('status'), 20),
+    type = str(c.req.query('type'), 30),
+    search = str(c.req.query('search'), 100),
+    studentId = str(c.req.query('studentId'), 100),
+    from = str(c.req.query('from'), 10),
+    to = str(c.req.query('to'), 10);
+  if ((from && !isoActivityDate(from)) || (to && !isoActivityDate(to)) || (from && to && from > to))
+    return json(c, 400, 'The notification date range is invalid.');
+  if (status && !['sent', 'failed', 'pending', 'skipped'].includes(status)) return json(c, 400);
+  if (type && !['progress_update', 'homework_update'].includes(type)) return json(c, 400);
+  const where = [`nl.organization_id=?`];
+  const binds: unknown[] = [org];
+  if (status) {
+    where.push('nl.status=?');
+    binds.push(status);
+  }
+  if (type) {
+    where.push('nl.notification_type=?');
+    binds.push(type);
+  }
+  if (studentId) {
+    where.push('nl.student_id=?');
+    binds.push(studentId);
+  }
+  if (from) {
+    where.push('pu.update_date>=?');
+    binds.push(from);
+  }
+  if (to) {
+    where.push('pu.update_date<=?');
+    binds.push(to);
+  }
+  if (search) {
+    where.push('(g.name LIKE ? OR nl.recipient_email LIKE ?)');
+    binds.push(`%${search}%`, `%${search}%`);
+  }
+  const clause = where.join(' AND ');
+  const total = await c.env.DB.prepare(
+    `SELECT count(*) count FROM notification_log nl JOIN guardians g ON g.id=nl.guardian_id AND g.organization_id=nl.organization_id JOIN progress_updates pu ON pu.id=nl.progress_update_id AND pu.organization_id=nl.organization_id WHERE ${clause}`,
+  )
+    .bind(...binds)
+    .first<any>();
+  const rows = await c.env.DB.prepare(
+    `SELECT nl.id,nl.notification_type,nl.subject,nl.status,nl.attempted_at,nl.sent_at,CASE WHEN nl.status='failed' THEN nl.error_message ELSE NULL END failure_reference,nl.recipient_email,nl.progress_update_id,nl.source_revision_id,s.display_name student_name,g.name guardian_name,pu.update_date,(SELECT count(*) FROM notification_attempts na WHERE na.notification_log_id=nl.id AND na.organization_id=nl.organization_id) attempt_count FROM notification_log nl JOIN guardians g ON g.id=nl.guardian_id AND g.organization_id=nl.organization_id JOIN students s ON s.id=nl.student_id AND s.organization_id=nl.organization_id JOIN progress_updates pu ON pu.id=nl.progress_update_id AND pu.organization_id=nl.organization_id WHERE ${clause} ORDER BY nl.created_at DESC,nl.id DESC LIMIT ? OFFSET ?`,
+  )
+    .bind(...binds, pageSize, (page - 1) * pageSize)
+    .all();
+  const students = await c.env.DB.prepare(
+    'SELECT id,display_name FROM students WHERE organization_id=? ORDER BY display_name',
+  )
+    .bind(org)
+    .all();
+  return c.json({
+    ok: true,
+    notifications: rows.results,
+    students: students.results,
+    pagination: {
+      page,
+      pageSize,
+      total: Number(total?.count ?? 0),
+      pages: Math.max(1, Math.ceil(Number(total?.count ?? 0) / pageSize)),
+    },
+  });
+}
+
+export async function retryNotification(c: Ctx) {
+  if (!admin(c.get('auth'))) return json(c, 403);
+  const row = await c.env.DB.prepare(
+    "SELECT id,progress_update_id,source_revision_id,status FROM notification_log WHERE id=? AND organization_id=? AND status='failed'",
+  )
+    .bind(param(c, 'id'), c.get('auth').organizationId)
+    .first<any>();
+  if (!row) return json(c, 404);
+  await (
+    c.env.DB as D1Database & { afterRetrySelection?: (notificationId: string) => Promise<void> }
+  ).afterRetrySelection?.(row.id);
+  const results = row.source_revision_id
+    ? await submitHomeworkNotifications(c, row.source_revision_id, row.id)
+    : await submitNotifications(c, row.progress_update_id, true, row.id);
+  if (results instanceof Response) return results;
+  return c.json({ ok: true, results, aggregate: aggregateNotificationResults(results) });
+}
+
+async function submitHomeworkNotifications(c: Ctx, revisionId: string, onlyLogId?: string) {
+  const org = c.get('auth').organizationId;
+  const revision = await c.env.DB.prepare(
+    `SELECT hr.*,pu.student_id,pu.class_id,pu.teacher_user_id,pu.update_date,s.display_name student_name,cl.name class_name,u.display_name teacher_name,o.name org_name,o.default_locale,o.email_sender_name,o.email_reply_to,o.email_sender_alias FROM homework_revisions hr JOIN progress_updates pu ON pu.id=hr.progress_update_id AND pu.organization_id=hr.organization_id JOIN students s ON s.id=pu.student_id AND s.organization_id=pu.organization_id JOIN organizations o ON o.id=pu.organization_id LEFT JOIN classes cl ON cl.id=pu.class_id AND cl.organization_id=pu.organization_id LEFT JOIN users u ON u.id=pu.teacher_user_id WHERE hr.id=? AND hr.organization_id=? AND hr.notification_requested=1 AND pu.status='published'`,
+  )
+    .bind(revisionId, org)
+    .first<any>();
+  if (!revision || !(await canSeeStudent(c, revision.student_id, revision.class_id)))
+    return json(c, 404);
+  let recipients = (
+    await c.env.DB.prepare(
+      `SELECT guardian_id id,recipient_name name,recipient_email email,resolved_locale preferred_locale
+       FROM homework_revision_recipients WHERE homework_revision_id=? AND organization_id=? ORDER BY guardian_id`,
+    )
+      .bind(revisionId, org)
+      .all<any>()
+  ).results;
+  if (onlyLogId) {
+    const selected = await c.env.DB.prepare(
+      `SELECT nl.guardian_id id,g.name,nl.recipient_email email,hrr.resolved_locale preferred_locale,nl.status
+       FROM notification_log nl
+       JOIN guardians g ON g.id=nl.guardian_id AND g.organization_id=nl.organization_id
+       JOIN homework_revision_recipients hrr ON hrr.homework_revision_id=nl.source_revision_id AND hrr.guardian_id=nl.guardian_id AND hrr.organization_id=nl.organization_id
+       WHERE nl.id=? AND nl.organization_id=? AND nl.source_revision_id=? AND nl.progress_update_id=? AND nl.student_id=? AND nl.notification_type='homework_update'`,
+    )
+      .bind(onlyLogId, org, revisionId, revision.progress_update_id, revision.student_id)
+      .first<any>();
+    if (!selected) return json(c, 404);
+    if (selected.status === 'pending')
+      return [{ guardianId: selected.id, guardianName: selected.name, status: 'in_progress' }];
+    if (selected.status === 'sent')
+      return [
+        {
+          guardianId: selected.id,
+          guardianName: selected.name,
+          status: 'submitted',
+          already: true,
+        },
+      ];
+    if (selected.status !== 'failed')
+      return [{ guardianId: selected.id, guardianName: selected.name, status: 'not_retryable' }];
+    const eligible = await c.env.DB.prepare(
+      `SELECT 1 FROM guardians g
+       JOIN student_guardians sg ON sg.guardian_id=g.id AND sg.organization_id=g.organization_id AND sg.student_id=? AND sg.receive_notifications=1
+       JOIN students s ON s.id=sg.student_id AND s.organization_id=sg.organization_id AND s.active=1
+       WHERE g.id=? AND g.organization_id=? AND g.active=1 AND trim(g.email)<>''`,
+    )
+      .bind(revision.student_id, selected.id, org)
+      .first();
+    if (!eligible)
+      return [{ guardianId: selected.id, guardianName: selected.name, status: 'not_retryable' }];
+    recipients = [selected];
+  }
+  const sender = resolveSender(c.env, revision);
+  const results: AnyNotificationResult[] = [];
+  for (const recipient of recipients) {
+    const dedup = `homework-revision:${revisionId}:guardian:${recipient.id}`;
+    const prior = await c.env.DB.prepare(
+      'SELECT id,status FROM notification_log WHERE organization_id=? AND deduplication_key=?',
+    )
+      .bind(org, dedup)
+      .first<any>();
+    if (prior && prior.status !== 'failed') {
+      results.push({
+        guardianId: recipient.id,
+        guardianName: recipient.name,
+        status: prior.status === 'sent' ? 'submitted' : 'ambiguous',
+        already: true,
+      });
+      continue;
+    }
+    if (prior?.status === 'failed' && !onlyLogId) {
+      results.push({
+        guardianId: recipient.id,
+        guardianName: recipient.name,
+        status: 'failed',
+        retryAvailable: true,
+      });
+      continue;
+    }
+    const timestamp = now();
+    const locale = ['en', 'tr'].includes(recipient.preferred_locale)
+      ? recipient.preferred_locale
+      : ['en', 'tr'].includes(revision.default_locale)
+        ? revision.default_locale
+        : 'en';
+    const subject =
+      locale === 'tr'
+        ? `${revision.student_name} için ödev güncellemesi`
+        : `Homework update for ${revision.student_name}`;
+    const logId = prior?.id ?? id('not'),
+      attemptId = id('nat');
+    const count = prior
+      ? await c.env.DB.prepare(
+          'SELECT count(*) count FROM notification_attempts WHERE notification_log_id=? AND organization_id=?',
+        )
+          .bind(logId, org)
+          .first<any>()
+      : { count: 0 };
+    const attemptNumber = Number(count?.count ?? 0) + 1;
+    if (onlyLogId)
+      await (
+        c.env.DB as D1Database & {
+          afterHomeworkRetryPriorRead?: (notificationId: string) => Promise<void>;
+        }
+      ).afterHomeworkRetryPriorRead?.(logIdFromPrior(prior, onlyLogId));
+    try {
+      await c.env.DB.batch(
+        prior
+          ? [
+              c.env.DB.prepare(
+                `UPDATE notification_log SET status='pending',attempted_at=?,error_code=NULL,error_message=NULL
+                 WHERE id=? AND organization_id=? AND status='failed'
+                   AND (SELECT count(*) FROM notification_attempts WHERE notification_log_id=? AND organization_id=?)=?`,
+              ).bind(timestamp, logId, org, logId, org, Number(count?.count ?? 0)),
+              c.env.DB.prepare(
+                'INSERT INTO notification_attempts (id,notification_log_id,organization_id,attempt_number,status,request_id,attempted_at) SELECT ?,?,?,?,?,?,? WHERE changes()=1',
+              ).bind(
+                attemptId,
+                logId,
+                org,
+                attemptNumber,
+                'pending',
+                c.get('requestId'),
+                timestamp,
+              ),
+              c.env.DB.prepare(
+                `INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM notification_attempts WHERE id=? AND organization_id=?)`,
+              ).bind(
+                id('audit'),
+                org,
+                c.get('auth').userId,
+                'notification.retry_requested',
+                'notification',
+                logId,
+                'Notification retry requested',
+                JSON.stringify({ revisionId, attemptNumber }),
+                c.get('requestId'),
+                timestamp,
+                attemptId,
+                org,
+              ),
+            ]
+          : [
+              c.env.DB.prepare(
+                'INSERT OR IGNORE INTO notification_log (id,organization_id,guardian_id,student_id,progress_update_id,recipient_email,notification_type,subject,status,attempted_at,created_at,deduplication_key,source_revision_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+              ).bind(
+                logId,
+                org,
+                recipient.id,
+                revision.student_id,
+                revision.progress_update_id,
+                recipient.email,
+                'homework_update',
+                subject,
+                'pending',
+                timestamp,
+                timestamp,
+                dedup,
+                revisionId,
+              ),
+              c.env.DB.prepare(
+                'INSERT INTO notification_attempts (id,notification_log_id,organization_id,attempt_number,status,request_id,attempted_at) SELECT ?,?,?,?,?,?,? WHERE changes()=1',
+              ).bind(attemptId, logId, org, 1, 'pending', c.get('requestId'), timestamp),
+              c.env.DB.prepare(
+                `INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM notification_attempts WHERE id=? AND organization_id=?)`,
+              ).bind(
+                id('audit'),
+                org,
+                c.get('auth').userId,
+                'homework.notification_requested',
+                'homework_revision',
+                revisionId,
+                'Homework-update notification requested',
+                JSON.stringify({ guardianId: recipient.id }),
+                c.get('requestId'),
+                timestamp,
+                attemptId,
+                org,
+              ),
+            ],
+      );
+    } catch {
+      results.push({
+        guardianId: recipient.id,
+        guardianName: recipient.name,
+        status: 'not_reserved',
+        requestId: c.get('requestId'),
+      });
+      continue;
+    }
+    const owned = await c.env.DB.prepare(
+      "SELECT 1 FROM notification_attempts WHERE id=? AND organization_id=? AND status='pending'",
+    )
+      .bind(attemptId, org)
+      .first();
+    if (!owned) {
+      const state = await c.env.DB.prepare(
+        `SELECT status FROM notification_log
+         WHERE id=? AND organization_id=? AND source_revision_id=? AND progress_update_id=?
+           AND student_id=? AND guardian_id=? AND notification_type='homework_update'
+           AND deduplication_key=?`,
+      )
+        .bind(
+          logId,
+          org,
+          revisionId,
+          revision.progress_update_id,
+          revision.student_id,
+          recipient.id,
+          dedup,
+        )
+        .first<{ status: string }>();
+      results.push({
+        guardianId: recipient.id,
+        guardianName: recipient.name,
+        status:
+          state?.status === 'pending'
+            ? 'in_progress'
+            : state?.status === 'sent'
+              ? 'submitted'
+              : state?.status === 'failed'
+                ? 'failed'
+                : state
+                  ? 'not_retryable'
+                  : 'not_reserved',
+        already: state?.status === 'sent',
+        retryAvailable: state?.status === 'failed',
+      });
+      continue;
+    }
+    const tr = locale === 'tr';
+    const labels = tr
+      ? {
+          heading: 'Ödev güncellemesi',
+          student: 'Öğrenci',
+          date: 'İlerleme tarihi',
+          class: 'Sınıf',
+          teacher: 'Öğretmen',
+          homework: 'Yeni ödev',
+        }
+      : {
+          heading: 'Homework update',
+          student: 'Student',
+          date: 'Progress date',
+          class: 'Class',
+          teacher: 'Teacher',
+          homework: 'New homework',
+        };
+    const textBody = `${revision.org_name}\n${labels.heading}\n${labels.student}: ${revision.student_name}\n${labels.date}: ${revision.update_date}\n${labels.class}: ${revision.class_name || ''}\n${labels.teacher}: ${revision.teacher_name || ''}\n${labels.homework}: ${revision.new_homework || ''}`;
+    const htmlBody = `<h1>${esc(labels.heading)}</h1><p>${esc(revision.org_name)}</p><p><strong>${esc(labels.student)}:</strong> ${esc(revision.student_name)}</p><p><strong>${esc(labels.date)}:</strong> ${esc(revision.update_date)}</p><p><strong>${esc(labels.class)}:</strong> ${esc(revision.class_name || '')}</p><p><strong>${esc(labels.teacher)}:</strong> ${esc(revision.teacher_name || '')}</p><p><strong>${esc(labels.homework)}:</strong> ${esc(revision.new_homework || '')}</p>`;
+    let relay: Awaited<ReturnType<typeof submitRelayMail>>;
+    try {
+      relay = await submitRelayMail(c.env, {
+        to: recipient.email,
+        fromAlias: sender.fromAlias,
+        senderName: sender.senderName,
+        replyTo: sender.replyTo,
+        subject,
+        text: textBody,
+        html: htmlBody,
+      });
+    } catch {
+      relay = { status: 'ambiguous' };
+    }
+    if (relay.status === 'ambiguous') {
+      results.push({
+        guardianId: recipient.id,
+        guardianName: recipient.name,
+        status: 'ambiguous',
+        requestId: c.get('requestId'),
+      });
+      continue;
+    }
+    const completed = now();
+    if (relay.status === 'rejected_before_send') {
+      const safe = `Email relay submission failed. Reference ${c.get('requestId')}`;
+      const finalized = await finalizeRelayRejection(c, {
+        logId,
+        attemptId,
+        completedAt: completed,
+        safeMessage: safe,
+        metadata: { revisionId, attemptNumber },
+      });
+      results.push({
+        guardianId: recipient.id,
+        guardianName: recipient.name,
+        status: finalized ? 'failed' : 'ambiguous',
+        retryAvailable: finalized,
+        requestId: c.get('requestId'),
+      });
+      continue;
+    }
+    try {
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          "UPDATE notification_log SET status='sent',sent_at=?,error_code=NULL,error_message=NULL WHERE id=? AND organization_id=? AND status='pending'",
+        ).bind(completed, logId, org),
+        c.env.DB.prepare(
+          "UPDATE notification_attempts SET status='sent',completed_at=? WHERE id=? AND organization_id=? AND status='pending'",
+        ).bind(completed, attemptId, org),
+        auditStatement(
+          c,
+          'notification.relay_accepted',
+          'notification',
+          logId,
+          'Notification accepted by relay',
+          completed,
+          { revisionId, attemptNumber },
+        ),
+      ]);
+      results.push({ guardianId: recipient.id, guardianName: recipient.name, status: 'submitted' });
+    } catch {
+      results.push({
+        guardianId: recipient.id,
+        guardianName: recipient.name,
+        status: 'ambiguous',
+        requestId: c.get('requestId'),
+      });
+    }
+  }
+  return results;
+}
+
+function logIdFromPrior(prior: { id?: string } | null, fallback: string) {
+  return prior?.id ?? fallback;
+}
+async function submitNotifications(c: Ctx, progressId: string, retry: boolean, onlyLogId?: string) {
   const org = c.get('auth').organizationId;
   const pu = await c.env.DB.prepare(
     `SELECT pu.*,s.display_name student_name,cls.name class_name,u.display_name teacher_name,o.name org_name,o.default_locale,o.email_sender_name,o.email_reply_to,o.email_sender_alias FROM progress_updates pu JOIN students s ON s.id=pu.student_id AND s.organization_id=pu.organization_id JOIN organizations o ON o.id=pu.organization_id LEFT JOIN classes cls ON cls.id=pu.class_id AND cls.organization_id=pu.organization_id LEFT JOIN users u ON u.id=pu.teacher_user_id WHERE pu.id=? AND pu.organization_id=? AND pu.status='published'`,
@@ -1098,13 +1854,53 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
       .bind(progressId, org)
       .all()
   ).results;
-  const recipients = (
+  let recipients = (
     await c.env.DB.prepare(
-      `SELECT g.id guardian_id,g.name guardian_name,g.email,g.preferred_locale FROM guardians g JOIN student_guardians sg ON sg.guardian_id=g.id AND sg.organization_id=g.organization_id JOIN students s ON s.id=sg.student_id AND s.organization_id=sg.organization_id WHERE sg.student_id=? AND g.organization_id=? AND g.active=1 AND s.active=1 AND sg.receive_notifications=1`,
+      `SELECT g.id guardian_id,g.name guardian_name,g.email,g.preferred_locale FROM guardians g JOIN student_guardians sg ON sg.guardian_id=g.id AND sg.organization_id=g.organization_id JOIN students s ON s.id=sg.student_id AND s.organization_id=sg.organization_id WHERE sg.student_id=? AND g.organization_id=? AND g.active=1 AND s.active=1 AND sg.receive_notifications=1 AND trim(g.email)<>''`,
     )
       .bind(pu.student_id, org)
       .all<any>()
   ).results;
+  if (onlyLogId) {
+    const selected = await c.env.DB.prepare(
+      `SELECT nl.guardian_id,g.name guardian_name,nl.recipient_email email,g.preferred_locale,nl.status
+       FROM notification_log nl
+       JOIN guardians g ON g.id=nl.guardian_id AND g.organization_id=nl.organization_id
+       WHERE nl.id=? AND nl.organization_id=? AND nl.progress_update_id=? AND nl.student_id=? AND nl.notification_type='progress_update' AND nl.source_revision_id IS NULL`,
+    )
+      .bind(onlyLogId, org, progressId, pu.student_id)
+      .first<any>();
+    if (!selected) return json(c, 404);
+    if (selected.status === 'pending')
+      return [
+        {
+          guardianId: selected.guardian_id,
+          guardianName: selected.guardian_name,
+          status: 'in_progress',
+        },
+      ];
+    if (selected.status === 'sent')
+      return [
+        {
+          guardianId: selected.guardian_id,
+          guardianName: selected.guardian_name,
+          status: 'submitted',
+          already: true,
+        },
+      ];
+    if (selected.status !== 'failed')
+      return [{ guardianId: selected.guardian_id, status: 'not_retryable' }];
+    const eligible = await c.env.DB.prepare(
+      `SELECT 1 FROM guardians g
+       JOIN student_guardians sg ON sg.guardian_id=g.id AND sg.organization_id=g.organization_id AND sg.student_id=? AND sg.receive_notifications=1
+       JOIN students s ON s.id=sg.student_id AND s.organization_id=sg.organization_id AND s.active=1
+       WHERE g.id=? AND g.organization_id=? AND g.active=1 AND trim(g.email)<>''`,
+    )
+      .bind(pu.student_id, selected.guardian_id, org)
+      .first();
+    if (!eligible) return [{ guardianId: selected.guardian_id, status: 'not_retryable' }];
+    recipients = [selected];
+  }
   const sender = resolveSender(c.env, pu);
   const results: AnyNotificationResult[] = [];
   for (const recipient of recipients) {
@@ -1299,39 +2095,20 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean) {
     if (relayResult.status === 'rejected_before_send') {
       const completed = now();
       const safeMessage = `Email relay submission failed. Reference ${c.get('requestId')}`;
-      try {
-        await c.env.DB.batch([
-          c.env.DB.prepare(
-            "UPDATE notification_log SET status='failed',error_code='RELAY_REJECTED',error_message=? WHERE id=? AND organization_id=? AND status='pending'",
-          ).bind(safeMessage, logId, org),
-          c.env.DB.prepare(
-            "UPDATE notification_attempts SET status='failed',error_code='RELAY_REJECTED',error_message=?,completed_at=? WHERE id=? AND organization_id=? AND status='pending'",
-          ).bind(safeMessage, completed, attemptId, org),
-          auditStatement(
-            c,
-            'notification.relay_failed',
-            'notification',
-            logId,
-            'Notification relay submission failed',
-            completed,
-            { attemptNumber },
-          ),
-        ]);
-        results.push({
-          guardianId: recipient.guardian_id,
-          guardianName: recipient.guardian_name,
-          status: 'failed',
-          retryAvailable: true,
-          requestId: c.get('requestId'),
-        });
-      } catch {
-        results.push({
-          guardianId: recipient.guardian_id,
-          guardianName: recipient.guardian_name,
-          status: 'ambiguous',
-          requestId: c.get('requestId'),
-        });
-      }
+      const finalized = await finalizeRelayRejection(c, {
+        logId,
+        attemptId,
+        completedAt: completed,
+        safeMessage,
+        metadata: { attemptNumber },
+      });
+      results.push({
+        guardianId: recipient.guardian_id,
+        guardianName: recipient.guardian_name,
+        status: finalized ? 'failed' : 'ambiguous',
+        retryAvailable: finalized,
+        requestId: c.get('requestId'),
+      });
       continue;
     }
 

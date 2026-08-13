@@ -33,7 +33,14 @@ class SqliteStatement {
 export class SqliteD1 {
   db = new DatabaseSync(':memory:');
   failBatchAt = 0;
-  beforeBatch?: () => void;
+  failRejectionFinalizationOnce = false;
+  throwAfterRejectionFinalizationCommitOnce = false;
+  preparedSql: string[] = [];
+  beforeBatch?: (statements: readonly { readonly sql: string }[]) => void;
+  afterHomeworkRevisionCommit?: (revisionId: string) => Promise<void>;
+  afterProgressPublicationCommit?: (progressId: string) => Promise<void>;
+  afterRetrySelection?: (notificationId: string) => Promise<void>;
+  afterHomeworkRetryPriorRead?: (notificationId: string) => Promise<void>;
   private batchQueue: Promise<unknown> = Promise.resolve();
   constructor() {
     this.db.exec('PRAGMA foreign_keys=ON');
@@ -47,10 +54,13 @@ export class SqliteD1 {
       '0007_notification_attempts.sql',
       '0008_progress_idempotency.sql',
       '0009_progress_publication_claim.sql',
+      '0010_homework_revisions.sql',
+      '0011_homework_revision_recipients.sql',
     ])
       this.db.exec(readFileSync(`migrations/${migration}`, 'utf8'));
   }
   prepare(sql: string) {
+    this.preparedSql.push(sql);
     return new SqliteStatement(this, sql);
   }
   async batch(statements: SqliteStatement[]) {
@@ -61,20 +71,34 @@ export class SqliteD1 {
   private async executeBatch(statements: SqliteStatement[]) {
     const beforeBatch = this.beforeBatch;
     this.beforeBatch = undefined;
-    beforeBatch?.();
+    beforeBatch?.(statements);
+    const rejectionFinalization = statements.some(
+      (statement) =>
+        statement.sql.includes("UPDATE notification_log SET status='failed'") &&
+        statement.sql.includes('RELAY_REJECTED'),
+    );
+    if (rejectionFinalization && this.failRejectionFinalizationOnce) {
+      this.failRejectionFinalizationOnce = false;
+      throw new Error('injected_rejection_finalization_failure');
+    }
     this.db.exec('BEGIN IMMEDIATE');
+    let results;
     try {
-      const results = [];
+      results = [];
       for (let index = 0; index < statements.length; index++) {
         if (this.failBatchAt === index + 1) throw new Error('injected_sql_failure');
         results.push(await statements[index].run());
       }
       this.db.exec('COMMIT');
-      return results;
     } catch (error) {
       this.db.exec('ROLLBACK');
       throw error;
     }
+    if (rejectionFinalization && this.throwAfterRejectionFinalizationCommitOnce) {
+      this.throwAfterRejectionFinalizationCommitOnce = false;
+      throw new Error('injected_post_commit_rejection_failure');
+    }
+    return results;
   }
   close() {
     this.db.close();

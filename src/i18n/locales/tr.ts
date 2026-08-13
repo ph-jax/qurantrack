@@ -359,7 +359,39 @@ export default {
       alreadyNotified: 'Yayınlandı. Veli bildirimleri daha önce gönderildi veya ayrıldı.',
       preparationFailed: 'Veli bildirimi hazırlanamadı. E-posta gönderilmedi.',
     },
+    publishConfirmation: {
+      title: 'İlerleme yayınlansın mı?',
+      count: 'Yayınlama {{count}} veliye bildirim gönderecek.',
+      none: 'Uygun veli bulunamadı. Yayınlama e-posta göndermeyecek.',
+      confirm: 'Onayla ve yayınla',
+      loading: 'Uygun veliler kontrol ediliyor…',
+      error: 'Uygun veliler kontrol edilemedi. Onaylama kullanılamıyor.',
+    },
+    homeworkEditor: {
+      edit: 'Ödevi Düzenle',
+      title: 'Yayınlanmış ödevi düzenle',
+      notify: 'Bu değişikliği velilere bildir',
+      saveError: 'Ödev isteği doğrulanamadı. Değişiklikleriniz korundu; güvenle yeniden deneyin.',
+    },
     messages: {
+      homework_unchanged: 'Değişiklik algılanmadı.',
+      homework_updated_no_email: 'Ödev güncellendi; e-posta gönderilmedi.',
+      homework_updated_no_recipients: 'Ödev güncellendi ancak uygun veli bulunamadı.',
+      homework_updated_notified: 'Ödev güncellendi ve bildirimler gönderildi.',
+      homework_updated_partial:
+        'Ödev güncellendi. Veli bildirim sonuçları farklılık gösteriyor; ayrıntılar için bildirim durumunu inceleyin.',
+      homework_updated_already_notified:
+        'Ödev güncellendi; veli bildirimleri daha önce gönderildi.',
+      homework_updated_failed: 'Ödev güncellendi ancak veli e-posta gönderimi başarısız.',
+      homework_updated_preparation_failed:
+        'Ödev güncellendi ancak bildirim hazırlanamadı. E-posta gönderilmedi.',
+      homework_updated_ambiguous:
+        'Ödev güncellendi. Veli gönderim durumu belirsiz ve otomatik yeniden denenemez.',
+      homework_updated_not_retryable:
+        'Ödev güncellendi ancak bildirim yeniden denemeye uygun değildi.',
+      homework_updated_notification_in_progress:
+        'Ödev güncellendi. Veli bildirimi hâlâ işleniyor veya durumu belirsiz.',
+
       saving: 'Kaydediliyor…',
       draftSaved: 'Taslak kaydedildi.',
       published: 'İlerleme güncellemesi yayınlandı.',
@@ -373,6 +405,8 @@ export default {
       notification_failed: 'Yayınlandı ancak bir veya daha fazla veli gönderimi başarısız.',
       notification_ambiguous:
         'Yayınlandı. Bir veli gönderiminin durumu belirsiz ve yeniden denemeye kapatıldı.',
+      notification_in_progress:
+        'Başka bir bildirim yeniden denemesi işleniyor veya gönderim durumu bekliyor. Başarılı gönderim iddia edilmiyor.',
       notification_preparation_failed:
         'Yayınlandı ancak veli bildirimi hazırlanamadı. E-posta gönderilmedi.',
       notification_partial:
@@ -383,6 +417,43 @@ export default {
         'Bildirim isteği tamamlanamadı. Bağlantınızı kontrol edip yeniden deneyin.',
       already_notified: 'Zaten yayınlandı ve veli bildirimleri daha önce işlendi.',
       already_published: 'Bu ilerleme güncellemesi zaten yayınlandı.',
+    },
+  },
+  notificationCenter: {
+    title: 'Bildirim Merkezi',
+    description: 'Kuruluşun veli e-posta gönderim geçmişi.',
+    search: 'Veli veya e-posta',
+    student: 'Öğrenci',
+    from: 'Başlangıç tarihi',
+    to: 'Bitiş tarihi',
+    status: 'Durum',
+    type: 'Bildirim türü',
+    all: 'Tümü',
+    empty: 'Bu filtrelerle eşleşen bildirim yok.',
+    error: 'Bildirim geçmişi yüklenemedi.',
+    retry: 'Gönderimi yeniden dene',
+    retryResults: {
+      notifications_submitted:
+        'Yeniden deneme e-posta aktarımına gönderildi (gelen kutusu teslimatı doğrulanmadı).',
+      notification_failed: 'Yeniden deneme gönderimi kesin olarak başarısız oldu.',
+      notification_ambiguous:
+        'Yeniden deneme durumu bekliyor veya belirsiz; otomatik olarak yeniden denenemez.',
+      notification_preparation_failed: 'Yeniden deneme hazırlanamadı. E-posta gönderilmedi.',
+      notification_not_retryable: 'Bu bildirim yeniden denemeye uygun değil.',
+      notification_in_progress:
+        'Başka bir yeniden deneme işleniyor veya gönderim durumu bekliyor. Başarılı gönderim iddia edilmiyor.',
+      already_notified:
+        'Başka bir istek bu bildirimi zaten gönderdi veya işledi. Yinelenen e-posta gönderilmedi.',
+      notification_partial:
+        'Yeniden deneme sonuçları farklılık gösteriyor; ayrıntılar için bildirim durumunu inceleyin.',
+    },
+    attempts: 'Deneme: {{count}}',
+    types: { progress_update: 'İlerleme güncellemesi', homework_update: 'Ödev güncellemesi' },
+    statuses: {
+      sent: 'E-posta aktarımına gönderildi',
+      failed: 'Gönderim başarısız',
+      pending: 'Bekliyor / gönderim durumu belirsiz',
+      skipped: 'Atlandı',
     },
   },
   common: {

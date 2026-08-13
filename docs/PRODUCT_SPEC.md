@@ -3363,3 +3363,9 @@ Authorization is server-enforced from the active organization in the validated s
 Notifications are recipient-specific. Each active linked guardian with notifications enabled receives a separate relay submission. The operational notification state `sent` means the relay accepted/submitted the message; it is not confirmed inbox delivery. Drafts cannot be emailed. Failed submissions leave the published progress update intact and may be explicitly retried without automatically resending successful submissions.
 
 Postponed capabilities remain outside this pilot: guardian accounts/portal, public report links, scheduled summaries, bulk import/export, default curriculum installation, analytics, PDFs, SMS, custom template editing, and deployment/production operations.
+
+## Guardian notification center and published-homework updates
+
+Publishing progress submits one combined localized email (outcomes, comments, and current homework) to every active, linked, notification-enabled guardian with a valid email. The confirmation preview is informational: authorization and recipient selection are repeated by the server. Publication remains committed if relay submission fails, and relay acceptance is described only as “submitted to email relay,” never delivered.
+
+A published update remains immutable except for homework. A material homework edit creates an immutable revision; notification is opt-in and uses a dedicated homework-update message. The organization-admin Notification Center provides tenant-scoped, paginated history and filters for status, type, student, date, and guardian/email. Only definitively failed submissions may be explicitly retried; submitted and ambiguous submissions cannot be resent. Cancellation events, reminders, digests, delivery tracking, and parent access are excluded.

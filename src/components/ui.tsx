@@ -10,6 +10,7 @@ import { Check, ChevronDown, LoaderCircle, Search, X } from 'lucide-react';
 import {
   forwardRef,
   type ButtonHTMLAttributes,
+  type HTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
   type TextareaHTMLAttributes,
@@ -133,9 +134,10 @@ export function FormField({
     </div>
   );
 }
-export function Card({ className, children }: { className?: string; children: ReactNode }) {
+export function Card({ className, children, ...props }: HTMLAttributes<HTMLElement>) {
   return (
     <section
+      {...props}
       className={cn(
         'rounded-[var(--radius-lg)] border border-border bg-surface p-5 shadow-card',
         className,

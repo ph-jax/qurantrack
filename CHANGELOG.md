@@ -110,3 +110,10 @@ All notable changes to QuranTrack will be documented in this file.
 - Corrected publication collision recovery to reject rolled-back drafts, classified explicit relay rejection separately from transport/protocol uncertainty, preserved notification results across form resets with accurate tones, and enforced strict real-calendar `YYYY-MM-DD` activity dates.
 - Restricted retryable relay rejection to a documented pre-send code allowlist, blocked first-time and ambiguous retry requests, added truthful mixed-recipient counts/partial results, and surfaced safe standalone Send/Retry request failures.
 - Preserved stored recipient states in explicit-retry results, so submitted guardians remain counted as already submitted and uncertain reservations remain ambiguous while only definitive failures are retried.
+
+## Guardian notification center and homework revisions
+
+- Progress publication now uses one combined, localized progress/comment/homework email per eligible guardian and reports authoritative relay-submission results.
+- Added explicit, immutable published-homework revisions with optional guardian notification and organization notification history/retry controls.
+- Added migration `0010_homework_revisions.sql`; cancellation notifications, reminders, and parent access remain excluded.
+- Added migration `0011_homework_revision_recipients.sql` so interrupted homework-notification reservations can resume from the original recipient set, while explicit retries revalidate current guardian eligibility.

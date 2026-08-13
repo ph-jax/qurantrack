@@ -54,6 +54,10 @@ import {
   saveProgress,
   notifyProgress,
   setupOptions,
+  previewProgressRecipients,
+  updatePublishedHomework,
+  listNotifications,
+  retryNotification,
 } from './api/v1/pilot';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -165,11 +169,23 @@ app.get(
   studentSummary,
 );
 app.post('/api/v1/progress-updates', requireAuth(['organization_admin', 'teacher']), saveProgress);
+app.get(
+  '/api/v1/students/:id/notification-recipients',
+  requireAuth(['organization_admin', 'teacher']),
+  previewProgressRecipients,
+);
+app.patch(
+  '/api/v1/progress-updates/:id/homework',
+  requireAuth(['organization_admin', 'teacher']),
+  updatePublishedHomework,
+);
 app.post(
   '/api/v1/progress-updates/:id/notify',
   requireAuth(['organization_admin', 'teacher']),
   notifyProgress,
 );
+app.get('/api/v1/notifications', requireAuth(['organization_admin']), listNotifications);
+app.post('/api/v1/notifications/:id/retry', requireAuth(['organization_admin']), retryNotification);
 
 app.notFound((c) =>
   c.json(
