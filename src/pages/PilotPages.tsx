@@ -22,15 +22,16 @@ function useLoad(url: string | null) {
   const [error, setError] = useState(false);
   const reload = useCallback(async () => {
     if (!url) {
-      return true;
+      return {};
     }
     setError(false);
     try {
-      setData(await api(url));
-      return true;
+      const value = await api(url);
+      setData(value);
+      return value;
     } catch {
       setError(true);
-      return false;
+      return null;
     }
   }, [url]);
   useEffect(() => {
@@ -106,54 +107,75 @@ function RelationshipEditor({
   studentId: string;
   guardianId: string;
   initial?: Any;
-  onSaved: () => Promise<void>;
-  onUnlink?: () => void;
+  onSaved: () => Promise<unknown>;
+  onUnlink?: () => Promise<void>;
 }) {
   const { t } = useTranslation();
   const [relationship, setRelationship] = useState(initial?.relationship ?? '');
   const [primary, setPrimary] = useState(!!initial?.primary_contact);
   const [notifications, setNotifications] = useState(initial?.receive_notifications ?? true);
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [pending, setPending] = useState<'save' | 'unlink' | ''>('');
+  const [failed, setFailed] = useState<'save' | 'unlink' | ''>('');
   const save = async () => {
-    if (busy) return;
-    setBusy(true);
-    setFailed(false);
+    if (pending) return;
+    const payload = {
+      student_id: studentId,
+      guardian_id: guardianId,
+      relationship,
+      primary_contact: primary,
+      receive_notifications: notifications,
+    };
+    setPending('save');
+    setFailed('');
     try {
       await api('/api/v1/student-guardians', {
         method: 'POST',
-        body: JSON.stringify({
-          student_id: studentId,
-          guardian_id: guardianId,
-          relationship,
-          primary_contact: primary,
-          receive_notifications: notifications,
-        }),
+        body: JSON.stringify(payload),
       });
       await onSaved();
     } catch {
-      setFailed(true);
+      setFailed('save');
     } finally {
-      setBusy(false);
+      setPending('');
     }
   };
+  const unlink = async () => {
+    if (pending || !onUnlink || !confirm(t('pilot.confirm'))) return;
+    setPending('unlink');
+    setFailed('');
+    try {
+      await onUnlink();
+    } catch {
+      setFailed('unlink');
+    } finally {
+      setPending('');
+    }
+  };
+  const busy = !!pending;
   return (
     <div className="grid gap-2 rounded border border-border p-2">
       <FormField id={`relationship-${studentId}-${guardianId}`} label={t('pilot.relationship')}>
         <Input
           id={`relationship-${studentId}-${guardianId}`}
           value={relationship}
+          disabled={busy}
           onChange={(event) => setRelationship(event.target.value)}
         />
       </FormField>
       <label className="flex min-h-11 items-center gap-2">
-        <input type="checkbox" checked={primary} onChange={(e) => setPrimary(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={primary}
+          disabled={busy}
+          onChange={(e) => setPrimary(e.target.checked)}
+        />
         {t('pilot.primaryContact')}
       </label>
       <label className="flex min-h-11 items-center gap-2">
         <input
           type="checkbox"
           checked={notifications}
+          disabled={busy}
           onChange={(e) => setNotifications(e.target.checked)}
         />
         {t('pilot.receiveNotifications')}
@@ -167,12 +189,17 @@ function RelationshipEditor({
               : t('pilot.link')}
         </Button>
         {initial && onUnlink && (
-          <Button type="button" variant="secondary" disabled={busy} onClick={onUnlink}>
-            {t('pilot.guardians.unlink')}
+          <Button type="button" variant="secondary" disabled={busy} onClick={() => void unlink()}>
+            {pending === 'unlink' ? t('pilot.saving') : t('pilot.guardians.unlink')}
           </Button>
         )}
       </div>
-      {failed && <Alert tone="error" title={t('pilot.saveError')} />}
+      {!!failed && (
+        <Alert
+          tone="error"
+          title={t(failed === 'unlink' ? 'pilot.guardians.unlinkError' : 'pilot.saveError')}
+        />
+      )}
     </div>
   );
 }
@@ -640,18 +667,20 @@ export function FamiliesPage() {
   if (!setup.data) return <Spinner label={t('pilot.loading')} />;
   const data = setup.data;
   const unlink = async (linkId: string) => {
-    if (unlinking || !confirm(t('pilot.confirm'))) return;
+    if (unlinking) throw new Error('unlink_pending');
     setUnlinking(linkId);
     setUnlinkResult('');
     try {
       await api(`/api/v1/student-guardians/${linkId}`, { method: 'DELETE' });
-      if (!(await setup.reload())) {
+      const verified = await setup.reload();
+      if (!verified?.guardianLinks?.every((link: Any) => link.id !== linkId)) {
         setUnlinkResult('verificationError');
-        return;
+        throw new Error('unlink_verification_failed');
       }
       setUnlinkResult('success');
     } catch {
-      setUnlinkResult('deleteError');
+      setUnlinkResult((current) => current || 'deleteError');
+      throw new Error('unlink_failed');
     } finally {
       setUnlinking('');
     }
@@ -748,11 +777,12 @@ function FamilyGuardianCard({ guardian, data, reload, unlink, edit }: Any) {
             {t('pilot.guardians.manageLink')}
           </Link>
           <RelationshipEditor
+            key={`${link.id}-${link.relationship ?? ''}-${link.primary_contact}-${link.receive_notifications}`}
             studentId={link.student_id}
             guardianId={guardian.id}
             initial={link}
             onSaved={reload}
-            onUnlink={() => void unlink(link.id)}
+            onUnlink={() => unlink(link.id)}
           />
         </div>
       ))}
@@ -965,6 +995,10 @@ export function StudentProgressPage() {
       setFormEpoch((value) => value + 1);
     }
   };
+  const refreshSetup = async () => {
+    const results = await Promise.all([summary.reload(), setup.reload()]);
+    return results[0] && results[1] ? results[1] : null;
+  };
   return (
     <div className="space-y-5">
       <Header title={summary.data.student.display_name} description={t('pilot.progressSummary')} />
@@ -980,7 +1014,7 @@ export function StudentProgressPage() {
           summary={summary.data}
           program={program.data}
           setup={setup.data!}
-          reload={refresh}
+          reload={refreshSetup}
         />
       )}
       <Card>
@@ -1125,7 +1159,7 @@ function StudentSetup({
   summary: Any;
   program: Any;
   setup: Any;
-  reload: () => Promise<void>;
+  reload: () => Promise<Any | null>;
 }) {
   const { t } = useTranslation();
   const [trackId, setTrackId] = useState('');
@@ -1196,16 +1230,22 @@ function StudentSetup({
           <div key={link.id} className="grid gap-2 py-2">
             <strong>{link.name}</strong>
             <RelationshipEditor
+              key={`${link.id}-${link.relationship ?? ''}-${link.primary_contact}-${link.receive_notifications}`}
               studentId={studentId}
               guardianId={link.guardian_id}
               initial={link}
               onSaved={reload}
-              onUnlink={() => {
-                if (!confirm(t('pilot.confirm'))) return;
+              onUnlink={async () => {
                 setRelationshipError(false);
-                void api(`/api/v1/student-guardians/${link.id}`, { method: 'DELETE' })
-                  .then(reload)
-                  .catch(() => setRelationshipError(true));
+                try {
+                  await api(`/api/v1/student-guardians/${link.id}`, { method: 'DELETE' });
+                  const verified = await reload();
+                  if (!verified?.guardianLinks?.every((value: Any) => value.id !== link.id))
+                    throw new Error('unlink_verification_failed');
+                } catch (error) {
+                  setRelationshipError(true);
+                  throw error;
+                }
               }}
             />
           </div>
@@ -1257,19 +1297,25 @@ export function ProgressForm({
   onResult: (result: string) => void;
 }) {
   const { t } = useTranslation();
+  const normalizeItem = (item: Any = {}) => ({
+    ...item,
+    outcome: ['passed', 'practiced', 'needs_practice', 'assigned'].includes(item.outcome)
+      ? item.outcome
+      : 'practiced',
+  });
   const [value, setValue] = useState<Any>(
     draft
       ? {
           ...draft,
           student_id: studentId,
           class_id: draft.class_id ?? '',
-          items: draft.items.length ? draft.items : [{ outcome: 'practiced' }],
+          items: draft.items.length ? draft.items.map(normalizeItem) : [normalizeItem()],
         }
       : {
           student_id: studentId,
           class_id: summary.classes[0]?.id ?? '',
           update_date: new Date().toISOString().slice(0, 10),
-          items: [{ outcome: 'practiced' }],
+          items: [normalizeItem()],
           operation_key: crypto.randomUUID(),
         },
   );
@@ -1369,7 +1415,7 @@ export function ProgressForm({
             <SelectField
               id={`outcome-${index}`}
               label={t('pilot.outcome')}
-              value={item.outcome ?? 'practiced'}
+              value={item.outcome}
               onChange={(outcome) => {
                 const items = [...value.items];
                 items[index] = { ...item, outcome };
@@ -1412,7 +1458,7 @@ export function ProgressForm({
         <Button
           type="button"
           variant="secondary"
-          onClick={() => setValue({ ...value, items: [...value.items, { outcome: 'practiced' }] })}
+          onClick={() => setValue({ ...value, items: [...value.items, normalizeItem()] })}
         >
           {t('pilot.addLesson')}
         </Button>

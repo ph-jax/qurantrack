@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Context } from 'hono';
-import { submitRelayMail } from '../../email/relay';
+import { submitRelayMail, type SafeRelayRejectionCode } from '../../email/relay';
 import { resolveSender } from '../../email/sender';
 import type { Env, Variables } from '../../types/env';
 
@@ -458,22 +458,35 @@ export async function linkGuardian(c: Ctx) {
     .bind(studentId, guardianId, org, org)
     .first();
   if (!ok) return json(c, 404);
-  await c.env.DB.prepare(
+  const upsert = c.env.DB.prepare(
     'INSERT INTO student_guardians (id,organization_id,student_id,guardian_id,relationship,primary_contact,receive_notifications,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(student_id,guardian_id) DO UPDATE SET relationship=excluded.relationship, primary_contact=excluded.primary_contact, receive_notifications=excluded.receive_notifications, updated_at=excluded.updated_at',
-  )
-    .bind(
-      id('sg'),
-      org,
-      studentId,
+  ).bind(
+    id('sg'),
+    org,
+    studentId,
+    guardianId,
+    opt(b.relationship, 80),
+    bool(b.primary_contact) ? 1 : 0,
+    bool(b.receive_notifications) ? 1 : 0,
+    t,
+    t,
+  );
+  const statements = [];
+  if (bool(b.primary_contact)) {
+    statements.push(
+      c.env.DB.prepare(
+        'UPDATE student_guardians SET primary_contact=0,updated_at=? WHERE organization_id=? AND student_id=? AND guardian_id<>? AND primary_contact=1',
+      ).bind(t, org, studentId, guardianId),
+    );
+  }
+  statements.push(
+    upsert,
+    auditStatement(c, 'guardian.link', 'student', studentId, 'Guardian linked', t, {
       guardianId,
-      opt(b.relationship, 80),
-      bool(b.primary_contact) ? 1 : 0,
-      bool(b.receive_notifications) ? 1 : 0,
-      t,
-      t,
-    )
-    .run();
-  await audit(c, 'guardian.link', 'student', studentId, 'Guardian linked');
+      primaryContact: bool(b.primary_contact),
+    }),
+  );
+  await c.env.DB.batch(statements);
   return c.json({ ok: true });
 }
 export async function unlinkGuardian(c: Ctx) {
@@ -1070,7 +1083,7 @@ async function finalizeRelayRejection(
     metadata: Record<string, unknown>;
     notificationType: 'progress_update' | 'homework_update';
     attemptNumber: number;
-    rejectionCode: string;
+    rejectionCode: SafeRelayRejectionCode;
   },
 ) {
   const org = c.get('auth').organizationId;

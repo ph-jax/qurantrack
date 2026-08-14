@@ -221,6 +221,86 @@ describe('Pilot MVP API', () => {
     expect(unlinkAudits[0]).toMatchObject({ entity_id: 'stu-a' });
     expect(JSON.parse(unlinkAudits[0].metadata_json)).toEqual({ guardianId: guardian.id });
   });
+  it('atomically enforces one tenant-scoped primary guardian per student', async () => {
+    for (const [gid, org] of [
+      ['guardian-a', 'org-a'],
+      ['guardian-a2', 'org-a'],
+      ['guardian-b', 'org-b'],
+    ]) {
+      db.db
+        .prepare(
+          'INSERT INTO guardians (id,organization_id,name,email,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+        )
+        .run(gid, org, gid, `${gid}@example.test`, now, now);
+    }
+    db.db
+      .prepare(
+        'INSERT INTO students (id,organization_id,display_name,created_at,updated_at) VALUES (?,?,?,?,?)',
+      )
+      .run('stu-a2', 'org-a', 'Student A2', now, now);
+    const link = (student: string, guardian: string, primary: boolean) =>
+      app.fetch(
+        req('/api/v1/student-guardians', 'POST', {
+          student_id: student,
+          guardian_id: guardian,
+          primary_contact: primary,
+          receive_notifications: true,
+        }),
+        env(db),
+      );
+    auth();
+    expect((await link('stu-a', 'guardian-a', true)).status).toBe(200);
+    expect((await link('stu-a', 'guardian-a', true)).status).toBe(200);
+    expect((await link('stu-a', 'guardian-a2', false)).status).toBe(200);
+    expect(
+      db.db
+        .prepare(
+          'SELECT guardian_id FROM student_guardians WHERE student_id=? AND primary_contact=1',
+        )
+        .get('stu-a'),
+    ).toMatchObject({ guardian_id: 'guardian-a' });
+    expect((await link('stu-a', 'guardian-a2', true)).status).toBe(200);
+    expect(
+      db.db
+        .prepare(
+          'SELECT guardian_id FROM student_guardians WHERE student_id=? AND primary_contact=1',
+        )
+        .get('stu-a'),
+    ).toMatchObject({ guardian_id: 'guardian-a2' });
+
+    expect((await link('stu-a2', 'guardian-a', true)).status).toBe(200);
+    expect(
+      db.db.prepare('SELECT count(*) count FROM student_guardians WHERE primary_contact=1').get(),
+    ).toMatchObject({ count: 2 });
+
+    db.failBatchAt = 2;
+    await expect(link('stu-a', 'guardian-a', true)).resolves.toMatchObject({ status: 500 });
+    db.failBatchAt = 0;
+    expect(
+      db.db
+        .prepare(
+          'SELECT guardian_id FROM student_guardians WHERE student_id=? AND primary_contact=1',
+        )
+        .get('stu-a'),
+    ).toMatchObject({ guardian_id: 'guardian-a2' });
+
+    await Promise.all([link('stu-a', 'guardian-a', true), link('stu-a', 'guardian-a2', true)]);
+    expect(
+      db.db
+        .prepare(
+          'SELECT count(*) count FROM student_guardians WHERE student_id=? AND primary_contact=1',
+        )
+        .get('stu-a'),
+    ).toMatchObject({ count: 1 });
+
+    auth('organization_admin', 'org-b', 'other');
+    expect((await link('stu-a', 'guardian-b', true)).status).toBe(404);
+    expect(
+      db.db
+        .prepare('SELECT count(*) count FROM student_guardians WHERE organization_id=?')
+        .get('org-b'),
+    ).toMatchObject({ count: 0 });
+  });
   it('blocks teacher admin mutations and hides unauthorized/cross-org records', async () => {
     auth('teacher', 'org-a', 'teacher');
     expect((await app.fetch(req('/api/v1/classes', 'POST', { name: 'No' }), env(db))).status).toBe(
@@ -2277,6 +2357,7 @@ describe('Pilot MVP API', () => {
   it.each(['progress_update', 'homework_update'])(
     'recovers %s relay-rejection finalization without resubmitting',
     async (notificationType) => {
+      const workerLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       auth();
       for (const suffix of ['recovery-selected', 'recovery-other']) {
         const guardian = (await (
@@ -2364,6 +2445,28 @@ describe('Pilot MVP API', () => {
           )
           .get(selectedId, otherId),
       ).toMatchObject({ count: 2 });
+      const auditMetadata = db.db
+        .prepare(
+          "SELECT metadata_json FROM audit_log WHERE action='notification.relay_failed' AND entity_id=?",
+        )
+        .get(selectedId) as { metadata_json: string };
+      expect(JSON.parse(auditMetadata.metadata_json)).toMatchObject({
+        relayRejectionCode: 'invalid_recipient',
+      });
+      const diagnostic = JSON.parse(String(workerLog.mock.calls[0][0]));
+      expect(Object.keys(diagnostic).sort()).toEqual(
+        [
+          'attemptNumber',
+          'event',
+          'notificationId',
+          'notificationType',
+          'safeRejectionCode',
+          'workerRequestId',
+        ].sort(),
+      );
+      expect(JSON.stringify({ diagnostic, auditMetadata })).not.toMatch(
+        /example\.com|relay-secret|Before|After rejection|signature|cookie/i,
+      );
       expect(
         db.db
           .prepare(

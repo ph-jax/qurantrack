@@ -56,6 +56,7 @@ export class SqliteD1 {
       '0009_progress_publication_claim.sql',
       '0010_homework_revisions.sql',
       '0011_homework_revision_recipients.sql',
+      '0012_one_primary_guardian.sql',
     ])
       this.db.exec(readFileSync(`migrations/${migration}`, 'utf8'));
   }
