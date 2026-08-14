@@ -104,6 +104,7 @@ describe('mail relay protocol', () => {
     );
     await expect(submitRelayMail(env, message)).resolves.toEqual({
       status: 'rejected_before_send',
+      rejectionCode: 'invalid_recipient',
     });
     for (const error of ['relay_unavailable', 'replay', 'unknown_code']) {
       vi.stubGlobal(

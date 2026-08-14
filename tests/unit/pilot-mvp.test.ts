@@ -331,7 +331,7 @@ describe('Pilot MVP API', () => {
       env(db),
     );
     submitRelayMail
-      .mockResolvedValueOnce({ status: 'rejected_before_send' })
+      .mockResolvedValueOnce({ status: 'rejected_before_send', rejectionCode: 'invalid_recipient' })
       .mockResolvedValue({ status: 'accepted' });
     auth('teacher', 'org-a', 'teacher');
     const res = (await (
@@ -597,7 +597,7 @@ describe('Pilot MVP API', () => {
     );
     auth('teacher', 'org-a', 'teacher');
     submitRelayMail
-      .mockResolvedValueOnce({ status: 'rejected_before_send' })
+      .mockResolvedValueOnce({ status: 'rejected_before_send', rejectionCode: 'invalid_recipient' })
       .mockResolvedValue({ status: 'accepted' });
     const published = (await (
       await app.fetch(
@@ -1063,9 +1063,10 @@ describe('Pilot MVP API', () => {
         env(db),
       );
     }
-    submitRelayMail
-      .mockResolvedValueOnce({ status: 'accepted' })
-      .mockResolvedValueOnce({ status: 'rejected_before_send' });
+    submitRelayMail.mockResolvedValueOnce({ status: 'accepted' }).mockResolvedValueOnce({
+      status: 'rejected_before_send',
+      rejectionCode: 'invalid_recipient',
+    });
     auth('teacher', 'org-a', 'teacher');
     const response = (await (
       await app.fetch(
@@ -1128,9 +1129,10 @@ describe('Pilot MVP API', () => {
         env(db),
       );
     }
-    submitRelayMail
-      .mockResolvedValueOnce({ status: 'accepted' })
-      .mockResolvedValueOnce({ status: 'rejected_before_send' });
+    submitRelayMail.mockResolvedValueOnce({ status: 'accepted' }).mockResolvedValueOnce({
+      status: 'rejected_before_send',
+      rejectionCode: 'invalid_recipient',
+    });
     auth('teacher', 'org-a', 'teacher');
     const published = (await (
       await app.fetch(
@@ -1145,7 +1147,10 @@ describe('Pilot MVP API', () => {
         env(db),
       )
     ).json()) as any;
-    submitRelayMail.mockResolvedValueOnce({ status: 'rejected_before_send' });
+    submitRelayMail.mockResolvedValueOnce({
+      status: 'rejected_before_send',
+      rejectionCode: 'invalid_recipient',
+    });
     const retry = (await (
       await app.fetch(
         req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'),
@@ -2031,7 +2036,10 @@ describe('Pilot MVP API', () => {
         env(db),
       );
     }
-    submitRelayMail.mockResolvedValue({ status: 'rejected_before_send' });
+    submitRelayMail.mockResolvedValue({
+      status: 'rejected_before_send',
+      rejectionCode: 'invalid_recipient',
+    });
     auth('teacher', 'org-a', 'teacher');
     const published = (await (
       await app.fetch(
@@ -2155,7 +2163,7 @@ describe('Pilot MVP API', () => {
       auth('teacher', 'org-a', 'teacher');
       submitRelayMail.mockResolvedValue(
         notificationType === 'progress_update'
-          ? { status: 'rejected_before_send' }
+          ? { status: 'rejected_before_send', rejectionCode: 'invalid_recipient' }
           : { status: 'accepted' },
       );
       const published = (await (
@@ -2172,7 +2180,10 @@ describe('Pilot MVP API', () => {
         )
       ).json()) as any;
       if (notificationType === 'homework_update') {
-        submitRelayMail.mockResolvedValue({ status: 'rejected_before_send' });
+        submitRelayMail.mockResolvedValue({
+          status: 'rejected_before_send',
+          rejectionCode: 'invalid_recipient',
+        });
         await app.fetch(
           req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', {
             homework: 'After',
@@ -2290,7 +2301,7 @@ describe('Pilot MVP API', () => {
       auth('teacher', 'org-a', 'teacher');
       submitRelayMail.mockResolvedValue(
         notificationType === 'progress_update'
-          ? { status: 'rejected_before_send' }
+          ? { status: 'rejected_before_send', rejectionCode: 'invalid_recipient' }
           : { status: 'accepted' },
       );
       if (notificationType === 'progress_update') db.failRejectionFinalizationOnce = true;
@@ -2310,7 +2321,10 @@ describe('Pilot MVP API', () => {
       let initialResult = published;
       if (notificationType === 'homework_update') {
         submitRelayMail.mockClear();
-        submitRelayMail.mockResolvedValue({ status: 'rejected_before_send' });
+        submitRelayMail.mockResolvedValue({
+          status: 'rejected_before_send',
+          rejectionCode: 'invalid_recipient',
+        });
         db.failRejectionFinalizationOnce = true;
         initialResult = (await (
           await app.fetch(
@@ -2359,7 +2373,10 @@ describe('Pilot MVP API', () => {
       ).toMatchObject({ count: 2 });
 
       submitRelayMail.mockClear();
-      submitRelayMail.mockResolvedValue({ status: 'rejected_before_send' });
+      submitRelayMail.mockResolvedValue({
+        status: 'rejected_before_send',
+        rejectionCode: 'invalid_recipient',
+      });
       db.throwAfterRejectionFinalizationCommitOnce = true;
       auth();
       const retry = (await (
@@ -2443,7 +2460,10 @@ describe('Pilot MVP API', () => {
           env(db),
         )
       ).json()) as any;
-      submitRelayMail.mockResolvedValue({ status: 'rejected_before_send' });
+      submitRelayMail.mockResolvedValue({
+        status: 'rejected_before_send',
+        rejectionCode: 'invalid_recipient',
+      });
       await app.fetch(
         req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', {
           homework: 'After',
@@ -2545,7 +2565,10 @@ describe('Pilot MVP API', () => {
         env(db),
       );
     }
-    submitRelayMail.mockResolvedValue({ status: 'rejected_before_send' });
+    submitRelayMail.mockResolvedValue({
+      status: 'rejected_before_send',
+      rejectionCode: 'invalid_recipient',
+    });
     auth('teacher', 'org-a', 'teacher');
     const published = (await (
       await app.fetch(

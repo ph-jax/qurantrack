@@ -271,6 +271,8 @@ export default {
     changeLevel: 'Change current level',
     guardian: 'Guardian',
     relationship: 'Relationship',
+    primaryContact: 'Primary contact',
+    link: 'Link',
     receiveNotifications: 'Receive progress notifications',
     linkGuardian: 'Link guardian',
     enableNotifications: 'Enable notifications',
@@ -307,8 +309,9 @@ export default {
       unlink: 'Unlink from student',
       linkedStudents: 'Linked students',
       linkHelp:
-        'Open a student to link a guardian or change progress-notification preferences for that relationship.',
+        'Link students here or from the student page. Both views update the same relationship and notification preferences.',
       manageLink: 'Manage on student',
+      saveRelationship: 'Save relationship',
       unlinkSuccess: 'Guardian link removed.',
       unlinkError: 'The guardian link could not be removed. Try again.',
       unlinkVerificationError:

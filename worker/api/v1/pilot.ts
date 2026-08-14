@@ -1068,10 +1068,24 @@ async function finalizeRelayRejection(
     completedAt: string;
     safeMessage: string;
     metadata: Record<string, unknown>;
+    notificationType: 'progress_update' | 'homework_update';
+    attemptNumber: number;
+    rejectionCode: string;
   },
 ) {
   const org = c.get('auth').organizationId;
   const auditId = `audit_relay_failed:${values.attemptId}`;
+  // Deliberately keep this diagnostic allowlisted and free of addresses or message content.
+  console.error(
+    JSON.stringify({
+      event: 'notification_relay_rejected',
+      workerRequestId: c.get('requestId'),
+      notificationId: values.logId,
+      notificationType: values.notificationType,
+      attemptNumber: values.attemptNumber,
+      safeRejectionCode: values.rejectionCode,
+    }),
+  );
   const finalize = () =>
     c.env.DB.batch([
       c.env.DB.prepare(
@@ -1794,7 +1808,10 @@ async function submitHomeworkNotifications(c: Ctx, revisionId: string, onlyLogId
         attemptId,
         completedAt: completed,
         safeMessage: safe,
-        metadata: { revisionId, attemptNumber },
+        metadata: { revisionId, attemptNumber, relayRejectionCode: relay.rejectionCode },
+        notificationType: 'homework_update',
+        attemptNumber,
+        rejectionCode: relay.rejectionCode,
       });
       results.push({
         guardianId: recipient.id,
@@ -2100,7 +2117,10 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean, o
         attemptId,
         completedAt: completed,
         safeMessage,
-        metadata: { attemptNumber },
+        metadata: { attemptNumber, relayRejectionCode: relayResult.rejectionCode },
+        notificationType: 'progress_update',
+        attemptNumber,
+        rejectionCode: relayResult.rejectionCode,
       });
       results.push({
         guardianId: recipient.guardian_id,

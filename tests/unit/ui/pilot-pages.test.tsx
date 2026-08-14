@@ -196,6 +196,41 @@ describe('Pilot progress result lifecycle', () => {
     );
   }
 
+  it('submits the displayed default outcome for initial and added lesson items', async () => {
+    const bodies: Array<{ items: unknown }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return Response.json({ ok: true, id: 'progress-a' });
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ProgressForm
+          studentId="student-a"
+          summary={{
+            ...summary,
+            lessons: [...summary.lessons, { ...summary.lessons[0], id: 'lesson-b' }],
+          }}
+          draft={null}
+          onDone={async () => {}}
+          onResult={() => {}}
+        />
+      </I18nextProvider>,
+    );
+    await user.selectOptions(screen.getByLabelText('Lesson'), 'lesson-a');
+    await user.click(screen.getByRole('button', { name: 'Add lesson item' }));
+    await user.selectOptions(screen.getAllByLabelText('Lesson')[1], 'lesson-b');
+    expect(screen.getAllByLabelText('Outcome')).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(bodies[0].items).toEqual([
+      { lesson_id: 'lesson-a', outcome: 'practiced' },
+      { lesson_id: 'lesson-b', outcome: 'practiced' },
+    ]);
+  });
+
   it('maps notification outcomes to accurate tones', () => {
     expect(pilotResultPresentation('notifications_submitted').tone).toBe('success');
     expect(pilotResultPresentation('no_recipients').tone).toBe('info');

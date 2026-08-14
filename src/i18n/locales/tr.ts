@@ -269,6 +269,8 @@ export default {
     changeLevel: 'Mevcut seviyeyi değiştir',
     guardian: 'Veli',
     relationship: 'Yakınlık',
+    primaryContact: 'Birincil iletişim kişisi',
+    link: 'Bağla',
     receiveNotifications: 'İlerleme bildirimlerini al',
     linkGuardian: 'Veliyi bağla',
     enableNotifications: 'Bildirimleri aç',
@@ -305,8 +307,9 @@ export default {
       unlink: 'Öğrenci bağlantısını kaldır',
       linkedStudents: 'Bağlı öğrenciler',
       linkHelp:
-        'Bir veliyi bağlamak veya bu ilişkinin ilerleme bildirimi tercihini değiştirmek için öğrenciyi açın.',
+        'Öğrencileri buradan veya öğrenci sayfasından bağlayın. Her iki görünüm de aynı ilişki ve bildirim tercihlerini günceller.',
       manageLink: 'Öğrencide yönet',
+      saveRelationship: 'İlişkiyi kaydet',
       unlinkSuccess: 'Veli bağlantısı kaldırıldı.',
       unlinkError: 'Veli bağlantısı kaldırılamadı. Yeniden deneyin.',
       unlinkVerificationError:

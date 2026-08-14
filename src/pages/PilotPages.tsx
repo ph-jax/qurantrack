@@ -96,6 +96,86 @@ function Status({ value }: { value: boolean }) {
     </Badge>
   );
 }
+function RelationshipEditor({
+  studentId,
+  guardianId,
+  initial,
+  onSaved,
+  onUnlink,
+}: {
+  studentId: string;
+  guardianId: string;
+  initial?: Any;
+  onSaved: () => Promise<void>;
+  onUnlink?: () => void;
+}) {
+  const { t } = useTranslation();
+  const [relationship, setRelationship] = useState(initial?.relationship ?? '');
+  const [primary, setPrimary] = useState(!!initial?.primary_contact);
+  const [notifications, setNotifications] = useState(initial?.receive_notifications ?? true);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    setFailed(false);
+    try {
+      await api('/api/v1/student-guardians', {
+        method: 'POST',
+        body: JSON.stringify({
+          student_id: studentId,
+          guardian_id: guardianId,
+          relationship,
+          primary_contact: primary,
+          receive_notifications: notifications,
+        }),
+      });
+      await onSaved();
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="grid gap-2 rounded border border-border p-2">
+      <FormField id={`relationship-${studentId}-${guardianId}`} label={t('pilot.relationship')}>
+        <Input
+          id={`relationship-${studentId}-${guardianId}`}
+          value={relationship}
+          onChange={(event) => setRelationship(event.target.value)}
+        />
+      </FormField>
+      <label className="flex min-h-11 items-center gap-2">
+        <input type="checkbox" checked={primary} onChange={(e) => setPrimary(e.target.checked)} />
+        {t('pilot.primaryContact')}
+      </label>
+      <label className="flex min-h-11 items-center gap-2">
+        <input
+          type="checkbox"
+          checked={notifications}
+          onChange={(e) => setNotifications(e.target.checked)}
+        />
+        {t('pilot.receiveNotifications')}
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" disabled={busy} onClick={() => void save()}>
+          {busy
+            ? t('pilot.saving')
+            : initial
+              ? t('pilot.guardians.saveRelationship')
+              : t('pilot.link')}
+        </Button>
+        {initial && onUnlink && (
+          <Button type="button" variant="secondary" disabled={busy} onClick={onUnlink}>
+            {t('pilot.guardians.unlink')}
+          </Button>
+        )}
+      </div>
+      {failed && <Alert tone="error" title={t('pilot.saveError')} />}
+    </div>
+  );
+}
 function Editor({
   title,
   initial,
@@ -615,56 +695,16 @@ export function FamiliesPage() {
         onCancel={editing ? () => setEditing(null) : undefined}
       />
       <div className="grid gap-3">
-        {data.guardians.map((guardian: Any) => {
-          const links = data.guardianLinks.filter((link: Any) => link.guardian_id === guardian.id);
-          return (
-            <Card key={guardian.id}>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="font-bold">{guardian.name}</h3>
-                  <p className="break-all text-sm text-text-secondary">{guardian.email}</p>
-                  <p className="text-sm">{guardian.preferred_locale?.toUpperCase()}</p>
-                </div>
-                <div className="flex gap-2">
-                  <Status value={!!guardian.active} />
-                  <Button type="button" variant="secondary" onClick={() => setEditing(guardian)}>
-                    {t('pilot.edit')}
-                  </Button>
-                </div>
-              </div>
-              <h4 className="mt-3 font-semibold">{t('pilot.guardians.linkedStudents')}</h4>
-              {links.map((link: Any) => (
-                <div
-                  key={link.id}
-                  className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded border border-border p-2"
-                >
-                  <span>
-                    {
-                      data.students.find((student: Any) => student.id === link.student_id)
-                        ?.display_name
-                    }{' '}
-                    · {t(link.receive_notifications ? 'pilot.enabled' : 'pilot.disabled')}
-                  </span>
-                  <Link
-                    className="font-semibold text-brand"
-                    to={`/app/students/${link.student_id}`}
-                  >
-                    {t('pilot.guardians.manageLink')}
-                  </Link>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={!!unlinking}
-                    onClick={() => void unlink(link.id)}
-                  >
-                    {unlinking === link.id ? t('pilot.saving') : t('pilot.guardians.unlink')}
-                  </Button>
-                </div>
-              ))}
-              {!links.length && <p className="text-sm text-text-secondary">{t('pilot.empty')}</p>}
-            </Card>
-          );
-        })}
+        {data.guardians.map((guardian: Any) => (
+          <FamilyGuardianCard
+            key={guardian.id}
+            guardian={guardian}
+            data={data}
+            reload={reload}
+            unlink={unlink}
+            edit={() => setEditing(guardian)}
+          />
+        ))}
         {!data.guardians.length && (
           <Card>
             <p>{t('pilot.guardians.empty')}</p>
@@ -672,6 +712,80 @@ export function FamiliesPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function FamilyGuardianCard({ guardian, data, reload, unlink, edit }: Any) {
+  const { t } = useTranslation();
+  const [studentId, setStudentId] = useState('');
+  const links = data.guardianLinks.filter((link: Any) => link.guardian_id === guardian.id);
+  return (
+    <Card>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="font-bold">{guardian.name}</h3>
+          <p className="break-all text-sm text-text-secondary">{guardian.email}</p>
+          <p className="text-sm">{guardian.preferred_locale?.toUpperCase()}</p>
+        </div>
+        <div className="flex gap-2">
+          <Status value={!!guardian.active} />
+          <Button type="button" variant="secondary" onClick={edit}>
+            {t('pilot.edit')}
+          </Button>
+        </div>
+      </div>
+      <h4 className="mt-3 font-semibold">{t('pilot.guardians.linkedStudents')}</h4>
+      {links.map((link: Any) => (
+        <div
+          key={link.id}
+          className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded border border-border p-2"
+        >
+          <span>
+            {data.students.find((student: Any) => student.id === link.student_id)?.display_name} ·{' '}
+            {t(link.receive_notifications ? 'pilot.enabled' : 'pilot.disabled')}
+          </span>
+          <Link className="font-semibold text-brand" to={`/app/students/${link.student_id}`}>
+            {t('pilot.guardians.manageLink')}
+          </Link>
+          <RelationshipEditor
+            studentId={link.student_id}
+            guardianId={guardian.id}
+            initial={link}
+            onSaved={reload}
+            onUnlink={() => void unlink(link.id)}
+          />
+        </div>
+      ))}
+      {!links.length && <p className="text-sm text-text-secondary">{t('pilot.empty')}</p>}
+      <SelectField
+        id={`guardian-student-${guardian.id}`}
+        label={t('pilot.students.title')}
+        value={studentId}
+        onChange={setStudentId}
+      >
+        <option value="">{t('pilot.select')}</option>
+        {data.students
+          .filter(
+            (student: Any) =>
+              student.active && !links.some((link: Any) => link.student_id === student.id),
+          )
+          .map((student: Any) => (
+            <option key={student.id} value={student.id}>
+              {student.display_name}
+            </option>
+          ))}
+      </SelectField>
+      {studentId && (
+        <RelationshipEditor
+          studentId={studentId}
+          guardianId={guardian.id}
+          onSaved={async () => {
+            setStudentId('');
+            await reload();
+          }}
+        />
+      )}
+    </Card>
   );
 }
 
@@ -1017,8 +1131,7 @@ function StudentSetup({
   const [trackId, setTrackId] = useState('');
   const [levelId, setLevelId] = useState('');
   const [guardianId, setGuardianId] = useState('');
-  const [relationship, setRelationship] = useState('');
-  const [notifications, setNotifications] = useState(true);
+  const [relationshipError, setRelationshipError] = useState(false);
   const levels = program.levels.filter((level: Any) => level.track_id === trackId && level.active);
   const links = setup.guardianLinks.filter((link: Any) => link.student_id === studentId);
   return (
@@ -1080,34 +1193,24 @@ function StudentSetup({
       <div className="mt-4 border-t border-border pt-3">
         <h4 className="font-semibold">{t('pilot.guardians.links')}</h4>
         {links.map((link: Any) => (
-          <div key={link.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-            <span>
-              {link.name} · {t(link.receive_notifications ? 'pilot.enabled' : 'pilot.disabled')}
-            </span>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() =>
-                api('/api/v1/student-guardians', {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    student_id: studentId,
-                    guardian_id: link.guardian_id,
-                    relationship: link.relationship,
-                    primary_contact: link.primary_contact,
-                    receive_notifications: !link.receive_notifications,
-                  }),
-                }).then(reload)
-              }
-            >
-              {t(
-                link.receive_notifications
-                  ? 'pilot.disableNotifications'
-                  : 'pilot.enableNotifications',
-              )}
-            </Button>
+          <div key={link.id} className="grid gap-2 py-2">
+            <strong>{link.name}</strong>
+            <RelationshipEditor
+              studentId={studentId}
+              guardianId={link.guardian_id}
+              initial={link}
+              onSaved={reload}
+              onUnlink={() => {
+                if (!confirm(t('pilot.confirm'))) return;
+                setRelationshipError(false);
+                void api(`/api/v1/student-guardians/${link.id}`, { method: 'DELETE' })
+                  .then(reload)
+                  .catch(() => setRelationshipError(true));
+              }}
+            />
           </div>
         ))}
+        {relationshipError && <Alert tone="error" title={t('pilot.guardians.unlinkError')} />}
         <SelectField
           id="student-guardian"
           label={t('pilot.guardian')}
@@ -1126,38 +1229,16 @@ function StudentSetup({
               </option>
             ))}
         </SelectField>
-        <FormField id="relationship" label={t('pilot.relationship')}>
-          <Input
-            id="relationship"
-            value={relationship}
-            onChange={(event) => setRelationship(event.target.value)}
+        {guardianId && (
+          <RelationshipEditor
+            studentId={studentId}
+            guardianId={guardianId}
+            onSaved={async () => {
+              setGuardianId('');
+              await reload();
+            }}
           />
-        </FormField>
-        <label className="flex min-h-11 items-center gap-2">
-          <input
-            type="checkbox"
-            checked={notifications}
-            onChange={(event) => setNotifications(event.target.checked)}
-          />
-          {t('pilot.receiveNotifications')}
-        </label>
-        <Button
-          type="button"
-          disabled={!guardianId}
-          onClick={() =>
-            api('/api/v1/student-guardians', {
-              method: 'POST',
-              body: JSON.stringify({
-                student_id: studentId,
-                guardian_id: guardianId,
-                relationship,
-                receive_notifications: notifications,
-              }),
-            }).then(reload)
-          }
-        >
-          {t('pilot.linkGuardian')}
-        </Button>
+        )}
       </div>
     </Card>
   );
@@ -1182,13 +1263,13 @@ export function ProgressForm({
           ...draft,
           student_id: studentId,
           class_id: draft.class_id ?? '',
-          items: draft.items.length ? draft.items : [{}],
+          items: draft.items.length ? draft.items : [{ outcome: 'practiced' }],
         }
       : {
           student_id: studentId,
           class_id: summary.classes[0]?.id ?? '',
           update_date: new Date().toISOString().slice(0, 10),
-          items: [{}],
+          items: [{ outcome: 'practiced' }],
           operation_key: crypto.randomUUID(),
         },
   );
@@ -1212,16 +1293,19 @@ export function ProgressForm({
   }
   async function save(status: string, notify = false) {
     if (busy) return;
+    // Freeze what the user saw at the instant submission began. Subsequent UI interaction must
+    // neither alter an in-flight request nor its operation key.
+    const snapshot = structuredClone(value);
     setBusy(true);
     onResult('');
     try {
       const result = await api('/api/v1/progress-updates', {
         method: 'POST',
         body: JSON.stringify({
-          ...value,
+          ...snapshot,
           status,
           notify,
-          items: value.items.filter((item: Any) => item.lesson_id),
+          items: snapshot.items.filter((item: Any) => item.lesson_id),
         }),
       });
       setValue((current: Any) => ({ ...current, id: result.id }));
@@ -1328,7 +1412,7 @@ export function ProgressForm({
         <Button
           type="button"
           variant="secondary"
-          onClick={() => setValue({ ...value, items: [...value.items, {}] })}
+          onClick={() => setValue({ ...value, items: [...value.items, { outcome: 'practiced' }] })}
         >
           {t('pilot.addLesson')}
         </Button>
