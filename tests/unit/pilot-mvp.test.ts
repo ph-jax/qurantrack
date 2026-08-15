@@ -221,6 +221,65 @@ describe('Pilot MVP API', () => {
     expect(unlinkAudits[0]).toMatchObject({ entity_id: 'stu-a' });
     expect(JSON.parse(unlinkAudits[0].metadata_json)).toEqual({ guardianId: guardian.id });
   });
+  it('serializes concurrent unlinks so only the deleting request audits and succeeds', async () => {
+    db.db
+      .prepare(
+        'INSERT INTO guardians (id,organization_id,name,email,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+      )
+      .run('guardian-concurrent', 'org-a', 'Guardian', 'concurrent@example.test', now, now);
+    db.db
+      .prepare(
+        'INSERT INTO student_guardians (id,organization_id,student_id,guardian_id,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+      )
+      .run('link-concurrent', 'org-a', 'stu-a', 'guardian-concurrent', now, now);
+
+    let readCount = 0;
+    let bothRead!: () => void;
+    let releaseReads!: () => void;
+    const bothPreliminaryReads = new Promise<void>((resolve) => (bothRead = resolve));
+    const readsMayContinue = new Promise<void>((resolve) => (releaseReads = resolve));
+    db.afterGuardianUnlinkRead = async () => {
+      readCount += 1;
+      if (readCount === 2) bothRead();
+      await readsMayContinue;
+    };
+    auth();
+    const first = app.fetch(req('/api/v1/student-guardians/link-concurrent', 'DELETE'), env(db));
+    const second = app.fetch(req('/api/v1/student-guardians/link-concurrent', 'DELETE'), env(db));
+    await bothPreliminaryReads;
+    releaseReads();
+    const statuses = await Promise.all([
+      Promise.resolve(first).then((response) => response.status),
+      Promise.resolve(second).then((response) => response.status),
+    ]);
+    db.afterGuardianUnlinkRead = undefined;
+
+    expect(statuses.sort()).toEqual([200, 404]);
+    expect(
+      db.db
+        .prepare('SELECT count(*) count FROM student_guardians WHERE id=?')
+        .get('link-concurrent'),
+    ).toMatchObject({ count: 0 });
+    const audits = db.db
+      .prepare(
+        "SELECT entity_id,metadata_json FROM audit_log WHERE action='guardian.unlink' ORDER BY created_at",
+      )
+      .all() as { entity_id: string; metadata_json: string }[];
+    expect(audits).toHaveLength(1);
+    expect(audits[0].entity_id).toBe('stu-a');
+    expect(JSON.parse(audits[0].metadata_json)).toEqual({ guardianId: 'guardian-concurrent' });
+
+    expect(
+      (await app.fetch(req('/api/v1/student-guardians/missing', 'DELETE'), env(db))).status,
+    ).toBe(404);
+    auth('organization_admin', 'org-b', 'other');
+    expect(
+      (await app.fetch(req('/api/v1/student-guardians/link-concurrent', 'DELETE'), env(db))).status,
+    ).toBe(404);
+    expect(
+      db.db.prepare("SELECT count(*) count FROM audit_log WHERE action='guardian.unlink'").get(),
+    ).toMatchObject({ count: 1 });
+  });
   it('atomically enforces one tenant-scoped primary guardian per student', async () => {
     for (const [gid, org] of [
       ['guardian-a', 'org-a'],

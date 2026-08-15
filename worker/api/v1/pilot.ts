@@ -501,21 +501,30 @@ export async function unlinkGuardian(c: Ctx) {
     .first<{ student_id: string; guardian_id: string }>();
   if (!link) return json(c, 404);
   const timestamp = now();
-  await c.env.DB.batch([
-    c.env.DB.prepare('DELETE FROM student_guardians WHERE id=? AND organization_id=?').bind(
-      linkId,
-      org,
-    ),
-    auditStatement(
-      c,
+  const results = await c.env.DB.batch([
+    c.env.DB.prepare(
+      `INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at)
+       SELECT ?,organization_id,?,?,?,?,?,?,?,? FROM student_guardians
+       WHERE id=? AND organization_id=?`,
+    ).bind(
+      id('audit'),
+      c.get('auth').userId,
       'guardian.unlink',
       'student',
       link.student_id,
       'Guardian unlinked',
+      JSON.stringify({ guardianId: link.guardian_id }),
+      c.get('requestId'),
       timestamp,
-      { guardianId: link.guardian_id },
+      linkId,
+      org,
+    ),
+    c.env.DB.prepare('DELETE FROM student_guardians WHERE id=? AND organization_id=?').bind(
+      linkId,
+      org,
     ),
   ]);
+  if (Number(results[1]?.meta?.changes ?? 0) === 0) return json(c, 404);
   return c.json({ ok: true });
 }
 export async function curriculum(c: Ctx) {
