@@ -11,10 +11,16 @@ class SqliteStatement {
     return this;
   }
   async first<T>() {
-    return (
+    const result =
       (this.owner.db.prepare(this.sql).get(...(this.values as SQLInputValue[])) as T | undefined) ??
-      null
-    );
+      null;
+    if (
+      this.sql.includes(
+        'SELECT student_id,guardian_id FROM student_guardians WHERE id=? AND organization_id=?',
+      )
+    )
+      await this.owner.afterGuardianUnlinkRead?.();
+    return result;
   }
   async all<T>() {
     return {
@@ -41,6 +47,7 @@ export class SqliteD1 {
   afterProgressPublicationCommit?: (progressId: string) => Promise<void>;
   afterRetrySelection?: (notificationId: string) => Promise<void>;
   afterHomeworkRetryPriorRead?: (notificationId: string) => Promise<void>;
+  afterGuardianUnlinkRead?: () => Promise<void>;
   private batchQueue: Promise<unknown> = Promise.resolve();
   constructor() {
     this.db.exec('PRAGMA foreign_keys=ON');
@@ -56,6 +63,7 @@ export class SqliteD1 {
       '0009_progress_publication_claim.sql',
       '0010_homework_revisions.sql',
       '0011_homework_revision_recipients.sql',
+      '0012_one_primary_guardian.sql',
     ])
       this.db.exec(readFileSync(`migrations/${migration}`, 'utf8'));
   }

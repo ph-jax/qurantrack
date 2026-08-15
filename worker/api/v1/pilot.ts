@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Context } from 'hono';
-import { submitRelayMail } from '../../email/relay';
+import { submitRelayMail, type SafeRelayRejectionCode } from '../../email/relay';
 import { resolveSender } from '../../email/sender';
 import type { Env, Variables } from '../../types/env';
 
@@ -458,22 +458,35 @@ export async function linkGuardian(c: Ctx) {
     .bind(studentId, guardianId, org, org)
     .first();
   if (!ok) return json(c, 404);
-  await c.env.DB.prepare(
+  const upsert = c.env.DB.prepare(
     'INSERT INTO student_guardians (id,organization_id,student_id,guardian_id,relationship,primary_contact,receive_notifications,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(student_id,guardian_id) DO UPDATE SET relationship=excluded.relationship, primary_contact=excluded.primary_contact, receive_notifications=excluded.receive_notifications, updated_at=excluded.updated_at',
-  )
-    .bind(
-      id('sg'),
-      org,
-      studentId,
+  ).bind(
+    id('sg'),
+    org,
+    studentId,
+    guardianId,
+    opt(b.relationship, 80),
+    bool(b.primary_contact) ? 1 : 0,
+    bool(b.receive_notifications) ? 1 : 0,
+    t,
+    t,
+  );
+  const statements = [];
+  if (bool(b.primary_contact)) {
+    statements.push(
+      c.env.DB.prepare(
+        'UPDATE student_guardians SET primary_contact=0,updated_at=? WHERE organization_id=? AND student_id=? AND guardian_id<>? AND primary_contact=1',
+      ).bind(t, org, studentId, guardianId),
+    );
+  }
+  statements.push(
+    upsert,
+    auditStatement(c, 'guardian.link', 'student', studentId, 'Guardian linked', t, {
       guardianId,
-      opt(b.relationship, 80),
-      bool(b.primary_contact) ? 1 : 0,
-      bool(b.receive_notifications) ? 1 : 0,
-      t,
-      t,
-    )
-    .run();
-  await audit(c, 'guardian.link', 'student', studentId, 'Guardian linked');
+      primaryContact: bool(b.primary_contact),
+    }),
+  );
+  await c.env.DB.batch(statements);
   return c.json({ ok: true });
 }
 export async function unlinkGuardian(c: Ctx) {
@@ -488,21 +501,30 @@ export async function unlinkGuardian(c: Ctx) {
     .first<{ student_id: string; guardian_id: string }>();
   if (!link) return json(c, 404);
   const timestamp = now();
-  await c.env.DB.batch([
-    c.env.DB.prepare('DELETE FROM student_guardians WHERE id=? AND organization_id=?').bind(
-      linkId,
-      org,
-    ),
-    auditStatement(
-      c,
+  const results = await c.env.DB.batch([
+    c.env.DB.prepare(
+      `INSERT INTO audit_log (id,organization_id,actor_user_id,action,entity_type,entity_id,summary,metadata_json,request_id,created_at)
+       SELECT ?,organization_id,?,?,?,?,?,?,?,? FROM student_guardians
+       WHERE id=? AND organization_id=?`,
+    ).bind(
+      id('audit'),
+      c.get('auth').userId,
       'guardian.unlink',
       'student',
       link.student_id,
       'Guardian unlinked',
+      JSON.stringify({ guardianId: link.guardian_id }),
+      c.get('requestId'),
       timestamp,
-      { guardianId: link.guardian_id },
+      linkId,
+      org,
+    ),
+    c.env.DB.prepare('DELETE FROM student_guardians WHERE id=? AND organization_id=?').bind(
+      linkId,
+      org,
     ),
   ]);
+  if (Number(results[1]?.meta?.changes ?? 0) === 0) return json(c, 404);
   return c.json({ ok: true });
 }
 export async function curriculum(c: Ctx) {
@@ -1068,10 +1090,24 @@ async function finalizeRelayRejection(
     completedAt: string;
     safeMessage: string;
     metadata: Record<string, unknown>;
+    notificationType: 'progress_update' | 'homework_update';
+    attemptNumber: number;
+    rejectionCode: SafeRelayRejectionCode;
   },
 ) {
   const org = c.get('auth').organizationId;
   const auditId = `audit_relay_failed:${values.attemptId}`;
+  // Deliberately keep this diagnostic allowlisted and free of addresses or message content.
+  console.error(
+    JSON.stringify({
+      event: 'notification_relay_rejected',
+      workerRequestId: c.get('requestId'),
+      notificationId: values.logId,
+      notificationType: values.notificationType,
+      attemptNumber: values.attemptNumber,
+      safeRejectionCode: values.rejectionCode,
+    }),
+  );
   const finalize = () =>
     c.env.DB.batch([
       c.env.DB.prepare(
@@ -1794,7 +1830,10 @@ async function submitHomeworkNotifications(c: Ctx, revisionId: string, onlyLogId
         attemptId,
         completedAt: completed,
         safeMessage: safe,
-        metadata: { revisionId, attemptNumber },
+        metadata: { revisionId, attemptNumber, relayRejectionCode: relay.rejectionCode },
+        notificationType: 'homework_update',
+        attemptNumber,
+        rejectionCode: relay.rejectionCode,
       });
       results.push({
         guardianId: recipient.id,
@@ -2100,7 +2139,10 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean, o
         attemptId,
         completedAt: completed,
         safeMessage,
-        metadata: { attemptNumber },
+        metadata: { attemptNumber, relayRejectionCode: relayResult.rejectionCode },
+        notificationType: 'progress_update',
+        attemptNumber,
+        rejectionCode: relayResult.rejectionCode,
       });
       results.push({
         guardianId: recipient.guardian_id,

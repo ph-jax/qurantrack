@@ -196,6 +196,88 @@ describe('Pilot progress result lifecycle', () => {
     );
   }
 
+  it('submits the displayed default outcome for initial and added lesson items', async () => {
+    const bodies: Array<{ items: unknown }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return Response.json({ ok: true, id: 'progress-a' });
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ProgressForm
+          studentId="student-a"
+          summary={{
+            ...summary,
+            lessons: [...summary.lessons, { ...summary.lessons[0], id: 'lesson-b' }],
+          }}
+          draft={null}
+          onDone={async () => {}}
+          onResult={() => {}}
+        />
+      </I18nextProvider>,
+    );
+    await user.selectOptions(screen.getByLabelText('Lesson'), 'lesson-a');
+    await user.click(screen.getByRole('button', { name: 'Add lesson item' }));
+    await user.selectOptions(screen.getAllByLabelText('Lesson')[1], 'lesson-b');
+    expect(screen.getAllByLabelText('Outcome')).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(bodies[0].items).toEqual([
+      { lesson_id: 'lesson-a', outcome: 'practiced' },
+      { lesson_id: 'lesson-b', outcome: 'practiced' },
+    ]);
+  });
+
+  it.each([
+    ['draft', 'Save draft'],
+    ['published', 'Publish'],
+  ])('normalizes legacy draft outcomes in the %s path', async (status, action) => {
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('notification-recipients'))
+          return Response.json({ ok: true, count: 0, recipients: [] });
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return Response.json({ ok: true, id: 'draft-a' });
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ProgressForm
+          studentId="student-a"
+          summary={{
+            ...summary,
+            lessons: [...summary.lessons, { ...summary.lessons[0], id: 'lesson-b' }],
+          }}
+          draft={{
+            id: 'draft-a',
+            class_id: 'class-a',
+            items: [{ lesson_id: 'lesson-a' }, { lesson_id: 'lesson-b', outcome: 'passed' }],
+          }}
+          onDone={async () => {}}
+          onResult={() => {}}
+        />
+      </I18nextProvider>,
+    );
+    await user.click(screen.getByRole('button', { name: action }));
+    if (status === 'published') {
+      await user.click(await screen.findByRole('button', { name: 'Confirm and publish' }));
+    }
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      status,
+      items: [
+        { lesson_id: 'lesson-a', outcome: 'practiced' },
+        { lesson_id: 'lesson-b', outcome: 'passed' },
+      ],
+    });
+  });
+
   it('maps notification outcomes to accurate tones', () => {
     expect(pilotResultPresentation('notifications_submitted').tone).toBe('success');
     expect(pilotResultPresentation('no_recipients').tone).toBe('info');
@@ -849,6 +931,54 @@ describe('Pilot first-use and Families workflows', () => {
     );
   });
 
+  it('links a student from Families with one immutable relationship request', async () => {
+    let release!: () => void;
+    const requests: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          requests.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+          await new Promise<void>((resolve) => (release = resolve));
+          return Response.json({ ok: true });
+        }
+        return Response.json({
+          ...emptySetup,
+          students: [{ id: 'student-a', display_name: 'Student', active: 1 }],
+          guardians: [{ id: 'guardian-a', name: 'Guardian', email: 'g@example.com', active: 1 }],
+          guardianLinks: [],
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <FamiliesPage />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+    await user.selectOptions(await screen.findByLabelText('Students'), 'student-a');
+    await user.type(screen.getByLabelText('Relationship'), 'Parent');
+    await user.click(screen.getByLabelText('Primary contact'));
+    const save = screen.getByRole('button', { name: 'Link' });
+    await user.click(save);
+    await user.click(save);
+    expect(requests).toEqual([
+      {
+        student_id: 'student-a',
+        guardian_id: 'guardian-a',
+        relationship: 'Parent',
+        primary_contact: true,
+        receive_notifications: true,
+      },
+    ]);
+    expect(screen.getByLabelText('Relationship')).toBeDisabled();
+    expect(screen.getByLabelText('Primary contact')).toBeDisabled();
+    release();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Saving…' })).toBeNull());
+  });
+
   it.each([false, true])(
     'handles unlink outcome and duplicate clicks (failure=%s)',
     async (failure) => {
@@ -894,16 +1024,49 @@ describe('Pilot first-use and Families workflows', () => {
       await user.click(unlink);
       await user.click(unlink);
       expect(deletes).toBe(1);
+      expect(screen.getByLabelText('Relationship')).toBeDisabled();
+      expect(screen.getByLabelText('Primary contact')).toBeDisabled();
+      expect(screen.getByLabelText('Receive progress notifications')).toBeDisabled();
       release();
       expect(
-        await screen.findByText(failure ? /could not be removed/ : 'Guardian link removed.'),
+        (
+          await screen.findAllByText(failure ? /could not be removed/ : 'Guardian link removed.')
+        )[0],
       ).toBeInTheDocument();
       if (!failure)
         expect(
           screen.queryByRole('button', { name: 'Unlink from student' }),
         ).not.toBeInTheDocument();
+      else expect(screen.getByRole('button', { name: 'Unlink from student' })).toBeEnabled();
     },
   );
+
+  it('cancels unlink without issuing a DELETE', async () => {
+    vi.mocked(confirm).mockReturnValue(false);
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        ...emptySetup,
+        students: [{ id: 'student-a', display_name: 'Student' }],
+        guardians: [{ id: 'guardian-a', name: 'Guardian', email: 'g@example.com', active: 1 }],
+        guardianLinks: [{ id: 'link-a', guardian_id: 'guardian-a', student_id: 'student-a' }],
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <FamiliesPage />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Unlink from student' }));
+    expect(
+      fetchMock.mock.calls.filter(
+        (call) => (call as unknown as [unknown, RequestInit?])[1]?.method === 'DELETE',
+      ),
+    ).toHaveLength(0);
+  });
 
   it('reports a verification error when DELETE succeeds but stored-state reload fails', async () => {
     let deletes = 0;

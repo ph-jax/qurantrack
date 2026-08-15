@@ -74,11 +74,13 @@ export function relayResponseSucceeded(value: RelayResponse): boolean {
 }
 
 export type RelaySubmissionResult =
-  { status: 'accepted' } | { status: 'rejected_before_send' } | { status: 'ambiguous' };
+  | { status: 'accepted' }
+  | { status: 'rejected_before_send'; rejectionCode: SafeRelayRejectionCode }
+  | { status: 'ambiguous' };
 
 // Only errors returned before GmailApp.sendEmail is reached are safe to retry. Replay is excluded:
 // it may describe an earlier request whose delivery result is unknown.
-const PRE_SEND_REJECTION_CODES = new Set([
+export const SAFE_RELAY_REJECTION_CODES = [
   'missing_auth',
   'expired',
   'invalid_nonce',
@@ -93,7 +95,9 @@ const PRE_SEND_REJECTION_CODES = new Set([
   'invalid_body',
   'invalid_html_body',
   'alias_not_allowed',
-]);
+] as const;
+export type SafeRelayRejectionCode = (typeof SAFE_RELAY_REJECTION_CODES)[number];
+const PRE_SEND_REJECTION_CODES = new Set<string>(SAFE_RELAY_REJECTION_CODES);
 
 export async function submitRelayMail(
   env: Env,
@@ -118,7 +122,10 @@ export async function submitRelayMail(
   const json = (await response.json().catch(() => null)) as RelayResponse | null;
   if (response.ok && json?.ok === true) return { status: 'accepted' };
   if (response.ok && json?.ok === false && PRE_SEND_REJECTION_CODES.has(json.error ?? ''))
-    return { status: 'rejected_before_send' };
+    return {
+      status: 'rejected_before_send',
+      rejectionCode: json.error as SafeRelayRejectionCode,
+    };
   return { status: 'ambiguous' };
 }
 

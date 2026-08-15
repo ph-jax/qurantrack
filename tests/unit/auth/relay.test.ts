@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
   relayResponseSucceeded,
   relayUrlWithAuth,
+  SAFE_RELAY_REJECTION_CODES,
   sendRelayMail,
   submitRelayMail,
   signRelayRequest,
@@ -104,6 +105,7 @@ describe('mail relay protocol', () => {
     );
     await expect(submitRelayMail(env, message)).resolves.toEqual({
       status: 'rejected_before_send',
+      rejectionCode: 'invalid_recipient',
     });
     for (const error of ['relay_unavailable', 'replay', 'unknown_code']) {
       vi.stubGlobal(
@@ -128,6 +130,25 @@ describe('mail relay protocol', () => {
     );
     await expect(submitRelayMail(env, message)).resolves.toEqual({ status: 'ambiguous' });
   });
+
+  it.each(SAFE_RELAY_REJECTION_CODES)(
+    'preserves the exact allowlisted pre-send rejection %s',
+    async (rejectionCode) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => Response.json({ ok: false, error: rejectionCode })),
+      );
+      await expect(
+        submitRelayMail(
+          {
+            MAIL_RELAY_URL: 'https://script.google.com/macros/s/demo/exec',
+            MAIL_RELAY_SECRET: 'relay-secret',
+          } as never,
+          message,
+        ),
+      ).resolves.toEqual({ status: 'rejected_before_send', rejectionCode });
+    },
+  );
 
   it('keeps Apps Script auth parameters reliably outside custom headers', () => {
     const url = relayUrlWithAuth('https://example.com/relay', '10', 'nonce', 'sig');

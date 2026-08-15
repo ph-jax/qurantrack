@@ -221,6 +221,145 @@ describe('Pilot MVP API', () => {
     expect(unlinkAudits[0]).toMatchObject({ entity_id: 'stu-a' });
     expect(JSON.parse(unlinkAudits[0].metadata_json)).toEqual({ guardianId: guardian.id });
   });
+  it('serializes concurrent unlinks so only the deleting request audits and succeeds', async () => {
+    db.db
+      .prepare(
+        'INSERT INTO guardians (id,organization_id,name,email,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+      )
+      .run('guardian-concurrent', 'org-a', 'Guardian', 'concurrent@example.test', now, now);
+    db.db
+      .prepare(
+        'INSERT INTO student_guardians (id,organization_id,student_id,guardian_id,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+      )
+      .run('link-concurrent', 'org-a', 'stu-a', 'guardian-concurrent', now, now);
+
+    let readCount = 0;
+    let bothRead!: () => void;
+    let releaseReads!: () => void;
+    const bothPreliminaryReads = new Promise<void>((resolve) => (bothRead = resolve));
+    const readsMayContinue = new Promise<void>((resolve) => (releaseReads = resolve));
+    db.afterGuardianUnlinkRead = async () => {
+      readCount += 1;
+      if (readCount === 2) bothRead();
+      await readsMayContinue;
+    };
+    auth();
+    const first = app.fetch(req('/api/v1/student-guardians/link-concurrent', 'DELETE'), env(db));
+    const second = app.fetch(req('/api/v1/student-guardians/link-concurrent', 'DELETE'), env(db));
+    await bothPreliminaryReads;
+    releaseReads();
+    const statuses = await Promise.all([
+      Promise.resolve(first).then((response) => response.status),
+      Promise.resolve(second).then((response) => response.status),
+    ]);
+    db.afterGuardianUnlinkRead = undefined;
+
+    expect(statuses.sort()).toEqual([200, 404]);
+    expect(
+      db.db
+        .prepare('SELECT count(*) count FROM student_guardians WHERE id=?')
+        .get('link-concurrent'),
+    ).toMatchObject({ count: 0 });
+    const audits = db.db
+      .prepare(
+        "SELECT entity_id,metadata_json FROM audit_log WHERE action='guardian.unlink' ORDER BY created_at",
+      )
+      .all() as { entity_id: string; metadata_json: string }[];
+    expect(audits).toHaveLength(1);
+    expect(audits[0].entity_id).toBe('stu-a');
+    expect(JSON.parse(audits[0].metadata_json)).toEqual({ guardianId: 'guardian-concurrent' });
+
+    expect(
+      (await app.fetch(req('/api/v1/student-guardians/missing', 'DELETE'), env(db))).status,
+    ).toBe(404);
+    auth('organization_admin', 'org-b', 'other');
+    expect(
+      (await app.fetch(req('/api/v1/student-guardians/link-concurrent', 'DELETE'), env(db))).status,
+    ).toBe(404);
+    expect(
+      db.db.prepare("SELECT count(*) count FROM audit_log WHERE action='guardian.unlink'").get(),
+    ).toMatchObject({ count: 1 });
+  });
+  it('atomically enforces one tenant-scoped primary guardian per student', async () => {
+    for (const [gid, org] of [
+      ['guardian-a', 'org-a'],
+      ['guardian-a2', 'org-a'],
+      ['guardian-b', 'org-b'],
+    ]) {
+      db.db
+        .prepare(
+          'INSERT INTO guardians (id,organization_id,name,email,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+        )
+        .run(gid, org, gid, `${gid}@example.test`, now, now);
+    }
+    db.db
+      .prepare(
+        'INSERT INTO students (id,organization_id,display_name,created_at,updated_at) VALUES (?,?,?,?,?)',
+      )
+      .run('stu-a2', 'org-a', 'Student A2', now, now);
+    const link = (student: string, guardian: string, primary: boolean) =>
+      app.fetch(
+        req('/api/v1/student-guardians', 'POST', {
+          student_id: student,
+          guardian_id: guardian,
+          primary_contact: primary,
+          receive_notifications: true,
+        }),
+        env(db),
+      );
+    auth();
+    expect((await link('stu-a', 'guardian-a', true)).status).toBe(200);
+    expect((await link('stu-a', 'guardian-a', true)).status).toBe(200);
+    expect((await link('stu-a', 'guardian-a2', false)).status).toBe(200);
+    expect(
+      db.db
+        .prepare(
+          'SELECT guardian_id FROM student_guardians WHERE student_id=? AND primary_contact=1',
+        )
+        .get('stu-a'),
+    ).toMatchObject({ guardian_id: 'guardian-a' });
+    expect((await link('stu-a', 'guardian-a2', true)).status).toBe(200);
+    expect(
+      db.db
+        .prepare(
+          'SELECT guardian_id FROM student_guardians WHERE student_id=? AND primary_contact=1',
+        )
+        .get('stu-a'),
+    ).toMatchObject({ guardian_id: 'guardian-a2' });
+
+    expect((await link('stu-a2', 'guardian-a', true)).status).toBe(200);
+    expect(
+      db.db.prepare('SELECT count(*) count FROM student_guardians WHERE primary_contact=1').get(),
+    ).toMatchObject({ count: 2 });
+
+    db.failBatchAt = 2;
+    await expect(link('stu-a', 'guardian-a', true)).resolves.toMatchObject({ status: 500 });
+    db.failBatchAt = 0;
+    expect(
+      db.db
+        .prepare(
+          'SELECT guardian_id FROM student_guardians WHERE student_id=? AND primary_contact=1',
+        )
+        .get('stu-a'),
+    ).toMatchObject({ guardian_id: 'guardian-a2' });
+
+    await Promise.all([link('stu-a', 'guardian-a', true), link('stu-a', 'guardian-a2', true)]);
+    expect(
+      db.db
+        .prepare(
+          'SELECT count(*) count FROM student_guardians WHERE student_id=? AND primary_contact=1',
+        )
+        .get('stu-a'),
+    ).toMatchObject({ count: 1 });
+
+    auth('organization_admin', 'org-b', 'other');
+    expect((await link('stu-a', 'guardian-b', true)).status).toBe(404);
+    expect(
+      db.db
+        .prepare('SELECT count(*) count FROM student_guardians WHERE organization_id=?')
+        .get('org-b'),
+    ).toMatchObject({ count: 0 });
+  });
   it('blocks teacher admin mutations and hides unauthorized/cross-org records', async () => {
     auth('teacher', 'org-a', 'teacher');
     expect((await app.fetch(req('/api/v1/classes', 'POST', { name: 'No' }), env(db))).status).toBe(
@@ -331,7 +470,7 @@ describe('Pilot MVP API', () => {
       env(db),
     );
     submitRelayMail
-      .mockResolvedValueOnce({ status: 'rejected_before_send' })
+      .mockResolvedValueOnce({ status: 'rejected_before_send', rejectionCode: 'invalid_recipient' })
       .mockResolvedValue({ status: 'accepted' });
     auth('teacher', 'org-a', 'teacher');
     const res = (await (
@@ -597,7 +736,7 @@ describe('Pilot MVP API', () => {
     );
     auth('teacher', 'org-a', 'teacher');
     submitRelayMail
-      .mockResolvedValueOnce({ status: 'rejected_before_send' })
+      .mockResolvedValueOnce({ status: 'rejected_before_send', rejectionCode: 'invalid_recipient' })
       .mockResolvedValue({ status: 'accepted' });
     const published = (await (
       await app.fetch(
@@ -1063,9 +1202,10 @@ describe('Pilot MVP API', () => {
         env(db),
       );
     }
-    submitRelayMail
-      .mockResolvedValueOnce({ status: 'accepted' })
-      .mockResolvedValueOnce({ status: 'rejected_before_send' });
+    submitRelayMail.mockResolvedValueOnce({ status: 'accepted' }).mockResolvedValueOnce({
+      status: 'rejected_before_send',
+      rejectionCode: 'invalid_recipient',
+    });
     auth('teacher', 'org-a', 'teacher');
     const response = (await (
       await app.fetch(
@@ -1128,9 +1268,10 @@ describe('Pilot MVP API', () => {
         env(db),
       );
     }
-    submitRelayMail
-      .mockResolvedValueOnce({ status: 'accepted' })
-      .mockResolvedValueOnce({ status: 'rejected_before_send' });
+    submitRelayMail.mockResolvedValueOnce({ status: 'accepted' }).mockResolvedValueOnce({
+      status: 'rejected_before_send',
+      rejectionCode: 'invalid_recipient',
+    });
     auth('teacher', 'org-a', 'teacher');
     const published = (await (
       await app.fetch(
@@ -1145,7 +1286,10 @@ describe('Pilot MVP API', () => {
         env(db),
       )
     ).json()) as any;
-    submitRelayMail.mockResolvedValueOnce({ status: 'rejected_before_send' });
+    submitRelayMail.mockResolvedValueOnce({
+      status: 'rejected_before_send',
+      rejectionCode: 'invalid_recipient',
+    });
     const retry = (await (
       await app.fetch(
         req(`/api/v1/progress-updates/${published.id}/notify?retry=1`, 'POST'),
@@ -2031,7 +2175,10 @@ describe('Pilot MVP API', () => {
         env(db),
       );
     }
-    submitRelayMail.mockResolvedValue({ status: 'rejected_before_send' });
+    submitRelayMail.mockResolvedValue({
+      status: 'rejected_before_send',
+      rejectionCode: 'invalid_recipient',
+    });
     auth('teacher', 'org-a', 'teacher');
     const published = (await (
       await app.fetch(
@@ -2155,7 +2302,7 @@ describe('Pilot MVP API', () => {
       auth('teacher', 'org-a', 'teacher');
       submitRelayMail.mockResolvedValue(
         notificationType === 'progress_update'
-          ? { status: 'rejected_before_send' }
+          ? { status: 'rejected_before_send', rejectionCode: 'invalid_recipient' }
           : { status: 'accepted' },
       );
       const published = (await (
@@ -2172,7 +2319,10 @@ describe('Pilot MVP API', () => {
         )
       ).json()) as any;
       if (notificationType === 'homework_update') {
-        submitRelayMail.mockResolvedValue({ status: 'rejected_before_send' });
+        submitRelayMail.mockResolvedValue({
+          status: 'rejected_before_send',
+          rejectionCode: 'invalid_recipient',
+        });
         await app.fetch(
           req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', {
             homework: 'After',
@@ -2266,6 +2416,7 @@ describe('Pilot MVP API', () => {
   it.each(['progress_update', 'homework_update'])(
     'recovers %s relay-rejection finalization without resubmitting',
     async (notificationType) => {
+      const workerLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       auth();
       for (const suffix of ['recovery-selected', 'recovery-other']) {
         const guardian = (await (
@@ -2290,7 +2441,7 @@ describe('Pilot MVP API', () => {
       auth('teacher', 'org-a', 'teacher');
       submitRelayMail.mockResolvedValue(
         notificationType === 'progress_update'
-          ? { status: 'rejected_before_send' }
+          ? { status: 'rejected_before_send', rejectionCode: 'invalid_recipient' }
           : { status: 'accepted' },
       );
       if (notificationType === 'progress_update') db.failRejectionFinalizationOnce = true;
@@ -2310,7 +2461,10 @@ describe('Pilot MVP API', () => {
       let initialResult = published;
       if (notificationType === 'homework_update') {
         submitRelayMail.mockClear();
-        submitRelayMail.mockResolvedValue({ status: 'rejected_before_send' });
+        submitRelayMail.mockResolvedValue({
+          status: 'rejected_before_send',
+          rejectionCode: 'invalid_recipient',
+        });
         db.failRejectionFinalizationOnce = true;
         initialResult = (await (
           await app.fetch(
@@ -2350,6 +2504,28 @@ describe('Pilot MVP API', () => {
           )
           .get(selectedId, otherId),
       ).toMatchObject({ count: 2 });
+      const auditMetadata = db.db
+        .prepare(
+          "SELECT metadata_json FROM audit_log WHERE action='notification.relay_failed' AND entity_id=?",
+        )
+        .get(selectedId) as { metadata_json: string };
+      expect(JSON.parse(auditMetadata.metadata_json)).toMatchObject({
+        relayRejectionCode: 'invalid_recipient',
+      });
+      const diagnostic = JSON.parse(String(workerLog.mock.calls[0][0]));
+      expect(Object.keys(diagnostic).sort()).toEqual(
+        [
+          'attemptNumber',
+          'event',
+          'notificationId',
+          'notificationType',
+          'safeRejectionCode',
+          'workerRequestId',
+        ].sort(),
+      );
+      expect(JSON.stringify({ diagnostic, auditMetadata })).not.toMatch(
+        /example\.com|relay-secret|Before|After rejection|signature|cookie/i,
+      );
       expect(
         db.db
           .prepare(
@@ -2359,7 +2535,10 @@ describe('Pilot MVP API', () => {
       ).toMatchObject({ count: 2 });
 
       submitRelayMail.mockClear();
-      submitRelayMail.mockResolvedValue({ status: 'rejected_before_send' });
+      submitRelayMail.mockResolvedValue({
+        status: 'rejected_before_send',
+        rejectionCode: 'invalid_recipient',
+      });
       db.throwAfterRejectionFinalizationCommitOnce = true;
       auth();
       const retry = (await (
@@ -2443,7 +2622,10 @@ describe('Pilot MVP API', () => {
           env(db),
         )
       ).json()) as any;
-      submitRelayMail.mockResolvedValue({ status: 'rejected_before_send' });
+      submitRelayMail.mockResolvedValue({
+        status: 'rejected_before_send',
+        rejectionCode: 'invalid_recipient',
+      });
       await app.fetch(
         req(`/api/v1/progress-updates/${published.id}/homework`, 'PATCH', {
           homework: 'After',
@@ -2545,7 +2727,10 @@ describe('Pilot MVP API', () => {
         env(db),
       );
     }
-    submitRelayMail.mockResolvedValue({ status: 'rejected_before_send' });
+    submitRelayMail.mockResolvedValue({
+      status: 'rejected_before_send',
+      rejectionCode: 'invalid_recipient',
+    });
     auth('teacher', 'org-a', 'teacher');
     const published = (await (
       await app.fetch(
