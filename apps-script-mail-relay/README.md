@@ -9,6 +9,12 @@ Deploy this Apps Script as a Web App owned by the Gmail or Google Workspace acco
 5. Rotate `MAIL_RELAY_SECRET` by setting both Apps Script and Worker secrets before enabling production traffic.
 6. Run `sendTestEmail` from the editor. It is intentionally restricted to the executing/deploying account.
 
+For a controlled diagnosis of the production sender/options path, optionally set
+`RELAY_TEST_FROM_ALIAS` and `RELAY_TEST_REPLY_TO`, then manually run
+`sendControlledRelayTest`. The recipient is always the executing Apps Script account; the
+function never reads a guardian recipient. On failure, the execution log contains only the event,
+safe stage, and safe category. Remove the temporary test properties after review.
+
 See `docs/EMAIL_RELAY.md` for validation, sender resolution, and exact post-merge staging steps. Never put a real deployment address in source control.
 
 Protocol details:
@@ -19,3 +25,6 @@ Protocol details:
 - The relay returns JSON only. The Worker accepts only `{ "ok": true }` as success.
 
 The relay rejects missing authentication fields, stale timestamps, replayed nonces, invalid HMAC signatures, and unapproved sender aliases. Do not log request bodies because they include email addresses and sign-in links.
+
+Changing `Code.gs` requires a new Web App version. Updating the existing deployment to that version
+keeps its Web App URL, so `MAIL_RELAY_URL` does not need to change.

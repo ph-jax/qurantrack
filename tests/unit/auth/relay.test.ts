@@ -176,9 +176,9 @@ describe('mail relay protocol', () => {
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
 
     // A replay or lock failure returns before parsing and can never reach delivery.
-    expect(doPost).toContain(
-      'const nonceError = claimAuthenticatedNonce_(nonce);\n    if (nonceError) return json_({ ok: false, error: nonceError });',
-    );
+    const nonceReturn = doPost.indexOf('relayResponse_({ ok: false, error: nonceError }');
+    expect(nonceReturn).toBeGreaterThan(doPost.indexOf('claimAuthenticatedNonce_(nonce)'));
+    expect(nonceReturn).toBeLessThan(doPost.indexOf('JSON.parse(body)'));
 
     const nonceHelper = script.slice(
       script.indexOf('function claimAuthenticatedNonce_'),
