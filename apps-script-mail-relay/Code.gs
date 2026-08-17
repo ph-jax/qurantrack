@@ -3,6 +3,7 @@ const LIMITS = { recipient: 254, subject: 200, body: 50000, senderName: 120 };
 const EMAIL_ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function doPost(e) {
+  let stage = 'static_config';
   try {
     // Do not access Google account or Gmail APIs until the request is authenticated.
     const staticConfig = getStaticRelayConfig_();
@@ -20,10 +21,18 @@ function doPost(e) {
       !signature ||
       !body
     )
-      return json_({ ok: false, error: 'missing_auth' });
+      return relayResponse_({ ok: false, error: 'missing_auth' }, function () {
+        stage = 'response_generation';
+      });
+    stage = 'authentication';
     if (Math.abs(Math.floor(Date.now() / 1000) - timestamp) > NONCE_TTL_SECONDS)
-      return json_({ ok: false, error: 'expired' });
-    if (!/^[A-Za-z0-9_-]{8,128}$/.test(nonce)) return json_({ ok: false, error: 'invalid_nonce' });
+      return relayResponse_({ ok: false, error: 'expired' }, function () {
+        stage = 'response_generation';
+      });
+    if (!/^[A-Za-z0-9_-]{8,128}$/.test(nonce))
+      return relayResponse_({ ok: false, error: 'invalid_nonce' }, function () {
+        stage = 'response_generation';
+      });
     const expected = Utilities.base64EncodeWebSafe(
       Utilities.computeHmacSha256Signature(
         `${timestampText}.${nonce}.${body}`,
@@ -31,37 +40,87 @@ function doPost(e) {
       ),
     ).replace(/=+$/, '');
     if (!constantTimeEqual_(expected, signature))
-      return json_({ ok: false, error: 'bad_signature' });
+      return relayResponse_({ ok: false, error: 'bad_signature' }, function () {
+        stage = 'response_generation';
+      });
 
+    stage = 'nonce_claim';
     const nonceError = claimAuthenticatedNonce_(nonce);
-    if (nonceError) return json_({ ok: false, error: nonceError });
+    if (nonceError)
+      return relayResponse_({ ok: false, error: nonceError }, function () {
+        stage = 'response_generation';
+      });
 
+    stage = 'message_parse';
     let message;
     try {
       message = JSON.parse(body);
     } catch (_error) {
-      return json_({ ok: false, error: 'malformed_json' });
+      return relayResponse_({ ok: false, error: 'malformed_json' }, function () {
+        stage = 'response_generation';
+      });
     }
+    stage = 'message_validation';
     const validationError = validateMessage_(message);
-    if (validationError) return json_({ ok: false, error: validationError });
+    if (validationError)
+      return relayResponse_({ ok: false, error: validationError }, function () {
+        stage = 'response_generation';
+      });
 
+    stage = 'sender_config';
     const senderConfig = getSenderConfig_(staticConfig.approved);
+    stage = 'sender_authorization';
     const sender = normalizeEmail_(message.fromAlias);
     const senderError = authorizeSender_(sender, senderConfig);
-    if (senderError) return json_({ ok: false, error: senderError });
+    if (senderError)
+      return relayResponse_({ ok: false, error: senderError }, function () {
+        stage = 'response_generation';
+      });
 
-    const options = {
-      replyTo: normalizeEmail_(message.replyTo),
-      name: message.senderName.trim(),
-    };
-    if (typeof message.html === 'string' && message.html) options.htmlBody = message.html;
-    if (sender !== senderConfig.primarySender) options.from = sender;
+    const options = buildGmailOptions_(message, sender, senderConfig);
+    stage = 'gmail_send';
     GmailApp.sendEmail(normalizeEmail_(message.to), message.subject, message.text, options);
-    return json_({ ok: true });
-  } catch (_error) {
-    // Never include message/configuration details in responses or logs.
+    return relayResponse_({ ok: true }, function () {
+      stage = 'response_generation';
+    });
+  } catch (error) {
+    logRelayFailure_('mail_relay_failure', stage, classifyRelayError_(error));
+    // This remains ambiguous when Gmail send was entered, preventing unsafe retries.
+    stage = 'response_generation';
     return json_({ ok: false, error: 'relay_unavailable' });
   }
+}
+
+function relayResponse_(value, beforeResponse) {
+  beforeResponse();
+  return json_(value);
+}
+
+function buildGmailOptions_(message, sender, senderConfig) {
+  const options = {
+    replyTo: normalizeEmail_(message.replyTo),
+    name: message.senderName.trim(),
+  };
+  if (typeof message.html === 'string' && message.html) options.htmlBody = message.html;
+  if (sender !== senderConfig.primarySender) options.from = sender;
+  return options;
+}
+
+function classifyRelayError_(error) {
+  const text = String((error && error.message) || error || '').toLowerCase();
+  if (/authoriz|permission|scope|access denied/.test(text)) return 'gmail_authorization';
+  if (/quota|daily limit|limit exceeded/.test(text)) return 'gmail_quota';
+  if (/rate|too many|try again later/.test(text)) return 'gmail_rate_limit';
+  if (/from address|sender|alias/.test(text)) return 'gmail_sender';
+  if (/recipient|invalid (email|address)|no recipient/.test(text)) return 'gmail_recipient';
+  if (/invalid argument|parameter|argument/.test(text)) return 'gmail_invalid_argument';
+  if (/service unavailable|internal error|backend error|temporar/.test(text))
+    return 'gmail_service_unavailable';
+  return 'unknown';
+}
+
+function logRelayFailure_(event, stage, category) {
+  console.error(JSON.stringify({ event, stage, category }));
 }
 
 function claimAuthenticatedNonce_(nonce) {
@@ -170,4 +229,47 @@ function sendTestEmail() {
       replyTo: config.primarySender,
     },
   );
+}
+
+/**
+ * Exercises the production sender and options path, but can only email the executing account.
+ * Optional RELAY_TEST_FROM_ALIAS and RELAY_TEST_REPLY_TO script properties select the paths to
+ * test; neither value is logged or returned.
+ */
+function sendControlledRelayTest() {
+  let stage = 'static_config';
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const staticConfig = getStaticRelayConfig_();
+    stage = 'sender_config';
+    const config = getSenderConfig_(staticConfig.approved);
+    const sender = normalizeEmail_(
+      props.getProperty('RELAY_TEST_FROM_ALIAS') || config.primarySender,
+    );
+    const replyTo = normalizeEmail_(
+      props.getProperty('RELAY_TEST_REPLY_TO') || config.primarySender,
+    );
+    stage = 'message_validation';
+    const message = {
+      to: config.primarySender,
+      fromAlias: sender,
+      replyTo,
+      senderName: 'QuranTrack',
+      subject: 'QuranTrack controlled relay test',
+      text: 'This is a harmless controlled QuranTrack relay test.',
+    };
+    const validationError = validateMessage_(message);
+    if (validationError) throw new Error('invalid argument');
+    stage = 'sender_authorization';
+    const senderError = authorizeSender_(sender, config);
+    if (senderError) throw new Error('sender alias');
+    const options = buildGmailOptions_(message, sender, config);
+    stage = 'gmail_send';
+    GmailApp.sendEmail(config.primarySender, message.subject, message.text, options);
+    return { ok: true };
+  } catch (error) {
+    const category = classifyRelayError_(error);
+    logRelayFailure_('controlled_mail_relay_test_failure', stage, category);
+    throw new Error(`controlled_mail_relay_test_failed:${stage}:${category}`);
+  }
 }
