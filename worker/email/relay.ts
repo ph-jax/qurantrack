@@ -124,6 +124,19 @@ export interface RelayDiagnosticContext {
   attemptId?: string;
 }
 
+function isAuthorizedAppsScriptRelayUrl(value: URL): boolean {
+  return (
+    value.protocol === 'https:' &&
+    value.hostname === 'script.google.com' &&
+    value.port === '' &&
+    value.username === '' &&
+    value.password === '' &&
+    value.hash === '' &&
+    value.search === '' &&
+    /^\/macros\/s\/[^/]+\/exec$/.test(value.pathname)
+  );
+}
+
 function recordRelayDiagnostic(
   stage: RelayDiagnosticStage,
   category: RelayErrorCategory,
@@ -163,8 +176,13 @@ export async function submitRelayMail(
     return ambiguousFailure('relay_config', 'missing_binding', context);
   }
   try {
-    // Parse before signing so an invalid binding is identified before any outbound operation.
-    url = new URL(url).toString();
+    // Validate the complete trusted endpoint before building or signing attacker-controlled data.
+    // The binding must be the canonical HTTPS Apps Script Web App /exec URL.
+    const parsedUrl = new URL(url);
+    if (!isAuthorizedAppsScriptRelayUrl(parsedUrl)) {
+      return ambiguousFailure('relay_config', 'invalid_url', context);
+    }
+    url = parsedUrl.toString();
   } catch {
     return ambiguousFailure('relay_config', 'invalid_url', context);
   }

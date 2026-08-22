@@ -18,6 +18,7 @@ const message = {
   subject: 'Sign in',
   text: 'Open QuranTrack.',
 };
+const validRelayUrl = 'https://script.google.com/macros/s/test-deployment/exec';
 
 describe('mail relay protocol', () => {
   afterEach(() => {
@@ -29,7 +30,7 @@ describe('mail relay protocol', () => {
     ['missing URL binding', {}, 'relay_config', 'missing_binding'],
     [
       'missing secret binding',
-      { MAIL_RELAY_URL: 'https://relay.test' },
+      { MAIL_RELAY_URL: validRelayUrl },
       'relay_config',
       'missing_binding',
     ],
@@ -62,6 +63,36 @@ describe('mail relay protocol', () => {
     });
   });
 
+  it.each([
+    ['HTTP', 'http://script.google.com/macros/s/test-deployment/exec'],
+    ['data', 'data:text/plain,relay'],
+    ['JavaScript', 'javascript:alert(1)'],
+    ['malformed', 'not a relay URL'],
+    ['untrusted HTTPS host', 'https://relay.example/macros/s/test-deployment/exec'],
+    ['non-exec Apps Script path', 'https://script.google.com/macros/s/test-deployment/dev'],
+  ])('rejects an invalid %s relay URL before signing or fetching', async (_label, relayUrl) => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const signMock = vi.spyOn(crypto.subtle, 'sign');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      submitRelayMail(
+        { MAIL_RELAY_URL: relayUrl, MAIL_RELAY_SECRET: 'relay-secret' } as never,
+        message,
+        { requestId: 'req-invalid-url' },
+      ),
+    ).resolves.toEqual({ status: 'ambiguous' });
+
+    expect(signMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith('mail_relay_failure', {
+      stage: 'relay_config',
+      category: 'invalid_url',
+      requestId: 'req-invalid-url',
+    });
+  });
+
   it('diagnoses request construction failure before fetching', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const fetchMock = vi.fn();
@@ -71,7 +102,7 @@ describe('mail relay protocol', () => {
 
     await expect(
       submitRelayMail(
-        { MAIL_RELAY_URL: 'https://relay.test', MAIL_RELAY_SECRET: 'relay-secret' } as never,
+        { MAIL_RELAY_URL: validRelayUrl, MAIL_RELAY_SECRET: 'relay-secret' } as never,
         circular,
         { requestId: 'req-build' },
       ),
@@ -92,7 +123,7 @@ describe('mail relay protocol', () => {
 
     await expect(
       submitRelayMail(
-        { MAIL_RELAY_URL: 'https://relay.test', MAIL_RELAY_SECRET: 'relay-secret' } as never,
+        { MAIL_RELAY_URL: validRelayUrl, MAIL_RELAY_SECRET: 'relay-secret' } as never,
         message,
         { requestId: 'req-sign' },
       ),
@@ -112,7 +143,7 @@ describe('mail relay protocol', () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(error));
     await submitRelayMail(
-      { MAIL_RELAY_URL: 'https://secret.example/exec', MAIL_RELAY_SECRET: 'super-secret' } as never,
+      { MAIL_RELAY_URL: validRelayUrl, MAIL_RELAY_SECRET: 'super-secret' } as never,
       message,
       { requestId: 'req-fetch', notificationId: 'ntf-1', attemptId: 'nat-1' },
     );
@@ -150,7 +181,7 @@ describe('mail relay protocol', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response));
     await expect(
       submitRelayMail(
-        { MAIL_RELAY_URL: 'https://relay.test', MAIL_RELAY_SECRET: 'relay-secret' } as never,
+        { MAIL_RELAY_URL: validRelayUrl, MAIL_RELAY_SECRET: 'relay-secret' } as never,
         message,
         { requestId: 'req-response' },
       ),

@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "qurantrack",
+  "name": "qurantrack-preview",
   "main": "worker/index.ts",
   "compatibility_date": "2026-07-23",
   "assets": {
@@ -43,6 +43,7 @@
       ],
     },
     "production": {
+      "name": "qurantrack",
       "vars": {
         "APP_VERSION": "0.3.0",
         "ENVIRONMENT": "production",
