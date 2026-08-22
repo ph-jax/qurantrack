@@ -20,7 +20,147 @@ const message = {
 };
 
 describe('mail relay protocol', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ['missing URL binding', {}, 'relay_config', 'missing_binding'],
+    [
+      'missing secret binding',
+      { MAIL_RELAY_URL: 'https://relay.test' },
+      'relay_config',
+      'missing_binding',
+    ],
+    [
+      'invalid URL binding',
+      { MAIL_RELAY_URL: 'not a relay URL', MAIL_RELAY_SECRET: 'relay-secret' },
+      'relay_config',
+      'invalid_url',
+    ],
+  ])('diagnoses %s without fetching', async (_label, env, stage, category) => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      submitRelayMail(env as never, message, {
+        requestId: 'req-safe',
+        notificationId: 'ntf-safe',
+        attemptId: 'nat-safe',
+      }),
+    ).resolves.toEqual({ status: 'ambiguous' });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith('mail_relay_failure', {
+      stage,
+      category,
+      requestId: 'req-safe',
+      notificationId: 'ntf-safe',
+      attemptId: 'nat-safe',
+    });
+  });
+
+  it('diagnoses request construction failure before fetching', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const circular = { ...message } as typeof message & { cycle?: unknown };
+    circular.cycle = circular;
+
+    await expect(
+      submitRelayMail(
+        { MAIL_RELAY_URL: 'https://relay.test', MAIL_RELAY_SECRET: 'relay-secret' } as never,
+        circular,
+        { requestId: 'req-build' },
+      ),
+    ).resolves.toEqual({ status: 'ambiguous' });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith('mail_relay_failure', {
+      stage: 'request_build',
+      category: 'unknown',
+      requestId: 'req-build',
+    });
+  });
+
+  it('diagnoses signing failure before fetching', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(crypto.subtle, 'sign').mockRejectedValue(new Error('sensitive crypto detail'));
+
+    await expect(
+      submitRelayMail(
+        { MAIL_RELAY_URL: 'https://relay.test', MAIL_RELAY_SECRET: 'relay-secret' } as never,
+        message,
+        { requestId: 'req-sign' },
+      ),
+    ).resolves.toEqual({ status: 'ambiguous' });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith('mail_relay_failure', {
+      stage: 'signing',
+      category: 'crypto_failure',
+      requestId: 'req-sign',
+    });
+  });
+
+  it.each([
+    ['transport failure', new TypeError('secret URL and recipient'), 'transport_failure'],
+    ['timeout', new DOMException('secret URL and recipient', 'AbortError'), 'timeout'],
+  ])('emits a privacy-safe diagnostic for %s', async (_label, error, category) => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(error));
+    await submitRelayMail(
+      { MAIL_RELAY_URL: 'https://secret.example/exec', MAIL_RELAY_SECRET: 'super-secret' } as never,
+      message,
+      { requestId: 'req-fetch', notificationId: 'ntf-1', attemptId: 'nat-1' },
+    );
+    expect(log).toHaveBeenCalledWith('mail_relay_failure', {
+      stage: 'outbound_fetch',
+      category,
+      requestId: 'req-fetch',
+      notificationId: 'ntf-1',
+      attemptId: 'nat-1',
+    });
+    const diagnostics = JSON.stringify(log.mock.calls);
+    for (const sensitive of [
+      'secret.example',
+      'super-secret',
+      'staff@example.com',
+      'Sign in',
+      'Open QuranTrack',
+      'secret URL and recipient',
+    ]) {
+      expect(diagnostics).not.toContain(sensitive);
+    }
+  });
+
+  it.each([
+    [
+      'response read failure',
+      { text: () => Promise.reject(new Error('private')) },
+      'response_read',
+      'transport_failure',
+    ],
+    ['HTTP failure', new Response('private', { status: 503 }), 'response_read', 'http_failure'],
+    ['malformed response', new Response('not-json'), 'response_parse', 'malformed_response'],
+  ])('diagnoses %s as ambiguous', async (_label, response, stage, category) => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response));
+    await expect(
+      submitRelayMail(
+        { MAIL_RELAY_URL: 'https://relay.test', MAIL_RELAY_SECRET: 'relay-secret' } as never,
+        message,
+        { requestId: 'req-response' },
+      ),
+    ).resolves.toEqual({ status: 'ambiguous' });
+    expect(log).toHaveBeenCalledWith('mail_relay_failure', {
+      stage,
+      category,
+      requestId: 'req-response',
+    });
+  });
 
   it('places timestamp nonce and signature in query parameters for Apps Script', async () => {
     vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000123');

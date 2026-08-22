@@ -99,34 +99,135 @@ export const SAFE_RELAY_REJECTION_CODES = [
 export type SafeRelayRejectionCode = (typeof SAFE_RELAY_REJECTION_CODES)[number];
 const PRE_SEND_REJECTION_CODES = new Set<string>(SAFE_RELAY_REJECTION_CODES);
 
+export const RELAY_DIAGNOSTIC_STAGES = [
+  'relay_config',
+  'request_build',
+  'signing',
+  'outbound_fetch',
+  'response_read',
+  'response_parse',
+] as const;
+export type RelayDiagnosticStage = (typeof RELAY_DIAGNOSTIC_STAGES)[number];
+export type RelayErrorCategory =
+  | 'missing_binding'
+  | 'invalid_url'
+  | 'crypto_failure'
+  | 'transport_failure'
+  | 'timeout'
+  | 'http_failure'
+  | 'malformed_response'
+  | 'unknown';
+
+export interface RelayDiagnosticContext {
+  requestId?: string;
+  notificationId?: string;
+  attemptId?: string;
+}
+
+function recordRelayDiagnostic(
+  stage: RelayDiagnosticStage,
+  category: RelayErrorCategory,
+  context: RelayDiagnosticContext,
+) {
+  // This deliberately uses an allowlisted object. Never add the exception, URL, message, or
+  // request/response data: relay diagnostics can be inspected by operators with broad access.
+  console.error('mail_relay_failure', {
+    stage,
+    category,
+    ...(context.requestId ? { requestId: context.requestId } : {}),
+    ...(context.notificationId ? { notificationId: context.notificationId } : {}),
+    ...(context.attemptId ? { attemptId: context.attemptId } : {}),
+  });
+}
+
+function ambiguousFailure(
+  stage: RelayDiagnosticStage,
+  category: RelayErrorCategory,
+  context: RelayDiagnosticContext,
+): RelaySubmissionResult {
+  recordRelayDiagnostic(stage, category, context);
+  return { status: 'ambiguous' };
+}
+
 export async function submitRelayMail(
   env: Env,
   message: RelayMessage,
+  context: RelayDiagnosticContext = {},
 ): Promise<RelaySubmissionResult> {
-  const url = requireSecret(env.MAIL_RELAY_URL, 'MAIL_RELAY_URL');
-  const secret = requireSecret(env.MAIL_RELAY_SECRET, 'MAIL_RELAY_SECRET');
-  const timestamp = String(Math.floor(Date.now() / 1000));
-  const nonce = crypto.randomUUID();
-  const body = JSON.stringify(message);
-  const signature = await signRelayRequest(secret, timestamp, nonce, body);
+  let url: string;
+  let secret: string;
+  try {
+    url = requireSecret(env.MAIL_RELAY_URL, 'MAIL_RELAY_URL');
+    secret = requireSecret(env.MAIL_RELAY_SECRET, 'MAIL_RELAY_SECRET');
+  } catch {
+    return ambiguousFailure('relay_config', 'missing_binding', context);
+  }
+  try {
+    // Parse before signing so an invalid binding is identified before any outbound operation.
+    url = new URL(url).toString();
+  } catch {
+    return ambiguousFailure('relay_config', 'invalid_url', context);
+  }
+  let timestamp: string;
+  let nonce: string;
+  let body: string;
+  try {
+    timestamp = String(Math.floor(Date.now() / 1000));
+    nonce = crypto.randomUUID();
+    body = JSON.stringify(message);
+  } catch {
+    return ambiguousFailure('request_build', 'unknown', context);
+  }
+  let signature: string;
+  try {
+    signature = await signRelayRequest(secret, timestamp, nonce, body);
+  } catch {
+    return ambiguousFailure('signing', 'crypto_failure', context);
+  }
+  let authenticatedUrl: string;
+  try {
+    authenticatedUrl = relayUrlWithAuth(url, timestamp, nonce, signature);
+  } catch {
+    return ambiguousFailure('request_build', 'invalid_url', context);
+  }
   let response: Response;
   try {
-    response = await fetch(relayUrlWithAuth(url, timestamp, nonce, signature), {
+    response = await fetch(authenticatedUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body,
     });
-  } catch {
-    return { status: 'ambiguous' };
+  } catch (error) {
+    return ambiguousFailure(
+      'outbound_fetch',
+      error instanceof DOMException && error.name === 'AbortError'
+        ? 'timeout'
+        : 'transport_failure',
+      context,
+    );
   }
-  const json = (await response.json().catch(() => null)) as RelayResponse | null;
-  if (response.ok && json?.ok === true) return { status: 'accepted' };
-  if (response.ok && json?.ok === false && PRE_SEND_REJECTION_CODES.has(json.error ?? ''))
+  let responseBody: string;
+  try {
+    responseBody = await response.text();
+  } catch {
+    return ambiguousFailure('response_read', 'transport_failure', context);
+  }
+  if (!response.ok) {
+    return ambiguousFailure('response_read', 'http_failure', context);
+  }
+  let json: RelayResponse;
+  try {
+    json = JSON.parse(responseBody) as RelayResponse;
+  } catch {
+    return ambiguousFailure('response_parse', 'malformed_response', context);
+  }
+  if (json?.ok === true) return { status: 'accepted' };
+  if (json?.ok === false && PRE_SEND_REJECTION_CODES.has(json.error ?? ''))
     return {
       status: 'rejected_before_send',
       rejectionCode: json.error as SafeRelayRejectionCode,
     };
-  return { status: 'ambiguous' };
+  return ambiguousFailure('response_parse', 'malformed_response', context);
 }
 
 export async function sendRelayMail(env: Env, message: RelayMessage): Promise<void> {

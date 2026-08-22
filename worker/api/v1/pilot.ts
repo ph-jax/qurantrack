@@ -1801,15 +1801,19 @@ async function submitHomeworkNotifications(c: Ctx, revisionId: string, onlyLogId
     const htmlBody = `<h1>${esc(labels.heading)}</h1><p>${esc(revision.org_name)}</p><p><strong>${esc(labels.student)}:</strong> ${esc(revision.student_name)}</p><p><strong>${esc(labels.date)}:</strong> ${esc(revision.update_date)}</p><p><strong>${esc(labels.class)}:</strong> ${esc(revision.class_name || '')}</p><p><strong>${esc(labels.teacher)}:</strong> ${esc(revision.teacher_name || '')}</p><p><strong>${esc(labels.homework)}:</strong> ${esc(revision.new_homework || '')}</p>`;
     let relay: Awaited<ReturnType<typeof submitRelayMail>>;
     try {
-      relay = await submitRelayMail(c.env, {
-        to: recipient.email,
-        fromAlias: sender.fromAlias,
-        senderName: sender.senderName,
-        replyTo: sender.replyTo,
-        subject,
-        text: textBody,
-        html: htmlBody,
-      });
+      relay = await submitRelayMail(
+        c.env,
+        {
+          to: recipient.email,
+          fromAlias: sender.fromAlias,
+          senderName: sender.senderName,
+          replyTo: sender.replyTo,
+          subject,
+          text: textBody,
+          html: htmlBody,
+        },
+        { requestId: c.get('requestId'), notificationId: logId, attemptId },
+      );
     } catch {
       relay = { status: 'ambiguous' };
     }
@@ -2108,15 +2112,19 @@ async function submitNotifications(c: Ctx, progressId: string, retry: boolean, o
     const data = { ...pu, items };
     let relayResult: Awaited<ReturnType<typeof submitRelayMail>>;
     try {
-      relayResult = await submitRelayMail(c.env, {
-        to: recipient.email,
-        fromAlias: sender.fromAlias,
-        senderName: sender.senderName,
-        replyTo: sender.replyTo,
-        subject,
-        text: emailText(locale, data),
-        html: emailHtml(locale, data),
-      });
+      relayResult = await submitRelayMail(
+        c.env,
+        {
+          to: recipient.email,
+          fromAlias: sender.fromAlias,
+          senderName: sender.senderName,
+          replyTo: sender.replyTo,
+          subject,
+          text: emailText(locale, data),
+          html: emailHtml(locale, data),
+        },
+        { requestId: c.get('requestId'), notificationId: logId, attemptId },
+      );
     } catch {
       relayResult = { status: 'ambiguous' };
     }
