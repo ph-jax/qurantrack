@@ -29,7 +29,7 @@ const env = (db: SqliteD1) =>
     TOKEN_HASH_PEPPER: 'pepper',
     PASSWORD_HASH_PEPPER: 'password-pepper',
     APP_BASE_URL: 'https://app.test',
-    MAIL_RELAY_URL: 'https://relay.test',
+    MAIL_RELAY_URL: 'https://script.google.com/macros/s/test-deployment/exec',
     MAIL_RELAY_SECRET: 'relay-secret',
     MAIL_DEFAULT_FROM_ALIAS: 'sender@example.test',
     MAIL_APPROVED_FROM_ALIASES: 'sender@example.test',

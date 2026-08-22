@@ -19,7 +19,7 @@ const env = (db: SqliteD1) => ({
   DB: db as unknown as D1Database,
   MAIL_DEFAULT_FROM_ALIAS: 'noreply@example.com',
   MAIL_APPROVED_FROM_ALIASES: 'noreply@example.com',
-  MAIL_RELAY_URL: 'https://relay.example.com',
+  MAIL_RELAY_URL: 'https://script.google.com/macros/s/test-deployment/exec',
   MAIL_RELAY_SECRET: 'secret',
 });
 function auth(
