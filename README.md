@@ -31,6 +31,7 @@ The Phase 2.5 visual direction is approved. The code-native QT monogram remains 
 | `npm run dev`                | Start local Vite and Cloudflare Worker development.             |
 | `npm run build`              | Type-check and create the local/preview-configured build.       |
 | `npm run build:staging`      | Build staging with its Wrangler env and fictional UI preview.   |
+| `npm run build:production`   | Build only with the explicit production Wrangler environment.   |
 | `npm run preview`            | Preview the production build locally.                           |
 | `npm run lint`               | Run ESLint.                                                     |
 | `npm run format`             | Format all supported files with Prettier.                       |
@@ -45,8 +46,9 @@ The Phase 2.5 visual direction is approved. The code-native QT monogram remains 
 | `npm run db:seed:local`      | Intentionally load safe fictional demo data into local D1 only. |
 | `npm run db:reset:local`     | Remove local D1 state and reapply migrations.                   |
 | `npm run db:inspect:local`   | List local D1 schema tables and indexes.                        |
-| `npm run deploy`             | Build and deploy with Wrangler.                                 |
+| `npm run deploy`             | Refuse unsafe, unqualified deployment.                          |
 | `npm run deploy:staging`     | Build and deploy staging via Vite's redirected Wrangler config. |
+| `npm run deploy:production`  | Build/deploy the explicit production config (operators only).   |
 
 ## Local setup
 
@@ -91,9 +93,14 @@ Configure the connected staging build exactly as follows:
 
 ```text
 Build command: npm run build:staging
-Deploy command: npx wrangler deploy --config dist/qurantrack/wrangler.json --keep-vars
+Deploy command: npx wrangler deploy --config dist/qurantrack_preview/wrangler.json --keep-vars
 Root directory: /
 ```
+
+Set `VITE_TURNSTILE_SITE_KEY` as a required staging build variable. It is the public Turnstile site
+key embedded in the frontend; never configure or expose `TURNSTILE_SECRET_KEY` in the build
+environment. `build:staging` fails safely before compilation when the public site key is missing and
+does not print its value.
 
 `build:staging` selects the staging Wrangler environment and produces a redirected configuration for Worker `qurantrack-staging`, D1 database `qurantrack-staging` (`bf824e5e-a67b-4592-950b-16d01cbd5689`), `ENVIRONMENT=staging`, and `APP_BASE_URL=https://qurantrack-staging.samet-2fb.workers.dev`. Do not substitute a plain `npm run build`: that command can emit the local `qurantrack-preview` binding with the placeholder `00000000-...` D1 ID.
 
@@ -103,6 +110,13 @@ The deploy command's `--keep-vars` preserves dashboard-managed non-secret mail v
 - `MAIL_RELAY_SECRET`
 - `MAIL_DEFAULT_FROM_ALIAS`
 - `MAIL_APPROVED_FROM_ALIASES`
+
+Pull requests must use the repository validation workflow, which runs `build:staging` without
+Cloudflare credentials and performs no deployment. The unqualified Wrangler target is intentionally
+named `qurantrack-preview`, and `npm run deploy` intentionally fails. A connected Cloudflare project
+must target only `qurantrack-staging` with the commands above; it must not attach preview branches to
+`qurantrack`. Production deployment is an operator-only, explicitly selected command and must never
+be configured as a pull-request preview command.
 
 Secrets remain managed through Cloudflare and must never be committed. An invitation with database delivery status `sent` was accepted by the configured relay for submission; it does **not** confirm inbox delivery.
 

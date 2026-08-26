@@ -1,0 +1,31 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build:staging
+        env:
+          # Cloudflare's public test site key; never put TURNSTILE_SECRET_KEY in a frontend build.
+          VITE_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
+
+  # Deployments are deliberately absent. In particular, pull_request code must never run
+  # Wrangler with the top-level `qurantrack` target or receive Cloudflare credentials.

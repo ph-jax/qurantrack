@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 
@@ -18,6 +19,7 @@ interface WranglerConfig {
       d1_databases?: Array<{ database_name: string; database_id: string }>;
     };
     production?: {
+      name?: string;
       vars?: Record<string, string>;
     };
   };
@@ -49,9 +51,19 @@ describe('Wrangler routing configuration', () => {
   it('deploys only the staging build output while preserving dashboard variables', () => {
     const command = packageJson.scripts['deploy:staging'];
     expect(command).toBe(
-      'npm run build:staging && wrangler deploy --config dist/qurantrack/wrangler.json --keep-vars',
+      'npm run build:staging && wrangler deploy --config dist/qurantrack_preview/wrangler.json --keep-vars',
     );
     expect(command).not.toContain('production');
+  });
+
+  it('prevents unqualified and pull-request builds from targeting production', () => {
+    expect(config.name).toBe('qurantrack-preview');
+    expect(config.env?.production?.name).toBe('qurantrack');
+    expect(packageJson.scripts.deploy).toContain('Unqualified deploy disabled');
+    expect(packageJson.scripts['build:production']).toContain('CLOUDFLARE_ENV=production');
+    expect(packageJson.scripts['deploy:production']).toBe(
+      'npm run build:production && wrangler deploy --config dist/qurantrack_preview/wrangler.json --keep-vars',
+    );
   });
 
   it('binds the staging build to the real staging Worker and D1, never preview placeholders', () => {
@@ -68,5 +80,22 @@ describe('Wrangler routing configuration', () => {
     ]);
     expect(staging?.d1_databases?.[0]?.database_name).not.toBe('qurantrack-preview');
     expect(staging?.d1_databases?.[0]?.database_id).not.toMatch(/^00000000-/);
+  });
+
+  it('requires the public Turnstile site key without exposing it', () => {
+    const script = resolve(process.cwd(), 'scripts/validate-staging-build-env.mjs');
+    const missing = spawnSync(process.execPath, [script], { encoding: 'utf8', env: {} });
+    expect(missing.status).not.toBe(0);
+    expect(`${missing.stdout}${missing.stderr}`).toContain(
+      'VITE_TURNSTILE_SITE_KEY is required for staging builds',
+    );
+
+    const publicSiteKey = 'public-site-key-fixture';
+    const configured = spawnSync(process.execPath, [script], {
+      encoding: 'utf8',
+      env: { VITE_TURNSTILE_SITE_KEY: publicSiteKey },
+    });
+    expect(configured.status).toBe(0);
+    expect(`${configured.stdout}${configured.stderr}`).not.toContain(publicSiteKey);
   });
 });

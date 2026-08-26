@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:staging": "CLOUDFLARE_ENV=staging VITE_ENABLE_UI_PREVIEW=true npm run build",
+    "build:staging": "node scripts/validate-staging-build-env.mjs && CLOUDFLARE_ENV=staging VITE_ENABLE_UI_PREVIEW=true npm run build",
+    "build:production": "CLOUDFLARE_ENV=production npm run build",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier . --write",
@@ -19,8 +20,9 @@
     "db:migrate:local": "wrangler d1 migrations apply qurantrack-preview --local",
     "db:migrate:remote": "wrangler d1 migrations apply qurantrack-production --env production --remote",
     "db:seed:local": "wrangler d1 execute qurantrack-preview --local --file seeds/demo_seed.sql",
-    "deploy": "npm run build && wrangler deploy",
-    "deploy:staging": "npm run build:staging && wrangler deploy --config dist/qurantrack/wrangler.json --keep-vars",
+    "deploy": "node -e \"throw new Error('Unqualified deploy disabled; choose deploy:staging or deploy:production explicitly')\"",
+    "deploy:staging": "npm run build:staging && wrangler deploy --config dist/qurantrack_preview/wrangler.json --keep-vars",
+    "deploy:production": "npm run build:production && wrangler deploy --config dist/qurantrack_preview/wrangler.json --keep-vars",
     "db:migrate:staging": "wrangler d1 migrations apply qurantrack-staging --env staging --remote",
     "db:reset:local": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate:local",
     "db:inspect:local": "wrangler d1 execute qurantrack-preview --local --command \"SELECT name, type FROM sqlite_master WHERE type IN ('table', 'index') ORDER BY type, name;\""
