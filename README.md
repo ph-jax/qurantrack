@@ -97,6 +97,11 @@ Deploy command: npx wrangler deploy --config dist/qurantrack_preview/wrangler.js
 Root directory: /
 ```
 
+Set `VITE_TURNSTILE_SITE_KEY` as a required staging build variable. It is the public Turnstile site
+key embedded in the frontend; never configure or expose `TURNSTILE_SECRET_KEY` in the build
+environment. `build:staging` fails safely before compilation when the public site key is missing and
+does not print its value.
+
 `build:staging` selects the staging Wrangler environment and produces a redirected configuration for Worker `qurantrack-staging`, D1 database `qurantrack-staging` (`bf824e5e-a67b-4592-950b-16d01cbd5689`), `ENVIRONMENT=staging`, and `APP_BASE_URL=https://qurantrack-staging.samet-2fb.workers.dev`. Do not substitute a plain `npm run build`: that command can emit the local `qurantrack-preview` binding with the placeholder `00000000-...` D1 ID.
 
 The deploy command's `--keep-vars` preserves dashboard-managed non-secret mail variables. Configure only these required mail variable names through Cloudflare; never commit their real values:

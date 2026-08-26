@@ -23,6 +23,9 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build:staging
+        env:
+          # Cloudflare's public test site key; never put TURNSTILE_SECRET_KEY in a frontend build.
+          VITE_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
 
   # Deployments are deliberately absent. In particular, pull_request code must never run
   # Wrangler with the top-level `qurantrack` target or receive Cloudflare credentials.

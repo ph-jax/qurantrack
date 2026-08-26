@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 
@@ -79,5 +80,22 @@ describe('Wrangler routing configuration', () => {
     ]);
     expect(staging?.d1_databases?.[0]?.database_name).not.toBe('qurantrack-preview');
     expect(staging?.d1_databases?.[0]?.database_id).not.toMatch(/^00000000-/);
+  });
+
+  it('requires the public Turnstile site key without exposing it', () => {
+    const script = resolve(process.cwd(), 'scripts/validate-staging-build-env.mjs');
+    const missing = spawnSync(process.execPath, [script], { encoding: 'utf8', env: {} });
+    expect(missing.status).not.toBe(0);
+    expect(`${missing.stdout}${missing.stderr}`).toContain(
+      'VITE_TURNSTILE_SITE_KEY is required for staging builds',
+    );
+
+    const publicSiteKey = 'public-site-key-fixture';
+    const configured = spawnSync(process.execPath, [script], {
+      encoding: 'utf8',
+      env: { VITE_TURNSTILE_SITE_KEY: publicSiteKey },
+    });
+    expect(configured.status).toBe(0);
+    expect(`${configured.stdout}${configured.stderr}`).not.toContain(publicSiteKey);
   });
 });

@@ -37,6 +37,7 @@ function doPost(e) {
       Utilities.computeHmacSha256Signature(
         `${timestampText}.${nonce}.${body}`,
         staticConfig.secret,
+        Utilities.Charset.UTF_8,
       ),
     ).replace(/=+$/, '');
     if (!constantTimeEqual_(expected, signature))

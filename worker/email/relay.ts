@@ -80,7 +80,7 @@ export type RelaySubmissionResult =
 
 // Only errors returned before GmailApp.sendEmail is reached are safe to retry. Replay is excluded:
 // it may describe an earlier request whose delivery result is unknown.
-export const SAFE_RELAY_REJECTION_CODES = [
+export const RELAY_PROTOCOL_PRE_SEND_REJECTION_CODES = [
   'missing_auth',
   'expired',
   'invalid_nonce',
@@ -96,8 +96,18 @@ export const SAFE_RELAY_REJECTION_CODES = [
   'invalid_html_body',
   'alias_not_allowed',
 ] as const;
+const LOCAL_PRE_FETCH_REJECTION_CODES = [
+  'missing_binding',
+  'invalid_url',
+  'request_construction_failure',
+  'crypto_failure',
+] as const;
+export const SAFE_RELAY_REJECTION_CODES = [
+  ...RELAY_PROTOCOL_PRE_SEND_REJECTION_CODES,
+  ...LOCAL_PRE_FETCH_REJECTION_CODES,
+] as const;
 export type SafeRelayRejectionCode = (typeof SAFE_RELAY_REJECTION_CODES)[number];
-const PRE_SEND_REJECTION_CODES = new Set<string>(SAFE_RELAY_REJECTION_CODES);
+const PRE_SEND_REJECTION_CODES = new Set<string>(RELAY_PROTOCOL_PRE_SEND_REJECTION_CODES);
 
 export const RELAY_DIAGNOSTIC_STAGES = [
   'relay_config',
@@ -162,6 +172,16 @@ function ambiguousFailure(
   return { status: 'ambiguous' };
 }
 
+function rejectedBeforeSend(
+  stage: RelayDiagnosticStage,
+  category: RelayErrorCategory,
+  rejectionCode: SafeRelayRejectionCode,
+  context: RelayDiagnosticContext,
+): RelaySubmissionResult {
+  recordRelayDiagnostic(stage, category, context);
+  return { status: 'rejected_before_send', rejectionCode };
+}
+
 export async function submitRelayMail(
   env: Env,
   message: RelayMessage,
@@ -173,18 +193,18 @@ export async function submitRelayMail(
     url = requireSecret(env.MAIL_RELAY_URL, 'MAIL_RELAY_URL');
     secret = requireSecret(env.MAIL_RELAY_SECRET, 'MAIL_RELAY_SECRET');
   } catch {
-    return ambiguousFailure('relay_config', 'missing_binding', context);
+    return rejectedBeforeSend('relay_config', 'missing_binding', 'missing_binding', context);
   }
   try {
     // Validate the complete trusted endpoint before building or signing attacker-controlled data.
     // The binding must be the canonical HTTPS Apps Script Web App /exec URL.
     const parsedUrl = new URL(url);
     if (!isAuthorizedAppsScriptRelayUrl(parsedUrl)) {
-      return ambiguousFailure('relay_config', 'invalid_url', context);
+      return rejectedBeforeSend('relay_config', 'invalid_url', 'invalid_url', context);
     }
     url = parsedUrl.toString();
   } catch {
-    return ambiguousFailure('relay_config', 'invalid_url', context);
+    return rejectedBeforeSend('relay_config', 'invalid_url', 'invalid_url', context);
   }
   let timestamp: string;
   let nonce: string;
@@ -194,19 +214,19 @@ export async function submitRelayMail(
     nonce = crypto.randomUUID();
     body = JSON.stringify(message);
   } catch {
-    return ambiguousFailure('request_build', 'unknown', context);
+    return rejectedBeforeSend('request_build', 'unknown', 'request_construction_failure', context);
   }
   let signature: string;
   try {
     signature = await signRelayRequest(secret, timestamp, nonce, body);
   } catch {
-    return ambiguousFailure('signing', 'crypto_failure', context);
+    return rejectedBeforeSend('signing', 'crypto_failure', 'crypto_failure', context);
   }
   let authenticatedUrl: string;
   try {
     authenticatedUrl = relayUrlWithAuth(url, timestamp, nonce, signature);
   } catch {
-    return ambiguousFailure('request_build', 'invalid_url', context);
+    return rejectedBeforeSend('request_build', 'invalid_url', 'invalid_url', context);
   }
   let response: Response;
   try {

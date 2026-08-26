@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:staging": "CLOUDFLARE_ENV=staging VITE_ENABLE_UI_PREVIEW=true npm run build",
+    "build:staging": "node scripts/validate-staging-build-env.mjs && CLOUDFLARE_ENV=staging VITE_ENABLE_UI_PREVIEW=true npm run build",
     "build:production": "CLOUDFLARE_ENV=production npm run build",
     "preview": "vite preview",
     "lint": "eslint .",

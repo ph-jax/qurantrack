@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   relayResponseSucceeded,
+  RELAY_PROTOCOL_PRE_SEND_REJECTION_CODES,
   relayUrlWithAuth,
   SAFE_RELAY_REJECTION_CODES,
   sendRelayMail,
@@ -27,11 +28,12 @@ describe('mail relay protocol', () => {
   });
 
   it.each([
-    ['missing URL binding', {}, 'relay_config', 'missing_binding'],
+    ['missing URL binding', {}, 'relay_config', 'missing_binding', 'missing_binding'],
     [
       'missing secret binding',
       { MAIL_RELAY_URL: validRelayUrl },
       'relay_config',
+      'missing_binding',
       'missing_binding',
     ],
     [
@@ -39,8 +41,9 @@ describe('mail relay protocol', () => {
       { MAIL_RELAY_URL: 'not a relay URL', MAIL_RELAY_SECRET: 'relay-secret' },
       'relay_config',
       'invalid_url',
+      'invalid_url',
     ],
-  ])('diagnoses %s without fetching', async (_label, env, stage, category) => {
+  ])('safely rejects %s without fetching', async (_label, env, stage, category, rejectionCode) => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
@@ -51,9 +54,10 @@ describe('mail relay protocol', () => {
         notificationId: 'ntf-safe',
         attemptId: 'nat-safe',
       }),
-    ).resolves.toEqual({ status: 'ambiguous' });
+    ).resolves.toEqual({ status: 'rejected_before_send', rejectionCode });
 
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(SAFE_RELAY_REJECTION_CODES).toContain(rejectionCode);
     expect(log).toHaveBeenCalledWith('mail_relay_failure', {
       stage,
       category,
@@ -82,7 +86,7 @@ describe('mail relay protocol', () => {
         message,
         { requestId: 'req-invalid-url' },
       ),
-    ).resolves.toEqual({ status: 'ambiguous' });
+    ).resolves.toEqual({ status: 'rejected_before_send', rejectionCode: 'invalid_url' });
 
     expect(signMock).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -106,7 +110,10 @@ describe('mail relay protocol', () => {
         circular,
         { requestId: 'req-build' },
       ),
-    ).resolves.toEqual({ status: 'ambiguous' });
+    ).resolves.toEqual({
+      status: 'rejected_before_send',
+      rejectionCode: 'request_construction_failure',
+    });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith('mail_relay_failure', {
       stage: 'request_build',
@@ -127,7 +134,7 @@ describe('mail relay protocol', () => {
         message,
         { requestId: 'req-sign' },
       ),
-    ).resolves.toEqual({ status: 'ambiguous' });
+    ).resolves.toEqual({ status: 'rejected_before_send', rejectionCode: 'crypto_failure' });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith('mail_relay_failure', {
       stage: 'signing',
@@ -302,7 +309,7 @@ describe('mail relay protocol', () => {
     await expect(submitRelayMail(env, message)).resolves.toEqual({ status: 'ambiguous' });
   });
 
-  it.each(SAFE_RELAY_REJECTION_CODES)(
+  it.each(RELAY_PROTOCOL_PRE_SEND_REJECTION_CODES)(
     'preserves the exact allowlisted pre-send rejection %s',
     async (rejectionCode) => {
       vi.stubGlobal(
