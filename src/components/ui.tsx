@@ -313,7 +313,7 @@ function Overlay({
   closeLabel,
 }: {
   children: ReactNode;
-  sheet?: boolean;
+  sheet?: false | 'start' | 'end';
   closeLabel: string;
 }) {
   return (
@@ -323,7 +323,10 @@ function Overlay({
         className={cn(
           'fixed z-50 border border-border bg-surface shadow-elevated focus:outline-none',
           sheet
-            ? 'inset-y-0 start-0 w-[min(88vw,22rem)] p-5'
+            ? cn(
+                'inset-y-0 w-[min(94vw,32rem)] overflow-y-auto p-5 sm:p-6',
+                sheet === 'start' ? 'start-0' : 'end-0',
+              )
             : 'start-1/2 top-1/2 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl p-6',
         )}
       >
@@ -370,16 +373,18 @@ export function Sheet({
   title,
   children,
   closeLabel,
+  side = 'start',
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   title: string;
   children: ReactNode;
   closeLabel: string;
+  side?: 'start' | 'end';
 }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <Overlay sheet closeLabel={closeLabel}>
+      <Overlay sheet={side} closeLabel={closeLabel}>
         <DialogPrimitive.Title className="pe-10 text-lg font-bold">{title}</DialogPrimitive.Title>
         <DialogPrimitive.Description className="sr-only">{title}</DialogPrimitive.Description>
         {children}

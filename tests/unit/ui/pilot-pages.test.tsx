@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { I18nextProvider } from 'react-i18next';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +8,7 @@ import {
   ClassesPage,
   FamiliesPage,
   ProgressForm,
+  StudentProgressPage,
   StudentsPage,
   homeworkResultCode,
   HomeworkEditor,
@@ -83,11 +84,14 @@ describe('Pilot administrator editors', () => {
         </MemoryRouter>
       </I18nextProvider>,
     );
+    await user.click(await screen.findByRole('button', { name: 'Create class' }));
     const name = await screen.findByLabelText('Name');
     expect(name).toHaveValue('');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
     await user.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
     expect(screen.getByLabelText('Name')).toHaveValue('First Class');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await user.click(screen.getAllByRole('button', { name: 'Edit' })[1]);
     expect(screen.getByLabelText('Name')).toHaveValue('Second Class');
 
@@ -105,7 +109,9 @@ describe('Pilot administrator editors', () => {
 
     await user.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: 'Create class' }));
     expect(screen.getByLabelText('Name')).toHaveValue('');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await user.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
     expect(screen.getByLabelText('Name')).toHaveValue('First Class');
   });
@@ -790,6 +796,82 @@ describe('Pilot progress result lifecycle', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies[1].operationKey).not.toBe(secondKey);
+  });
+});
+
+describe('Student workspace presentation', () => {
+  beforeEach(() => {
+    void i18n.changeLanguage('en');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/v1/students/student-a/summary'))
+          return Response.json({
+            ok: true,
+            student: { id: 'student-a', display_name: 'Ayla Demir', active: 1 },
+            classes: [{ id: 'class-a', name: 'Cedar Class' }],
+            tracks: [
+              {
+                track_id: 'track-a',
+                track_name: 'Quran Reading',
+                level_name: 'Foundations',
+              },
+            ],
+            passed: [{ id: 'lesson-a', name: 'Arabic letters' }],
+            updates: [],
+            updateItems: [],
+            notifications: [],
+            lessons: [
+              {
+                id: 'lesson-a',
+                name: 'Arabic letters',
+                track_name: 'Quran Reading',
+                level_name: 'Foundations',
+              },
+            ],
+          });
+        if (url.endsWith('/api/v1/program'))
+          return Response.json({
+            ok: true,
+            tracks: [{ id: 'track-a', name: 'Quran Reading', active: 1 }],
+            levels: [{ id: 'level-a', track_id: 'track-a', name: 'Foundations', active: 1 }],
+          });
+        if (url.endsWith('/api/v1/pilot/setup-options'))
+          return Response.json({
+            ok: true,
+            guardians: [
+              { id: 'guardian-a', name: 'Deniz Demir', email: 'd@example.test', active: 1 },
+            ],
+            guardianLinks: [],
+          });
+        return Response.json({}, { status: 404 });
+      }),
+    );
+  });
+
+  it('uses tabs for context and a drawer for progress entry', async () => {
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={['/app/students/student-a']}>
+          <Routes>
+            <Route path="/app/students/:id" element={<StudentProgressPage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Ayla Demir' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Lesson')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Record progress' }));
+    expect(await screen.findByRole('dialog', { name: 'Record progress' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Lesson')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await user.click(screen.getByRole('tab', { name: 'Curriculum' }));
+    expect(screen.getByText('Curriculum assignment')).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Family' }));
+    expect(screen.getByText('Linked guardians')).toBeInTheDocument();
   });
 });
 

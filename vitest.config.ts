@@ -2,6 +2,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // Keep jsdom projects within the memory available to local and hosted CI runners.
+    maxWorkers: 4,
     projects: [
       {
         test: {

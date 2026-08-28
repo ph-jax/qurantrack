@@ -20,9 +20,15 @@ Organization accent values pass a strict six-digit hex validator before becoming
 
 ## Layout and navigation
 
-At desktop widths the persistent sidebar combines the QuranTrack identity, bounded organization identity, membership switcher, and role-aware navigation. Only the fictional `/ui-preview` experience shows a preview-data notice; the authenticated live application does not. A sticky top bar contains page identity, locale selector, and user menu. Content uses a generous but bounded maximum width.
+At desktop widths the persistent sidebar combines the QuranTrack identity and grouped, role-aware navigation. The sticky top bar contains the active organization or membership switcher, locale selector, and user menu. Only the fictional `/ui-preview` experience shows a preview-data notice; the authenticated live application does not. Content uses a generous but bounded maximum width.
 
-Below the desktop breakpoint the sidebar disappears. A 44px menu control opens a focus-managed Radix sheet with the same navigation. Labels and names truncate safely. Logical `start`, `end`, `margin-inline`, `padding-inline`, and border properties prepare the layout for RTL.
+Below the desktop breakpoint the same semantic navigation becomes a fixed, role-aware bottom bar for the primary daily destinations. Administrative destinations remain consolidated under Manage. Labels and names truncate safely. Logical `start`, `end`, `margin-inline`, `padding-inline`, and border properties prepare the layout for RTL.
+
+## Application interaction model
+
+The signed-in product opens on Today, a role-aware daily workspace built from live classes, students, and setup state. It emphasizes the next useful action instead of decorative aggregate metrics. Classes and students use compact browse views; selecting a student opens a persistent workspace with Overview, Progress, Curriculum, and role-gated Family tabs.
+
+Creation and editing happen in focus-managed right-side sheets so users keep their place in the underlying list or workspace. Destructive or consequential actions continue to use explicit confirmation. The separate Manage hub groups lower-frequency staff, family, program, notification, and settings work without crowding daily navigation. Existing API contracts and permission boundaries remain authoritative; the interface never infers access from hidden controls alone.
 
 ## Components and conventions
 
@@ -57,6 +63,6 @@ The route uses fictional in-memory examples and no production mutation client. P
 
 ## Approved direction and future branding
 
-- The warm-ivory/deep-teal palette, restrained gold usage, information density, radii, shadows, sidebar, mobile drawer, statistics, statuses, hierarchy, responsive cards, forms, and empty states are approved for the Phase 2.5 foundation.
+- The warm-ivory/deep-teal palette, restrained gold usage, information density, radii, shadows, grouped sidebar, mobile bottom navigation, workspace tabs, sheets, statuses, hierarchy, responsive cards, forms, and empty states are approved for the application foundation.
 - The QT monogram remains temporary until a final logo is separately designed and approved.
 - The scope of organization accents beyond identity elements remains a future product decision.

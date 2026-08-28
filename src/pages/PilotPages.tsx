@@ -1,8 +1,28 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import {
+  ArrowLeft,
+  ChevronRight,
+  GraduationCap,
+  MoreHorizontal,
+  Plus,
+  School,
+  UserPlus,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Alert, Badge, Button, Card, FormField, Input, Spinner, Textarea } from '../components/ui';
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  FormField,
+  Input,
+  SearchInput,
+  Sheet,
+  Spinner,
+  Textarea,
+} from '../components/ui';
 import { useSession } from '../features/auth/SessionProvider';
 import { pilotResultPresentation, requestNotificationAction } from '../features/pilot/results';
 
@@ -46,18 +66,29 @@ function useLoad(url: string | null) {
   }, [url]);
   return { data, error, reload };
 }
-function Header({ title, description }: { title: string; description: string }) {
+function Header({
+  title,
+  description,
+  actions,
+  eyebrow,
+}: {
+  title: string;
+  description: string;
+  actions?: ReactNode;
+  eyebrow?: string;
+}) {
   return (
-    <div className="page-header">
+    <header className="workspace-header">
       <div>
-        <h2>{title}</h2>
+        {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+        <h1>{title}</h1>
         <p>{description}</p>
       </div>
-    </div>
+      {actions && <div className="workspace-actions">{actions}</div>}
+    </header>
   );
 }
 function focusFirstEditor() {
-  window.scrollTo({ top: 0, behavior: 'smooth' });
   window.requestAnimationFrame(() => document.querySelector<HTMLElement>('form input')?.focus());
 }
 function SelectField({
@@ -209,6 +240,7 @@ function Editor({
   fields,
   onSave,
   onCancel,
+  plain = false,
 }: {
   title: string;
   initial?: Any;
@@ -222,6 +254,7 @@ function Editor({
   }[];
   onSave: (value: Any) => Promise<void>;
   onCancel?: () => void;
+  plain?: boolean;
 }) {
   const { t } = useTranslation();
   const [value, setValue] = useState<Any>({ active: true, ...initial });
@@ -236,69 +269,68 @@ function Editor({
       setState('error');
     }
   }
-  return (
-    <Card>
-      <form className="grid gap-3" onSubmit={submit}>
-        <h3 className="text-lg font-bold">{title}</h3>
-        {fields.map((field) =>
-          field.options ? (
-            <SelectField
-              key={field.key}
-              id={`${title}-${field.key}`}
-              label={field.label}
-              value={value[field.key] ?? ''}
-              disabled={field.disabled}
-              onChange={(next) => setValue({ ...value, [field.key]: next })}
-            >
-              <option value="">{t('pilot.select')}</option>
-              {field.options.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </SelectField>
-          ) : (
-            <FormField key={field.key} id={`${title}-${field.key}`} label={field.label}>
-              {field.textarea ? (
-                <Textarea
-                  id={`${title}-${field.key}`}
-                  value={value[field.key] ?? ''}
-                  onChange={(event) => setValue({ ...value, [field.key]: event.target.value })}
-                />
-              ) : (
-                <Input
-                  id={`${title}-${field.key}`}
-                  type={field.type}
-                  value={value[field.key] ?? ''}
-                  onChange={(event) => setValue({ ...value, [field.key]: event.target.value })}
-                />
-              )}
-            </FormField>
-          ),
-        )}
-        <label className="flex min-h-11 items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={!!value.active}
-            onChange={(event) => setValue({ ...value, active: event.target.checked })}
-          />
-          {t('pilot.active')}
-        </label>
-        <div className="flex flex-wrap gap-2">
-          <Button disabled={state === 'saving'}>
-            {state === 'saving' ? t('pilot.saving') : t('pilot.save')}
+  const content = (
+    <form className="grid gap-3" onSubmit={submit}>
+      <h3 className="text-lg font-bold">{title}</h3>
+      {fields.map((field) =>
+        field.options ? (
+          <SelectField
+            key={field.key}
+            id={`${title}-${field.key}`}
+            label={field.label}
+            value={value[field.key] ?? ''}
+            disabled={field.disabled}
+            onChange={(next) => setValue({ ...value, [field.key]: next })}
+          >
+            <option value="">{t('pilot.select')}</option>
+            {field.options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </SelectField>
+        ) : (
+          <FormField key={field.key} id={`${title}-${field.key}`} label={field.label}>
+            {field.textarea ? (
+              <Textarea
+                id={`${title}-${field.key}`}
+                value={value[field.key] ?? ''}
+                onChange={(event) => setValue({ ...value, [field.key]: event.target.value })}
+              />
+            ) : (
+              <Input
+                id={`${title}-${field.key}`}
+                type={field.type}
+                value={value[field.key] ?? ''}
+                onChange={(event) => setValue({ ...value, [field.key]: event.target.value })}
+              />
+            )}
+          </FormField>
+        ),
+      )}
+      <label className="flex min-h-11 items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={!!value.active}
+          onChange={(event) => setValue({ ...value, active: event.target.checked })}
+        />
+        {t('pilot.active')}
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={state === 'saving'}>
+          {state === 'saving' ? t('pilot.saving') : t('pilot.save')}
+        </Button>
+        {onCancel && (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            {t('pilot.cancel')}
           </Button>
-          {onCancel && (
-            <Button type="button" variant="secondary" onClick={onCancel}>
-              {t('pilot.cancel')}
-            </Button>
-          )}
-        </div>
-        {state === 'saved' && <Alert tone="success" title={t('pilot.saved')} />}
-        {state === 'error' && <Alert tone="error" title={t('pilot.saveError')} />}
-      </form>
-    </Card>
+        )}
+      </div>
+      {state === 'saved' && <Alert tone="success" title={t('pilot.saved')} />}
+      {state === 'error' && <Alert tone="error" title={t('pilot.saveError')} />}
+    </form>
   );
+  return plain ? content : <Card>{content}</Card>;
 }
 
 export function ClassesPage() {
@@ -308,34 +340,69 @@ export function ClassesPage() {
   const classes = useLoad('/api/v1/classes');
   const setup = useLoad(admin ? '/api/v1/pilot/setup-options' : null);
   const [editing, setEditing] = useState<Any | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const reload = async () => {
     await Promise.all([classes.reload(), setup.reload()]);
     setEditing(null);
+    setEditorOpen(false);
   };
   if (classes.error || (admin && setup.error))
     return <Alert tone="error" title={t('pilot.loadError')} />;
   if (!classes.data || (admin && !setup.data)) return <Spinner label={t('pilot.loading')} />;
   const options = setup.data ?? {};
+  const openCreate = () => {
+    setEditing(null);
+    setEditorOpen(true);
+    focusFirstEditor();
+  };
   return (
-    <div className="space-y-5">
-      <Header title={t('pilot.classes.title')} description={t('pilot.classes.description')} />
+    <div className="workspace-page">
+      <Header
+        title={t('pilot.classes.title')}
+        description={t('pilot.classes.description')}
+        actions={
+          admin ? (
+            <Button type="button" onClick={openCreate}>
+              <Plus className="size-4" aria-hidden />
+              {t('pilot.classes.create')}
+            </Button>
+          ) : undefined
+        }
+      />
       {admin && (
-        <Editor
-          key={editing?.id ?? 'create-class'}
+        <Sheet
+          open={editorOpen}
+          onOpenChange={(open) => {
+            setEditorOpen(open);
+            if (!open) setEditing(null);
+          }}
+          side="end"
           title={editing ? t('pilot.classes.edit') : t('pilot.classes.create')}
-          initial={editing ?? undefined}
-          fields={[
-            { key: 'name', label: t('pilot.name') },
-            { key: 'description', label: t('pilot.description'), textarea: true },
-            { key: 'meeting_schedule', label: t('pilot.schedule') },
-          ]}
-          onSave={(value) =>
-            api('/api/v1/classes', { method: 'POST', body: JSON.stringify(value) }).then(reload)
-          }
-          onCancel={editing ? () => setEditing(null) : undefined}
-        />
+          closeLabel={t('pilot.close')}
+        >
+          <div className="sheet-form">
+            <Editor
+              key={editing?.id ?? 'create-class'}
+              title={editing ? t('pilot.classes.edit') : t('pilot.classes.create')}
+              initial={editing ?? undefined}
+              fields={[
+                { key: 'name', label: t('pilot.name') },
+                { key: 'description', label: t('pilot.description'), textarea: true },
+                { key: 'meeting_schedule', label: t('pilot.schedule') },
+              ]}
+              onSave={(value) =>
+                api('/api/v1/classes', { method: 'POST', body: JSON.stringify(value) }).then(reload)
+              }
+              onCancel={() => {
+                setEditing(null);
+                setEditorOpen(false);
+              }}
+              plain
+            />
+          </div>
+        </Sheet>
       )}
-      <div className="grid gap-3">
+      <div className="entity-grid">
         {classes.data.classes.map((item: Any) => (
           <ClassCard
             key={item.id}
@@ -343,14 +410,17 @@ export function ClassesPage() {
             admin={admin}
             options={options}
             reload={reload}
-            edit={() => setEditing(item)}
+            edit={() => {
+              setEditing(item);
+              setEditorOpen(true);
+            }}
           />
         ))}
         {!classes.data.classes.length && (
           <Card>
             <p>{t('pilot.emptyClasses')}</p>
             {admin && (
-              <Button className="mt-3" type="button" onClick={focusFirstEditor}>
+              <Button className="mt-3" type="button" onClick={openCreate}>
                 {t('pilot.classes.create')}
               </Button>
             )}
@@ -379,152 +449,171 @@ function ClassCard({
   const assignments = (options.assignments ?? []).filter((x: Any) => x.class_id === item.id);
   const enrollments = (options.enrollments ?? []).filter((x: Any) => x.class_id === item.id);
   return (
-    <Card>
+    <Card className="class-card workspace-panel">
       <div className="grid gap-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="font-bold">{item.name}</h3>
-            <p className="text-sm text-text-secondary">{item.meeting_schedule}</p>
+        <div className="entity-card-header">
+          <span className="entity-icon" aria-hidden>
+            <School />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-lg font-bold">{item.name}</h2>
+            <p className="truncate text-sm text-text-secondary">
+              {item.meeting_schedule || t('dashboard.scheduleNotSet')}
+            </p>
           </div>
           <Status value={!!item.active} />
         </div>
-        <Link className="font-semibold text-brand" to={`/app/classes/${item.id}`}>
-          {t('pilot.classes.roster')}
+        <Link className="entity-open-link" to={`/app/classes/${item.id}`}>
+          <span>{t('pilot.classes.roster')}</span>
+          <ChevronRight className="size-4" aria-hidden />
         </Link>
         {admin && (
           <>
-            <Button type="button" variant="secondary" onClick={edit}>
-              {t('pilot.edit')}
-            </Button>
-            <div className="rounded border border-border p-3">
-              <h4 className="font-semibold">{t('pilot.classes.teachers')}</h4>
-              {assignments.map((assignment: Any) => (
-                <div
-                  key={assignment.user_id}
-                  className="flex items-center justify-between gap-2 py-1"
-                >
-                  <span>{assignment.display_name}</span>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" onClick={edit}>
+                {t('pilot.edit')}
+              </Button>
+            </div>
+            <details className="entity-management">
+              <summary>
+                <MoreHorizontal className="size-4" aria-hidden />
+                {t('pilot.classes.manage')}
+              </summary>
+              <div className="entity-management-content">
+                <div className="management-section">
+                  <h4 className="font-semibold">{t('pilot.classes.teachers')}</h4>
+                  {assignments.map((assignment: Any) => (
+                    <div
+                      key={assignment.user_id}
+                      className="flex items-center justify-between gap-2 py-1"
+                    >
+                      <span>{assignment.display_name}</span>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() =>
+                          confirm(t('pilot.confirm')) &&
+                          api(`/api/v1/classes/${item.id}/teachers/${assignment.user_id}`, {
+                            method: 'DELETE',
+                          }).then(reload)
+                        }
+                      >
+                        {t('pilot.remove')}
+                      </Button>
+                    </div>
+                  ))}
+                  <SelectField
+                    id={`teacher-${item.id}`}
+                    label={t('pilot.classes.eligibleTeacher')}
+                    value={teacherId}
+                    onChange={setTeacherId}
+                  >
+                    <option value="">{t('pilot.select')}</option>
+                    {(options.teachers ?? [])
+                      .filter(
+                        (teacher: Any) => !assignments.some((x: Any) => x.user_id === teacher.id),
+                      )
+                      .map((teacher: Any) => (
+                        <option key={teacher.id} value={teacher.id}>
+                          {teacher.display_name}
+                        </option>
+                      ))}
+                  </SelectField>
                   <Button
                     type="button"
-                    variant="secondary"
+                    disabled={!teacherId || !item.active}
                     onClick={() =>
-                      confirm(t('pilot.confirm')) &&
-                      api(`/api/v1/classes/${item.id}/teachers/${assignment.user_id}`, {
-                        method: 'DELETE',
+                      api(`/api/v1/classes/${item.id}/teachers`, {
+                        method: 'POST',
+                        body: JSON.stringify({ user_id: teacherId }),
                       }).then(reload)
                     }
                   >
-                    {t('pilot.remove')}
+                    {t('pilot.classes.assignTeacher')}
                   </Button>
                 </div>
-              ))}
-              <SelectField
-                id={`teacher-${item.id}`}
-                label={t('pilot.classes.eligibleTeacher')}
-                value={teacherId}
-                onChange={setTeacherId}
-              >
-                <option value="">{t('pilot.select')}</option>
-                {(options.teachers ?? [])
-                  .filter((teacher: Any) => !assignments.some((x: Any) => x.user_id === teacher.id))
-                  .map((teacher: Any) => (
-                    <option key={teacher.id} value={teacher.id}>
-                      {teacher.display_name}
-                    </option>
+                <div className="management-section">
+                  <h4 className="font-semibold">{t('pilot.classes.enrollments')}</h4>
+                  {enrollments.map((enrollment: Any) => (
+                    <div
+                      key={enrollment.id}
+                      className="flex flex-wrap items-center justify-between gap-2 py-1"
+                    >
+                      <span>
+                        {enrollment.display_name} ·{' '}
+                        {t(enrollment.active ? 'pilot.active' : 'pilot.withdrawn')}
+                      </span>
+                      {enrollment.active ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() =>
+                            confirm(t('pilot.confirm')) &&
+                            api(`/api/v1/enrollments/${enrollment.id}/withdraw`, {
+                              method: 'POST',
+                            }).then(reload)
+                          }
+                        >
+                          {t('pilot.withdraw')}
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          disabled={
+                            !item.active ||
+                            !(options.students ?? []).find(
+                              (s: Any) => s.id === enrollment.student_id,
+                            )?.active
+                          }
+                          onClick={() =>
+                            api('/api/v1/enrollments', {
+                              method: 'POST',
+                              body: JSON.stringify({
+                                class_id: item.id,
+                                student_id: enrollment.student_id,
+                              }),
+                            }).then(reload)
+                          }
+                        >
+                          {t('pilot.reEnroll')}
+                        </Button>
+                      )}
+                    </div>
                   ))}
-              </SelectField>
-              <Button
-                type="button"
-                disabled={!teacherId || !item.active}
-                onClick={() =>
-                  api(`/api/v1/classes/${item.id}/teachers`, {
-                    method: 'POST',
-                    body: JSON.stringify({ user_id: teacherId }),
-                  }).then(reload)
-                }
-              >
-                {t('pilot.classes.assignTeacher')}
-              </Button>
-            </div>
-            <div className="rounded border border-border p-3">
-              <h4 className="font-semibold">{t('pilot.classes.enrollments')}</h4>
-              {enrollments.map((enrollment: Any) => (
-                <div
-                  key={enrollment.id}
-                  className="flex flex-wrap items-center justify-between gap-2 py-1"
-                >
-                  <span>
-                    {enrollment.display_name} ·{' '}
-                    {t(enrollment.active ? 'pilot.active' : 'pilot.withdrawn')}
-                  </span>
-                  {enrollment.active ? (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() =>
-                        confirm(t('pilot.confirm')) &&
-                        api(`/api/v1/enrollments/${enrollment.id}/withdraw`, {
-                          method: 'POST',
-                        }).then(reload)
-                      }
-                    >
-                      {t('pilot.withdraw')}
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      disabled={
-                        !item.active ||
-                        !(options.students ?? []).find((s: Any) => s.id === enrollment.student_id)
-                          ?.active
-                      }
-                      onClick={() =>
-                        api('/api/v1/enrollments', {
-                          method: 'POST',
-                          body: JSON.stringify({
-                            class_id: item.id,
-                            student_id: enrollment.student_id,
-                          }),
-                        }).then(reload)
-                      }
-                    >
-                      {t('pilot.reEnroll')}
-                    </Button>
-                  )}
+                  <SelectField
+                    id={`student-${item.id}`}
+                    label={t('pilot.classes.eligibleStudent')}
+                    value={studentId}
+                    onChange={setStudentId}
+                  >
+                    <option value="">{t('pilot.select')}</option>
+                    {(options.students ?? [])
+                      .filter(
+                        (student: Any) =>
+                          student.active &&
+                          !enrollments.some((x: Any) => x.student_id === student.id && x.active),
+                      )
+                      .map((student: Any) => (
+                        <option key={student.id} value={student.id}>
+                          {student.display_name}
+                        </option>
+                      ))}
+                  </SelectField>
+                  <Button
+                    type="button"
+                    disabled={!studentId || !item.active}
+                    onClick={() =>
+                      api('/api/v1/enrollments', {
+                        method: 'POST',
+                        body: JSON.stringify({ class_id: item.id, student_id: studentId }),
+                      }).then(reload)
+                    }
+                  >
+                    {t('pilot.enroll')}
+                  </Button>
                 </div>
-              ))}
-              <SelectField
-                id={`student-${item.id}`}
-                label={t('pilot.classes.eligibleStudent')}
-                value={studentId}
-                onChange={setStudentId}
-              >
-                <option value="">{t('pilot.select')}</option>
-                {(options.students ?? [])
-                  .filter(
-                    (student: Any) =>
-                      student.active &&
-                      !enrollments.some((x: Any) => x.student_id === student.id && x.active),
-                  )
-                  .map((student: Any) => (
-                    <option key={student.id} value={student.id}>
-                      {student.display_name}
-                    </option>
-                  ))}
-              </SelectField>
-              <Button
-                type="button"
-                disabled={!studentId || !item.active}
-                onClick={() =>
-                  api('/api/v1/enrollments', {
-                    method: 'POST',
-                    body: JSON.stringify({ class_id: item.id, student_id: studentId }),
-                  }).then(reload)
-                }
-              >
-                {t('pilot.enroll')}
-              </Button>
-            </div>
+              </div>
+            </details>
           </>
         )}
       </div>
@@ -539,113 +628,149 @@ export function StudentsPage() {
   const students = useLoad('/api/v1/students');
   const setup = useLoad(admin ? '/api/v1/pilot/setup-options' : null);
   const [studentEdit, setStudentEdit] = useState<Any | null>(null);
-  const [guardianEdit, setGuardianEdit] = useState<Any | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const reload = async () => {
     await Promise.all([students.reload(), setup.reload()]);
     setStudentEdit(null);
-    setGuardianEdit(null);
+    setEditorOpen(false);
   };
   if (students.error || (admin && setup.error))
     return <Alert tone="error" title={t('pilot.loadError')} />;
   if (!students.data || (admin && !setup.data)) return <Spinner label={t('pilot.loading')} />;
+  const openCreate = () => {
+    setStudentEdit(null);
+    setEditorOpen(true);
+    focusFirstEditor();
+  };
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+  const filtered = students.data.students.filter((student: Any) =>
+    [student.display_name, student.first_name, student.last_name, student.external_id]
+      .filter(Boolean)
+      .some((value) => String(value).toLocaleLowerCase().includes(normalizedSearch)),
+  );
   return (
-    <div className="space-y-5">
-      <Header title={t('pilot.students.title')} description={t('pilot.students.description')} />
+    <div className="workspace-page">
+      <Header
+        title={t('pilot.students.title')}
+        description={t('pilot.students.description')}
+        actions={
+          admin ? (
+            <>
+              <Link className="app-button app-button-secondary" to="/app/families">
+                <UserPlus className="size-4" aria-hidden />
+                {t('nav.families')}
+              </Link>
+              <Button type="button" onClick={openCreate}>
+                <Plus className="size-4" aria-hidden />
+                {t('pilot.students.create')}
+              </Button>
+            </>
+          ) : undefined
+        }
+      />
       {admin && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Editor
-            key={studentEdit?.id ?? 'create-student'}
-            title={studentEdit ? t('pilot.students.edit') : t('pilot.students.create')}
-            initial={studentEdit ?? undefined}
-            fields={[
-              { key: 'display_name', label: t('pilot.displayName') },
-              { key: 'first_name', label: t('pilot.firstName') },
-              { key: 'last_name', label: t('pilot.lastName') },
-              { key: 'external_id', label: t('pilot.externalId') },
-              { key: 'notes', label: t('pilot.notes'), textarea: true },
-            ]}
-            onSave={(value) =>
-              api('/api/v1/students', { method: 'POST', body: JSON.stringify(value) }).then(reload)
-            }
-            onCancel={studentEdit ? () => setStudentEdit(null) : undefined}
-          />
-          <Editor
-            key={guardianEdit?.id ?? 'create-guardian'}
-            title={guardianEdit ? t('pilot.guardians.edit') : t('pilot.guardians.create')}
-            initial={guardianEdit ?? undefined}
-            fields={[
-              { key: 'name', label: t('pilot.name') },
-              { key: 'email', label: t('pilot.email'), type: 'email' },
-              { key: 'phone', label: t('pilot.phone') },
-              {
-                key: 'preferred_locale',
-                label: t('pilot.locale'),
-                options: [
-                  { value: 'en', label: t('common.english') },
-                  { value: 'tr', label: t('common.turkish') },
-                ],
-              },
-            ]}
-            onSave={(value) =>
-              api('/api/v1/guardians', { method: 'POST', body: JSON.stringify(value) }).then(reload)
-            }
-            onCancel={guardianEdit ? () => setGuardianEdit(null) : undefined}
-          />
-        </div>
+        <Sheet
+          open={editorOpen}
+          onOpenChange={(open) => {
+            setEditorOpen(open);
+            if (!open) setStudentEdit(null);
+          }}
+          side="end"
+          title={studentEdit ? t('pilot.students.edit') : t('pilot.students.create')}
+          closeLabel={t('pilot.close')}
+        >
+          <div className="sheet-form">
+            <Editor
+              key={studentEdit?.id ?? 'create-student'}
+              title={studentEdit ? t('pilot.students.edit') : t('pilot.students.create')}
+              initial={studentEdit ?? undefined}
+              fields={[
+                { key: 'display_name', label: t('pilot.displayName') },
+                { key: 'first_name', label: t('pilot.firstName') },
+                { key: 'last_name', label: t('pilot.lastName') },
+                { key: 'external_id', label: t('pilot.externalId') },
+                { key: 'notes', label: t('pilot.notes'), textarea: true },
+              ]}
+              onSave={(value) =>
+                api('/api/v1/students', { method: 'POST', body: JSON.stringify(value) }).then(
+                  reload,
+                )
+              }
+              onCancel={() => {
+                setStudentEdit(null);
+                setEditorOpen(false);
+              }}
+              plain
+            />
+          </div>
+        </Sheet>
       )}
-      {admin && !!setup.data?.guardians.length && (
-        <Card>
-          <h3 className="font-bold">{t('pilot.guardians.title')}</h3>
-          {setup.data.guardians.map((guardian: Any) => (
-            <div
-              key={guardian.id}
-              className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-2"
+      {!!students.data.students.length && (
+        <SearchInput
+          className="workspace-search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder={t('pilot.students.search')}
+          aria-label={t('pilot.students.search')}
+        />
+      )}
+      <Card className="workspace-panel entity-list">
+        {filtered.map((student: Any) => (
+          <div className="workspace-row" key={student.id}>
+            <span className="entity-avatar" aria-hidden>
+              {String(student.display_name)
+                .split(/\s+/)
+                .map((part) => part[0])
+                .join('')
+                .slice(0, 2)
+                .toUpperCase()}
+            </span>
+            <Link className="workspace-row-copy" to={`/app/students/${student.id}`}>
+              <strong>{student.display_name}</strong>
+              <span>{student.external_id || t('pilot.students.openWorkspace')}</span>
+            </Link>
+            {admin && <Status value={!!student.active} />}
+            {admin && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={`${t('pilot.edit')} ${student.display_name}`}
+                onClick={() => {
+                  setStudentEdit(student);
+                  setEditorOpen(true);
+                }}
+              >
+                <MoreHorizontal className="size-5" aria-hidden />
+              </Button>
+            )}
+            <Link
+              className="entity-row-arrow"
+              aria-label={`${student.display_name} · ${t('pilot.progress')}`}
+              to={`/app/students/${student.id}`}
             >
-              <span>
-                {guardian.name} · {guardian.email}
-              </span>
-              <div className="flex gap-2">
-                <Status value={!!guardian.active} />
-                <Button type="button" variant="secondary" onClick={() => setGuardianEdit(guardian)}>
-                  {t('pilot.edit')}
-                </Button>
-              </div>
-            </div>
-          ))}
-        </Card>
-      )}
-      <div className="grid gap-3">
-        {students.data.students.map((student: Any) => (
-          <Card key={student.id}>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="font-bold">{student.display_name}</h3>
-                {admin && <Status value={!!student.active} />}
-              </div>
-              <div className="flex gap-2">
-                {admin && (
-                  <Button type="button" variant="secondary" onClick={() => setStudentEdit(student)}>
-                    {t('pilot.edit')}
-                  </Button>
-                )}
-                <Link className="font-semibold text-brand" to={`/app/students/${student.id}`}>
-                  {t('pilot.progress')}
-                </Link>
-              </div>
-            </div>
-          </Card>
+              <ChevronRight className="size-5" aria-hidden />
+            </Link>
+          </div>
         ))}
+        {!!students.data.students.length && !filtered.length && (
+          <p className="workspace-empty-inline">{t('pilot.students.noResults')}</p>
+        )}
         {!students.data.students.length && (
-          <Card>
+          <div className="empty-state compact-empty-state">
+            <span className="empty-icon">
+              <GraduationCap />
+            </span>
             <p>{t('pilot.emptyStudents')}</p>
             {admin && (
-              <Button className="mt-3" type="button" onClick={focusFirstEditor}>
+              <Button className="mt-3" type="button" onClick={openCreate}>
                 {t('pilot.students.create')}
               </Button>
             )}
-          </Card>
+          </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
@@ -953,18 +1078,38 @@ export function RosterPage() {
   if (roster.error) return <Alert tone="error" title={t('pilot.loadError')} />;
   if (!roster.data) return <Spinner label={t('pilot.loading')} />;
   return (
-    <div className="space-y-5">
-      <Header title={roster.data.class.name} description={t('pilot.classes.activeRoster')} />
-      <div className="grid gap-3">
+    <div className="workspace-page">
+      <Link className="workspace-back" to="/app/classes">
+        <ArrowLeft className="size-4" aria-hidden />
+        {t('pilot.classes.back')}
+      </Link>
+      <Header
+        title={roster.data.class.name}
+        description={t('pilot.classes.activeRoster')}
+        eyebrow={t('nav.classes')}
+      />
+      <Card className="workspace-panel entity-list">
         {roster.data.students.map((student: Any) => (
-          <Card key={student.id}>
-            <Link className="font-bold text-brand" to={`/app/students/${student.id}`}>
-              {student.display_name}
-            </Link>
-          </Card>
+          <Link className="workspace-row" key={student.id} to={`/app/students/${student.id}`}>
+            <span className="entity-avatar" aria-hidden>
+              {String(student.display_name)
+                .split(/\s+/)
+                .map((part) => part[0])
+                .join('')
+                .slice(0, 2)
+                .toUpperCase()}
+            </span>
+            <span className="workspace-row-copy">
+              <strong>{student.display_name}</strong>
+              <span>{t('pilot.students.openWorkspace')}</span>
+            </span>
+            <ChevronRight className="size-5" aria-hidden />
+          </Link>
         ))}
-        {!roster.data.students.length && <p>{t('pilot.empty')}</p>}
-      </div>
+        {!roster.data.students.length && (
+          <p className="workspace-empty-inline">{t('pilot.empty')}</p>
+        )}
+      </Card>
     </div>
   );
 }
@@ -983,6 +1128,10 @@ export function StudentProgressPage() {
   const [operationResult, setOperationResult] = useState('');
   const [notificationBusy, setNotificationBusy] = useState('');
   const [homeworkEdit, setHomeworkEdit] = useState<Any | null>(null);
+  const [progressOpen, setProgressOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'progress' | 'curriculum' | 'family'>(
+    'overview',
+  );
   const notificationBusyRef = useRef(false);
   if (summary.error || program.error || (admin && setup.error))
     return <Alert tone="error" title={t('pilot.loadError')} />;
@@ -999,162 +1148,399 @@ export function StudentProgressPage() {
     const results = await Promise.all([summary.reload(), setup.reload()]);
     return results[0] && results[1] ? results[1] : null;
   };
+  const startProgress = () => {
+    setDraft(null);
+    setFormEpoch((value) => value + 1);
+    setProgressOpen(true);
+  };
+  const studentName = String(summary.data.student.display_name);
+  const studentInitials = studentName
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+  const latestUpdate = summary.data.updates[0];
+  const studentTabs: Array<'overview' | 'progress' | 'curriculum' | 'family'> = admin
+    ? ['overview', 'progress', 'curriculum', 'family']
+    : ['overview', 'progress', 'curriculum'];
   return (
-    <div className="space-y-5">
-      <Header title={summary.data.student.display_name} description={t('pilot.progressSummary')} />
+    <div className="workspace-page">
+      <Link className="workspace-back" to="/app/students">
+        <ArrowLeft className="size-4" aria-hidden />
+        {t('pilot.students.back')}
+      </Link>
+      <header className="student-workspace-header">
+        <div className="student-identity">
+          <span className="entity-avatar entity-avatar-large" aria-hidden>
+            {studentInitials}
+          </span>
+          <div className="min-w-0">
+            <p className="eyebrow">{t('nav.students')}</p>
+            <h1>{studentName}</h1>
+            <p>
+              {summary.data.classes.map((item: Any) => item.name).join(' · ') ||
+                t('pilot.students.noClass')}
+              {' · '}
+              <Status value={!!summary.data.student.active} />
+            </p>
+          </div>
+        </div>
+        <div className="workspace-actions">
+          <Button type="button" onClick={startProgress}>
+            <Plus className="size-4" aria-hidden />
+            {t('pilot.recordProgress')}
+          </Button>
+        </div>
+      </header>
       {notice && (
         <Alert
           tone={pilotResultPresentation(notice).tone}
           title={t(pilotResultPresentation(notice).key)}
         />
       )}
-      {admin && (
-        <StudentSetup
-          studentId={id!}
-          summary={summary.data}
-          program={program.data}
-          setup={setup.data!}
-          reload={refreshSetup}
-        />
-      )}
-      <Card>
-        <h3 className="font-bold">{t('pilot.assignedTracks')}</h3>
-        {summary.data.tracks.map((track: Any) => (
-          <p key={track.track_id}>
-            {track.track_name}: {track.level_name}
-          </p>
-        ))}
-        {!summary.data.tracks.length && <p>{t('pilot.empty')}</p>}
-      </Card>
-      <ProgressForm
-        key={draft?.id ?? `new-${formEpoch}`}
-        studentId={id!}
-        summary={summary.data}
-        draft={draft}
-        onDone={refresh}
-        onResult={setOperationResult}
-      />
       {operationResult && (
         <Alert
           tone={pilotResultPresentation(operationResult).tone}
           title={t(pilotResultPresentation(operationResult).key)}
         />
       )}
-      <Card>
-        <h3 className="font-bold">{t('pilot.passedLessons')}</h3>
-        <div className="flex flex-wrap gap-2">
-          {summary.data.passed.map((lesson: Any) => (
-            <Badge key={lesson.id} tone="success">
-              {lesson.name}
-            </Badge>
-          ))}
-        </div>
-      </Card>
-      <Card>
-        <h3 className="font-bold">{t('pilot.recentUpdates')}</h3>
-        {summary.data.updates.map((update: Any) => (
-          <div key={update.id} className="border-b border-border py-3">
-            <p className="font-semibold">
-              {update.update_date} · {t(`pilot.status.${update.status}`)}
-            </p>
-            <p>{update.overall_comment}</p>
-            <p className="text-sm text-text-secondary">
-              {t('pilot.homework')}: {update.homework}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {update.status === 'draft' && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() =>
-                    setDraft({
-                      ...update,
-                      items: summary.data!.updateItems.filter(
-                        (item: Any) => item.progress_update_id === update.id,
-                      ),
-                    })
-                  }
-                >
-                  {t('pilot.editDraft')}
-                </Button>
-              )}
-              {update.status === 'published' && (
-                <Button type="button" variant="secondary" onClick={() => setHomeworkEdit(update)}>
-                  {t('pilot.homeworkEditor.edit')}
-                </Button>
-              )}
-              {summary
-                .data!.notifications.filter((n: Any) => n.progress_update_id === update.id)
-                .map((notification: Any) => (
-                  <div
-                    key={notification.id}
-                    className="mt-2 rounded border border-border p-2 text-sm"
-                  >
-                    <p>
-                      {notification.guardian_name} · {notification.recipient_email}
-                    </p>
-                    <p>
-                      {t(`notificationCenter.types.${notification.notification_type}`)} ·{' '}
-                      {t(`pilot.notificationStatus.${notification.status}`)}
-                    </p>
-                    <p>
-                      {notification.attempted_at} ·{' '}
-                      {t('notificationCenter.attempts', { count: notification.attempt_count })}
-                    </p>
-                    {notification.failure_reference && <p>{notification.failure_reference}</p>}
-                    {notification.status === 'failed' && (
-                      <Button
-                        type="button"
-                        disabled={notificationBusy === notification.id}
-                        onClick={async () => {
-                          if (notificationBusyRef.current) return;
-                          notificationBusyRef.current = true;
-                          setNotificationBusy(notification.id);
-                          try {
-                            setNotice(
-                              await requestNotificationAction(
-                                `/api/v1/progress-updates/${update.id}/notify?retry=1&notificationId=${encodeURIComponent(notification.id)}`,
-                              ),
-                            );
-                            await summary.reload();
-                          } finally {
-                            notificationBusyRef.current = false;
-                            setNotificationBusy('');
-                          }
-                        }}
-                      >
-                        {t('pilot.retry')}
-                      </Button>
-                    )}
-                  </div>
-                ))}
-            </div>
-          </div>
+
+      <div className="workspace-tabs" role="tablist" aria-label={t('pilot.students.workspaceTabs')}>
+        {studentTabs.map((tab) => (
+          <button
+            key={tab}
+            id={`student-${tab}-tab`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`student-${tab}-panel`}
+            onClick={() => setActiveTab(tab)}
+          >
+            {t(`pilot.students.tabs.${tab}`)}
+          </button>
         ))}
-      </Card>
-      {homeworkEdit && (
-        <HomeworkEditor
-          key={homeworkEdit.id}
-          update={homeworkEdit}
-          onCancel={() => setHomeworkEdit(null)}
-          onSaved={async (code) => {
-            const reloaded = await summary.reload();
-            if (!reloaded) throw new Error('reload_failed');
-            setOperationResult(code);
-            setHomeworkEdit(null);
-          }}
-        />
+      </div>
+
+      <section
+        id="student-overview-panel"
+        role="tabpanel"
+        aria-labelledby="student-overview-tab"
+        hidden={activeTab !== 'overview'}
+      >
+        <div className="workspace-grid">
+          <div className="workspace-stack">
+            <Card className="workspace-panel workspace-panel-warm">
+              <div className="section-heading">
+                <div>
+                  <h2>{t('pilot.students.currentLearning')}</h2>
+                  <p>{t('pilot.students.currentLearningBody')}</p>
+                </div>
+                <Badge tone="info">{summary.data.tracks.length}</Badge>
+              </div>
+              {summary.data.tracks.map((track: Any) => (
+                <div className="learning-path" key={track.track_id}>
+                  <span className="class-workspace-icon" aria-hidden>
+                    <GraduationCap />
+                  </span>
+                  <span>
+                    <strong>{track.track_name}</strong>
+                    <span>{track.level_name}</span>
+                  </span>
+                </div>
+              ))}
+              {!summary.data.tracks.length && <p>{t('pilot.empty')}</p>}
+              <Button className="mt-4" type="button" onClick={startProgress}>
+                {t('pilot.students.continueProgress')}
+                <ChevronRight className="size-4" aria-hidden />
+              </Button>
+            </Card>
+            <Card className="workspace-panel">
+              <div className="section-heading">
+                <div>
+                  <h2>{t('pilot.students.latestActivity')}</h2>
+                  <p>{t('pilot.students.latestActivityBody')}</p>
+                </div>
+                <button
+                  className="text-sm font-semibold text-brand"
+                  type="button"
+                  onClick={() => setActiveTab('progress')}
+                >
+                  {t('dashboard.viewAll')}
+                </button>
+              </div>
+              {latestUpdate ? (
+                <div className="timeline-list">
+                  <div className="timeline-item">
+                    <span aria-hidden />
+                    <div>
+                      <strong>
+                        {latestUpdate.update_date} · {t(`pilot.status.${latestUpdate.status}`)}
+                      </strong>
+                      <p>{latestUpdate.overall_comment || t('pilot.students.noComment')}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="workspace-empty-inline">{t('pilot.empty')}</p>
+              )}
+            </Card>
+          </div>
+          <aside className="workspace-stack">
+            <Card className="workspace-panel">
+              <h2>{t('pilot.students.quickFacts')}</h2>
+              <dl className="workspace-facts">
+                <div>
+                  <dt>{t('pilot.class')}</dt>
+                  <dd>{summary.data.classes.map((item: Any) => item.name).join(', ') || '—'}</dd>
+                </div>
+                <div>
+                  <dt>{t('pilot.assignedTracks')}</dt>
+                  <dd>{summary.data.tracks.length}</dd>
+                </div>
+                <div>
+                  <dt>{t('pilot.passedLessons')}</dt>
+                  <dd>{summary.data.passed.length}</dd>
+                </div>
+                <div>
+                  <dt>{t('pilot.recentUpdates')}</dt>
+                  <dd>{summary.data.updates.length}</dd>
+                </div>
+              </dl>
+            </Card>
+          </aside>
+        </div>
+      </section>
+
+      <section
+        id="student-progress-panel"
+        role="tabpanel"
+        aria-labelledby="student-progress-tab"
+        hidden={activeTab !== 'progress'}
+      >
+        <Card className="workspace-panel">
+          <div className="section-heading">
+            <div>
+              <h2>{t('pilot.recentUpdates')}</h2>
+              <p>{t('pilot.students.progressHistoryBody')}</p>
+            </div>
+            <Button type="button" onClick={startProgress}>
+              <Plus className="size-4" aria-hidden />
+              {t('pilot.recordProgress')}
+            </Button>
+          </div>
+          {summary.data.updates.map((update: Any) => (
+            <article key={update.id} className="progress-update-card">
+              <p className="font-semibold">
+                {update.update_date} · {t(`pilot.status.${update.status}`)}
+              </p>
+              <p>{update.overall_comment}</p>
+              <p className="text-sm text-text-secondary">
+                {t('pilot.homework')}: {update.homework}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {update.status === 'draft' && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setDraft({
+                        ...update,
+                        items: summary.data!.updateItems.filter(
+                          (item: Any) => item.progress_update_id === update.id,
+                        ),
+                      });
+                      setProgressOpen(true);
+                    }}
+                  >
+                    {t('pilot.editDraft')}
+                  </Button>
+                )}
+                {update.status === 'published' && (
+                  <Button type="button" variant="secondary" onClick={() => setHomeworkEdit(update)}>
+                    {t('pilot.homeworkEditor.edit')}
+                  </Button>
+                )}
+                {summary
+                  .data!.notifications.filter((n: Any) => n.progress_update_id === update.id)
+                  .map((notification: Any) => (
+                    <div key={notification.id} className="notification-result">
+                      <p>
+                        {notification.guardian_name} · {notification.recipient_email}
+                      </p>
+                      <p>
+                        {t(`notificationCenter.types.${notification.notification_type}`)} ·{' '}
+                        {t(`pilot.notificationStatus.${notification.status}`)}
+                      </p>
+                      <p>
+                        {notification.attempted_at} ·{' '}
+                        {t('notificationCenter.attempts', { count: notification.attempt_count })}
+                      </p>
+                      {notification.failure_reference && <p>{notification.failure_reference}</p>}
+                      {notification.status === 'failed' && (
+                        <Button
+                          type="button"
+                          disabled={notificationBusy === notification.id}
+                          onClick={async () => {
+                            if (notificationBusyRef.current) return;
+                            notificationBusyRef.current = true;
+                            setNotificationBusy(notification.id);
+                            try {
+                              setNotice(
+                                await requestNotificationAction(
+                                  `/api/v1/progress-updates/${update.id}/notify?retry=1&notificationId=${encodeURIComponent(notification.id)}`,
+                                ),
+                              );
+                              await summary.reload();
+                            } finally {
+                              notificationBusyRef.current = false;
+                              setNotificationBusy('');
+                            }
+                          }}
+                        >
+                          {t('pilot.retry')}
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            </article>
+          ))}
+          {!summary.data.updates.length && (
+            <p className="workspace-empty-inline">{t('pilot.empty')}</p>
+          )}
+        </Card>
+      </section>
+
+      <section
+        id="student-curriculum-panel"
+        role="tabpanel"
+        aria-labelledby="student-curriculum-tab"
+        hidden={activeTab !== 'curriculum'}
+      >
+        <div className="workspace-stack">
+          <Card className="workspace-panel">
+            <div className="section-heading">
+              <div>
+                <h2>{t('pilot.assignedTracks')}</h2>
+                <p>{t('pilot.students.curriculumBody')}</p>
+              </div>
+            </div>
+            {summary.data.tracks.map((track: Any) => (
+              <div className="learning-path" key={track.track_id}>
+                <span className="class-workspace-icon" aria-hidden>
+                  <GraduationCap />
+                </span>
+                <span>
+                  <strong>{track.track_name}</strong>
+                  <span>{track.level_name}</span>
+                </span>
+              </div>
+            ))}
+            {!summary.data.tracks.length && <p>{t('pilot.empty')}</p>}
+          </Card>
+          <Card className="workspace-panel">
+            <h2>{t('pilot.passedLessons')}</h2>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {summary.data.passed.map((lesson: Any) => (
+                <Badge key={lesson.id} tone="success">
+                  {lesson.name}
+                </Badge>
+              ))}
+              {!summary.data.passed.length && <p>{t('pilot.empty')}</p>}
+            </div>
+          </Card>
+          {admin && (
+            <StudentSetup
+              section="curriculum"
+              studentId={id!}
+              summary={summary.data}
+              program={program.data}
+              setup={setup.data!}
+              reload={refreshSetup}
+            />
+          )}
+        </div>
+      </section>
+
+      {admin && (
+        <section
+          id="student-family-panel"
+          role="tabpanel"
+          aria-labelledby="student-family-tab"
+          hidden={activeTab !== 'family'}
+        >
+          <StudentSetup
+            section="family"
+            studentId={id!}
+            summary={summary.data}
+            program={program.data}
+            setup={setup.data!}
+            reload={refreshSetup}
+          />
+        </section>
       )}
+
+      <Sheet
+        open={progressOpen}
+        onOpenChange={(open) => {
+          setProgressOpen(open);
+          if (!open) setDraft(null);
+        }}
+        side="end"
+        title={draft ? t('pilot.editDraft') : t('pilot.recordProgress')}
+        closeLabel={t('pilot.close')}
+      >
+        <div className="sheet-form progress-sheet-form">
+          <ProgressForm
+            key={draft?.id ?? `new-${formEpoch}`}
+            studentId={id!}
+            summary={summary.data}
+            draft={draft}
+            onDone={async (reset) => {
+              await refresh(reset);
+              setProgressOpen(false);
+            }}
+            onResult={setOperationResult}
+            plain
+          />
+        </div>
+      </Sheet>
+
+      <Sheet
+        open={!!homeworkEdit}
+        onOpenChange={(open) => !open && setHomeworkEdit(null)}
+        side="end"
+        title={t('pilot.homeworkEditor.title')}
+        closeLabel={t('pilot.close')}
+      >
+        {homeworkEdit && (
+          <HomeworkEditor
+            key={homeworkEdit.id}
+            update={homeworkEdit}
+            onCancel={() => setHomeworkEdit(null)}
+            onSaved={async (code) => {
+              const reloaded = await summary.reload();
+              if (!reloaded) throw new Error('reload_failed');
+              setOperationResult(code);
+              setHomeworkEdit(null);
+            }}
+            plain
+          />
+        )}
+      </Sheet>
     </div>
   );
 }
 function StudentSetup({
+  section,
   studentId,
   summary,
   program,
   setup,
   reload,
 }: {
+  section: 'curriculum' | 'family';
   studentId: string;
   summary: Any;
   program: Any;
@@ -1169,117 +1555,138 @@ function StudentSetup({
   const levels = program.levels.filter((level: Any) => level.track_id === trackId && level.active);
   const links = setup.guardianLinks.filter((link: Any) => link.student_id === studentId);
   return (
-    <Card>
-      <h3 className="font-bold">{t('pilot.students.setup')}</h3>
-      <div className="grid gap-3 md:grid-cols-2">
-        <SelectField
-          id="student-track"
-          label={t('pilot.track')}
-          value={trackId}
-          onChange={(value) => {
-            setTrackId(value);
-            setLevelId('');
-          }}
-        >
-          <option value="">{t('pilot.select')}</option>
-          {program.tracks
-            .filter((track: Any) => track.active)
-            .map((track: Any) => (
-              <option key={track.id} value={track.id}>
-                {track.name}
-              </option>
-            ))}
-        </SelectField>
-        <SelectField
-          id="student-level"
-          label={t('pilot.currentLevel')}
-          value={levelId}
-          onChange={setLevelId}
-        >
-          <option value="">{t('pilot.select')}</option>
-          {levels.map((level: Any) => (
-            <option key={level.id} value={level.id}>
-              {level.name}
-            </option>
-          ))}
-        </SelectField>
+    <Card className="workspace-panel">
+      <div className="section-heading">
+        <div>
+          <h2>
+            {t(
+              section === 'curriculum' ? 'pilot.students.curriculumSetup' : 'pilot.guardians.links',
+            )}
+          </h2>
+          <p>
+            {t(
+              section === 'curriculum'
+                ? 'pilot.students.curriculumSetupBody'
+                : 'pilot.guardians.linkHelp',
+            )}
+          </p>
+        </div>
       </div>
-      <Button
-        type="button"
-        disabled={!trackId || !levelId}
-        onClick={() =>
-          api('/api/v1/student-track-levels', {
-            method: 'POST',
-            body: JSON.stringify({
-              student_id: studentId,
-              track_id: trackId,
-              current_level_id: levelId,
-            }),
-          }).then(reload)
-        }
-      >
-        {t(
-          summary.tracks.some((track: Any) => track.track_id === trackId)
-            ? 'pilot.changeLevel'
-            : 'pilot.assignTrack',
-        )}
-      </Button>
-      <div className="mt-4 border-t border-border pt-3">
-        <h4 className="font-semibold">{t('pilot.guardians.links')}</h4>
-        {links.map((link: Any) => (
-          <div key={link.id} className="grid gap-2 py-2">
-            <strong>{link.name}</strong>
+      {section === 'curriculum' && (
+        <>
+          <div className="grid gap-3 md:grid-cols-2">
+            <SelectField
+              id="student-track"
+              label={t('pilot.track')}
+              value={trackId}
+              onChange={(value) => {
+                setTrackId(value);
+                setLevelId('');
+              }}
+            >
+              <option value="">{t('pilot.select')}</option>
+              {program.tracks
+                .filter((track: Any) => track.active)
+                .map((track: Any) => (
+                  <option key={track.id} value={track.id}>
+                    {track.name}
+                  </option>
+                ))}
+            </SelectField>
+            <SelectField
+              id="student-level"
+              label={t('pilot.currentLevel')}
+              value={levelId}
+              onChange={setLevelId}
+            >
+              <option value="">{t('pilot.select')}</option>
+              {levels.map((level: Any) => (
+                <option key={level.id} value={level.id}>
+                  {level.name}
+                </option>
+              ))}
+            </SelectField>
+          </div>
+          <Button
+            className="mt-3"
+            type="button"
+            disabled={!trackId || !levelId}
+            onClick={() =>
+              api('/api/v1/student-track-levels', {
+                method: 'POST',
+                body: JSON.stringify({
+                  student_id: studentId,
+                  track_id: trackId,
+                  current_level_id: levelId,
+                }),
+              }).then(reload)
+            }
+          >
+            {t(
+              summary.tracks.some((track: Any) => track.track_id === trackId)
+                ? 'pilot.changeLevel'
+                : 'pilot.assignTrack',
+            )}
+          </Button>
+        </>
+      )}
+      {section === 'family' && (
+        <div className="grid gap-4">
+          {links.map((link: Any) => (
+            <div key={link.id} className="grid gap-2 py-2">
+              <strong>{link.name}</strong>
+              <RelationshipEditor
+                key={`${link.id}-${link.relationship ?? ''}-${link.primary_contact}-${link.receive_notifications}`}
+                studentId={studentId}
+                guardianId={link.guardian_id}
+                initial={link}
+                onSaved={reload}
+                onUnlink={async () => {
+                  setRelationshipError(false);
+                  try {
+                    await api(`/api/v1/student-guardians/${link.id}`, { method: 'DELETE' });
+                    const verified = await reload();
+                    if (!verified?.guardianLinks?.every((value: Any) => value.id !== link.id))
+                      throw new Error('unlink_verification_failed');
+                  } catch (error) {
+                    setRelationshipError(true);
+                    throw error;
+                  }
+                }}
+              />
+            </div>
+          ))}
+          {relationshipError && <Alert tone="error" title={t('pilot.guardians.unlinkError')} />}
+          <SelectField
+            id="student-guardian"
+            label={t('pilot.guardian')}
+            value={guardianId}
+            onChange={setGuardianId}
+          >
+            <option value="">{t('pilot.select')}</option>
+            {setup.guardians
+              .filter(
+                (guardian: Any) =>
+                  guardian.active && !links.some((link: Any) => link.guardian_id === guardian.id),
+              )
+              .map((guardian: Any) => (
+                <option key={guardian.id} value={guardian.id}>
+                  {guardian.name} · {guardian.email}
+                </option>
+              ))}
+          </SelectField>
+          {guardianId && (
             <RelationshipEditor
-              key={`${link.id}-${link.relationship ?? ''}-${link.primary_contact}-${link.receive_notifications}`}
               studentId={studentId}
-              guardianId={link.guardian_id}
-              initial={link}
-              onSaved={reload}
-              onUnlink={async () => {
-                setRelationshipError(false);
-                try {
-                  await api(`/api/v1/student-guardians/${link.id}`, { method: 'DELETE' });
-                  const verified = await reload();
-                  if (!verified?.guardianLinks?.every((value: Any) => value.id !== link.id))
-                    throw new Error('unlink_verification_failed');
-                } catch (error) {
-                  setRelationshipError(true);
-                  throw error;
-                }
+              guardianId={guardianId}
+              onSaved={async () => {
+                setGuardianId('');
+                await reload();
               }}
             />
-          </div>
-        ))}
-        {relationshipError && <Alert tone="error" title={t('pilot.guardians.unlinkError')} />}
-        <SelectField
-          id="student-guardian"
-          label={t('pilot.guardian')}
-          value={guardianId}
-          onChange={setGuardianId}
-        >
-          <option value="">{t('pilot.select')}</option>
-          {setup.guardians
-            .filter(
-              (guardian: Any) =>
-                guardian.active && !links.some((link: Any) => link.guardian_id === guardian.id),
-            )
-            .map((guardian: Any) => (
-              <option key={guardian.id} value={guardian.id}>
-                {guardian.name} · {guardian.email}
-              </option>
-            ))}
-        </SelectField>
-        {guardianId && (
-          <RelationshipEditor
-            studentId={studentId}
-            guardianId={guardianId}
-            onSaved={async () => {
-              setGuardianId('');
-              await reload();
-            }}
-          />
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </Card>
   );
 }
@@ -1289,12 +1696,14 @@ export function ProgressForm({
   draft,
   onDone,
   onResult,
+  plain = false,
 }: {
   studentId: string;
   summary: Any;
   draft: Any | null;
   onDone: (resetProgressForm?: boolean) => Promise<void>;
   onResult: (result: string) => void;
+  plain?: boolean;
 }) {
   const { t } = useTranslation();
   const normalizeItem = (item: Any = {}) => ({
@@ -1364,7 +1773,7 @@ export function ProgressForm({
     }
   }
   return (
-    <Card>
+    <Card className={plain ? 'border-0 p-0 shadow-none' : undefined}>
       <h3 className="font-bold">{draft ? t('pilot.editDraft') : t('pilot.recordProgress')}</h3>
       <div className="grid gap-3">
         <SelectField
@@ -1579,10 +1988,12 @@ export function HomeworkEditor({
   update,
   onCancel,
   onSaved,
+  plain = false,
 }: {
   update: Any;
   onCancel: () => void;
   onSaved: (code: string) => Promise<void>;
+  plain?: boolean;
 }) {
   const { t } = useTranslation();
   const [homework, setHomework] = useState(update.homework ?? '');
@@ -1636,7 +2047,7 @@ export function HomeworkEditor({
     }
   }
   return (
-    <Card aria-busy={busy}>
+    <Card className={plain ? 'border-0 p-0 shadow-none' : undefined} aria-busy={busy}>
       <h3 className="font-bold">{t('pilot.homeworkEditor.title')}</h3>
       <FormField id={`published-homework-${update.id}`} label={t('pilot.homework')}>
         <Textarea
