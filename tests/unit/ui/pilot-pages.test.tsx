@@ -962,7 +962,33 @@ describe('Pilot first-use and Families workflows', () => {
     );
 
     expect(await screen.findByText('1. Reading')).toBeInTheDocument();
+    expect(screen.getByText('Track')).toBeInTheDocument();
+    expect(screen.queryByText('1. Level One')).not.toBeInTheDocument();
+    expect(screen.queryByText('1. Letters')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit track' })).toBeInTheDocument();
     expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Expand track Reading' }));
+    expect(screen.getByText('1. Level One')).toBeInTheDocument();
+    expect(screen.getByText('Level')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit level' })).toBeInTheDocument();
+    expect(screen.queryByText('1. Letters')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Expand level Level One' }));
+    expect(screen.getByText('Lessons')).toBeInTheDocument();
+    expect(screen.getByText('1. Letters')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit lesson' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Collapse all' }));
+    expect(screen.queryByText('1. Level One')).not.toBeInTheDocument();
+    expect(screen.queryByText('1. Letters')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Expand all' }));
+    expect(screen.getByText('1. Level One')).toBeInTheDocument();
+    expect(screen.getByText('1. Letters')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Collapse all' }));
+
     await user.click(screen.getByRole('button', { name: 'Add track' }));
     expect(screen.getByRole('dialog', { name: 'Create track' })).toBeInTheDocument();
     expect(screen.getByLabelText('Name')).toHaveValue('');
@@ -973,7 +999,7 @@ describe('Pilot first-use and Families workflows', () => {
     expect(screen.getByRole('dialog', { name: 'Create level' })).toBeInTheDocument();
     expect(screen.getByLabelText('Track')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
-    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
+    await user.click(screen.getByRole('button', { name: 'Edit track' }));
     expect(screen.getByRole('dialog', { name: 'Edit track' })).toBeInTheDocument();
     expect(screen.getByLabelText('Name')).toHaveValue('Reading');
   });
