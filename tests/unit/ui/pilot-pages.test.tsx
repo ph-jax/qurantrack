@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { I18nextProvider } from 'react-i18next';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +8,8 @@ import {
   ClassesPage,
   FamiliesPage,
   ProgressForm,
+  ProgramPage,
+  StudentProgressPage,
   StudentsPage,
   homeworkResultCode,
   HomeworkEditor,
@@ -83,11 +85,14 @@ describe('Pilot administrator editors', () => {
         </MemoryRouter>
       </I18nextProvider>,
     );
+    await user.click(await screen.findByRole('button', { name: 'Create class' }));
     const name = await screen.findByLabelText('Name');
     expect(name).toHaveValue('');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
     await user.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
     expect(screen.getByLabelText('Name')).toHaveValue('First Class');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await user.click(screen.getAllByRole('button', { name: 'Edit' })[1]);
     expect(screen.getByLabelText('Name')).toHaveValue('Second Class');
 
@@ -105,7 +110,9 @@ describe('Pilot administrator editors', () => {
 
     await user.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: 'Create class' }));
     expect(screen.getByLabelText('Name')).toHaveValue('');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await user.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
     expect(screen.getByLabelText('Name')).toHaveValue('First Class');
   });
@@ -793,6 +800,82 @@ describe('Pilot progress result lifecycle', () => {
   });
 });
 
+describe('Student workspace presentation', () => {
+  beforeEach(() => {
+    void i18n.changeLanguage('en');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/v1/students/student-a/summary'))
+          return Response.json({
+            ok: true,
+            student: { id: 'student-a', display_name: 'Ayla Demir', active: 1 },
+            classes: [{ id: 'class-a', name: 'Cedar Class' }],
+            tracks: [
+              {
+                track_id: 'track-a',
+                track_name: 'Quran Reading',
+                level_name: 'Foundations',
+              },
+            ],
+            passed: [{ id: 'lesson-a', name: 'Arabic letters' }],
+            updates: [],
+            updateItems: [],
+            notifications: [],
+            lessons: [
+              {
+                id: 'lesson-a',
+                name: 'Arabic letters',
+                track_name: 'Quran Reading',
+                level_name: 'Foundations',
+              },
+            ],
+          });
+        if (url.endsWith('/api/v1/program'))
+          return Response.json({
+            ok: true,
+            tracks: [{ id: 'track-a', name: 'Quran Reading', active: 1 }],
+            levels: [{ id: 'level-a', track_id: 'track-a', name: 'Foundations', active: 1 }],
+          });
+        if (url.endsWith('/api/v1/pilot/setup-options'))
+          return Response.json({
+            ok: true,
+            guardians: [
+              { id: 'guardian-a', name: 'Deniz Demir', email: 'd@example.test', active: 1 },
+            ],
+            guardianLinks: [],
+          });
+        return Response.json({}, { status: 404 });
+      }),
+    );
+  });
+
+  it('uses tabs for context and a drawer for progress entry', async () => {
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={['/app/students/student-a']}>
+          <Routes>
+            <Route path="/app/students/:id" element={<StudentProgressPage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Ayla Demir' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Lesson')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Record progress' }));
+    expect(await screen.findByRole('dialog', { name: 'Record progress' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Lesson')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await user.click(screen.getByRole('tab', { name: 'Curriculum' }));
+    expect(screen.getByText('Curriculum assignment')).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Family' }));
+    expect(screen.getByText('Linked guardians')).toBeInTheDocument();
+  });
+});
+
 describe('Pilot first-use and Families workflows', () => {
   const emptySetup = {
     ok: true,
@@ -839,6 +922,88 @@ describe('Pilot first-use and Families workflows', () => {
     expect(screen.getByLabelText(field)).toHaveFocus();
   });
 
+  it('keeps program editors closed until a create or edit action is chosen', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          ok: true,
+          tracks: [{ id: 'track-a', code: 'READ', name: 'Reading', sort_order: 1, active: 1 }],
+          levels: [
+            {
+              id: 'level-a',
+              track_id: 'track-a',
+              code: 'ONE',
+              name: 'Level One',
+              sort_order: 1,
+              active: 1,
+            },
+          ],
+          lessons: [
+            {
+              id: 'lesson-a',
+              level_id: 'level-a',
+              code: 'LETTERS',
+              name: 'Letters',
+              sort_order: 1,
+              active: 1,
+            },
+          ],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <ProgramPage />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    expect(await screen.findByText('1. Reading')).toBeInTheDocument();
+    expect(screen.getByText('Track')).toBeInTheDocument();
+    expect(screen.queryByText('1. Level One')).not.toBeInTheDocument();
+    expect(screen.queryByText('1. Letters')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit track' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Expand track Reading' }));
+    expect(screen.getByText('1. Level One')).toBeInTheDocument();
+    expect(screen.getByText('Level')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit level' })).toBeInTheDocument();
+    expect(screen.queryByText('1. Letters')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Expand level Level One' }));
+    expect(screen.getByText('Lessons')).toBeInTheDocument();
+    expect(screen.getByText('1. Letters')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit lesson' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Collapse all' }));
+    expect(screen.queryByText('1. Level One')).not.toBeInTheDocument();
+    expect(screen.queryByText('1. Letters')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Expand all' }));
+    expect(screen.getByText('1. Level One')).toBeInTheDocument();
+    expect(screen.getByText('1. Letters')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Collapse all' }));
+
+    await user.click(screen.getByRole('button', { name: 'Add track' }));
+    expect(screen.getByRole('dialog', { name: 'Create track' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Add level' }));
+    expect(screen.getByRole('dialog', { name: 'Create level' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Track')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: 'Edit track' }));
+    expect(screen.getByRole('dialog', { name: 'Edit track' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('Reading');
+  });
+
   it('shows Families loading and English and Turkish empty states', async () => {
     let resolve!: (response: Response) => void;
     vi.stubGlobal(
@@ -855,6 +1020,7 @@ describe('Pilot first-use and Families workflows', () => {
     expect(screen.getByText('Loading…')).toBeInTheDocument();
     resolve(Response.json(emptySetup));
     expect(await screen.findByText(/No guardian contacts yet/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
     await i18n.changeLanguage('tr');
     expect(await screen.findByText(/Henüz veli iletişim bilgisi yok/)).toBeInTheDocument();
   });
@@ -911,6 +1077,8 @@ describe('Pilot first-use and Families workflows', () => {
       'href',
       '/app/students/student-a',
     );
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Create guardian' }));
     await user.type(screen.getByLabelText('Name'), 'New Guardian');
     await user.type(screen.getByLabelText('Email'), 'new.guardian@example.com');
     await user.selectOptions(screen.getByLabelText('Preferred language'), 'tr');
@@ -958,6 +1126,7 @@ describe('Pilot first-use and Families workflows', () => {
         </MemoryRouter>
       </I18nextProvider>,
     );
+    await user.click(await screen.findByRole('button', { name: 'Link student' }));
     await user.selectOptions(await screen.findByLabelText('Students'), 'student-a');
     await user.type(screen.getByLabelText('Relationship'), 'Parent');
     await user.click(screen.getByLabelText('Primary contact'));
@@ -1020,6 +1189,7 @@ describe('Pilot first-use and Families workflows', () => {
           </MemoryRouter>
         </I18nextProvider>,
       );
+      await user.click(await screen.findByRole('button', { name: 'Edit relationship' }));
       const unlink = await screen.findByRole('button', { name: 'Unlink from student' });
       await user.click(unlink);
       await user.click(unlink);
@@ -1060,6 +1230,7 @@ describe('Pilot first-use and Families workflows', () => {
         </MemoryRouter>
       </I18nextProvider>,
     );
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit relationship' }));
     await user.click(await screen.findByRole('button', { name: 'Unlink from student' }));
     expect(
       fetchMock.mock.calls.filter(
@@ -1106,6 +1277,7 @@ describe('Pilot first-use and Families workflows', () => {
         </MemoryRouter>
       </I18nextProvider>,
     );
+    await user.click(await screen.findByRole('button', { name: 'Edit relationship' }));
     await user.click(await screen.findByRole('button', { name: 'Unlink from student' }));
     expect(
       await screen.findByText(

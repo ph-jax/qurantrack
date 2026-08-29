@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Plus, UserPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Alert, Badge, Button, Card } from '../components/ui';
+import { Alert, Badge, Button, Card, Sheet } from '../components/ui';
 import { useSession } from '../features/auth/SessionProvider';
 import { validatePasswordPolicy } from '../../shared/auth/password-policy';
 
@@ -43,7 +44,8 @@ export function StaffPage() {
     [role, setRole] = useState<Role>('teacher'),
     [roleFilter, setRoleFilter] = useState('all'),
     [statusFilter, setStatusFilter] = useState('all'),
-    [invitationFilter, setInvitationFilter] = useState('all');
+    [invitationFilter, setInvitationFilter] = useState('all'),
+    [staffAction, setStaffAction] = useState<'invite' | 'teacher' | null>(null);
   const load = useCallback(
     async (showError = true) => {
       setLoading(true);
@@ -203,35 +205,84 @@ export function StaffPage() {
       setTeacherPassword('');
       setTeacherConfirmation('');
       setSuccess(t('staff.manualSuccess'));
+      setStaffAction(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t('staff.actionError'));
     } finally {
       setBusy('');
     }
   };
+  const openStaffAction = (action: 'invite' | 'teacher') => {
+    setError('');
+    setSuccess('');
+    setStaffAction(action);
+  };
+  const closeStaffAction = () => {
+    if (busy) return;
+    setStaffAction(null);
+    setError('');
+    setEmail('');
+    setRole('teacher');
+    setTeacherName('');
+    setTeacherEmail('');
+    setTeacherPassword('');
+    setTeacherConfirmation('');
+  };
   if (loading) return <p role="status">{t('staff.loading')}</p>;
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold">{t('staff.title')}</h2>
-        <p className="text-text-secondary">{t('staff.description')}</p>
-      </div>
-      {error && <Alert tone="error" title={error} />}
+    <div className="workspace-page">
+      <header className="workspace-header">
+        <div>
+          <p className="eyebrow">{t('nav.manage')}</p>
+          <h1>{t('staff.title')}</h1>
+          <p className="text-text-secondary">{t('staff.description')}</p>
+        </div>
+        <div className="workspace-actions">
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={organizationSwitching}
+            onClick={() => openStaffAction('teacher')}
+          >
+            <Plus className="size-4" aria-hidden />
+            {t('staff.addTeacherManually')}
+          </Button>
+          <Button
+            type="button"
+            disabled={organizationSwitching}
+            onClick={() => openStaffAction('invite')}
+          >
+            <UserPlus className="size-4" aria-hidden />
+            {t('staff.inviteStaff')}
+          </Button>
+        </div>
+      </header>
+      {error && !staffAction && <Alert tone="error" title={error} />}
       {success && <Alert tone="success" title={success} />}
-      <Card>
-        <h3 className="mb-3 text-lg font-bold">{t('staff.inviteStaff')}</h3>
+
+      <Sheet
+        open={staffAction === 'invite'}
+        onOpenChange={(open) => !open && closeStaffAction()}
+        side="end"
+        title={t('staff.inviteStaff')}
+        closeLabel={t('pilot.close')}
+      >
         <form
-          className="grid gap-3 md:grid-cols-[1fr_14rem_auto]"
+          className="sheet-form grid gap-3"
           onSubmit={(e) => {
             e.preventDefault();
             void mutate('invite', '/api/v1/organization/invitations', 'inviteSuccess', 'POST', {
               email,
               role,
             }).then((ok) => {
-              if (ok) setEmail('');
+              if (ok) {
+                setEmail('');
+                setStaffAction(null);
+              }
             });
           }}
         >
+          {error && <Alert tone="error" title={error} />}
           <label>
             {t('staff.email')}
             <input
@@ -260,14 +311,19 @@ export function StaffPage() {
             {t('staff.invite')}
           </Button>
         </form>
-      </Card>
-      <Card>
-        <section aria-labelledby="manual-teacher-title">
-          <h3 id="manual-teacher-title" className="mb-1 text-lg font-bold">
-            {t('staff.addTeacherManually')}
-          </h3>
+      </Sheet>
+
+      <Sheet
+        open={staffAction === 'teacher'}
+        onOpenChange={(open) => !open && closeStaffAction()}
+        side="end"
+        title={t('staff.addTeacherManually')}
+        closeLabel={t('pilot.close')}
+      >
+        <section className="sheet-form">
           <p className="mb-3 text-sm text-text-secondary">{t('staff.manualDescription')}</p>
-          <form className="grid gap-3 md:grid-cols-2" onSubmit={createTeacher}>
+          {error && <Alert tone="error" title={error} />}
+          <form className="grid gap-3" onSubmit={createTeacher}>
             <label>
               {t('staff.displayName')}
               <input
@@ -310,16 +366,13 @@ export function StaffPage() {
                 onChange={(event) => setTeacherConfirmation(event.target.value)}
               />
             </label>
-            <Button
-              className="md:col-span-2 md:justify-self-start"
-              disabled={!!busy || organizationSwitching}
-              type="submit"
-            >
+            <Button disabled={!!busy || organizationSwitching} type="submit">
               {busy === 'manual-teacher' ? t('staff.creatingTeacher') : t('staff.createTeacher')}
             </Button>
           </form>
         </section>
-      </Card>
+      </Sheet>
+
       <label className="block max-w-md">
         {t('staff.search')}
         <input

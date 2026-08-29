@@ -27,6 +27,7 @@ import { showcasePaths } from './showcaseGate';
 import { educatorPilotRoles, organizationPilotRoles } from './navigation';
 import { administrativeRoles } from '../../shared/roles';
 import { NotificationCenterPage } from '../pages/NotificationCenterPage';
+import { ManagePage } from '../pages/ManagePage';
 const uiPreviewEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_UI_PREVIEW === 'true';
 const appChildren = [
   { index: true, element: <DashboardPage /> },
@@ -74,6 +75,14 @@ const appChildren = [
     path,
     element: <PlaceholderPage />,
   })),
+  {
+    path: 'manage',
+    element: (
+      <RoleProtectedRoute roles={administrativeRoles}>
+        <ManagePage />
+      </RoleProtectedRoute>
+    ),
+  },
   {
     path: 'notifications',
     element: (

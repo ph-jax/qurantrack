@@ -8,6 +8,7 @@ import { ProtectedRoute } from '../../../src/features/auth/ProtectedRoute';
 import {
   educatorPilotRoles,
   organizationPilotRoles,
+  primaryNavigation,
   visibleNavigation,
 } from '../../../src/app/navigation';
 import { i18n, LANGUAGE_KEY } from '../../../src/i18n';
@@ -125,14 +126,16 @@ describe('navigation, language and shared accessibility', () => {
   it('filters administrative routes using trusted session roles', () => {
     expect(visibleNavigation('system_admin').map((x) => x.key)).toEqual([
       'dashboard',
+      'manage',
       'teachers',
       'settings',
     ]);
     expect(visibleNavigation('organization_admin').map((x) => x.key)).toEqual([
       'dashboard',
-      'students',
-      'teachers',
       'classes',
+      'students',
+      'manage',
+      'teachers',
       'program',
       'families',
       'notifications',
@@ -140,10 +143,21 @@ describe('navigation, language and shared accessibility', () => {
     ]);
     expect(visibleNavigation('teacher').map((x) => x.key)).toEqual([
       'dashboard',
-      'students',
       'classes',
+      'students',
     ]);
     expect(visibleNavigation('read_only').map((x) => x.key)).toEqual(['dashboard']);
+    expect(primaryNavigation('organization_admin').map((x) => x.key)).toEqual([
+      'dashboard',
+      'classes',
+      'students',
+      'manage',
+    ]);
+    expect(primaryNavigation('teacher').map((x) => x.key)).toEqual([
+      'dashboard',
+      'classes',
+      'students',
+    ]);
     expect(educatorPilotRoles).toEqual(['organization_admin', 'teacher']);
     expect(organizationPilotRoles).toEqual(['organization_admin']);
   });

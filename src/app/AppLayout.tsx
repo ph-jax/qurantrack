@@ -1,48 +1,50 @@
 import { useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Menu as MenuIcon, UserRound } from 'lucide-react';
+import { UserRound } from 'lucide-react';
+import { NavLink, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Alert, Button, Menu, MenuItem, Select, Sheet } from '../components/ui';
+import { Alert, Button, Menu, MenuItem, Select } from '../components/ui';
 import { OrganizationIdentity } from '../components/OrganizationIdentity';
 import { useSession, type Role } from '../features/auth/SessionProvider';
-import { previewDestination, visibleNavigation } from './navigation';
+import { previewDestination, primaryNavigation, type NavigationGroup } from './navigation';
 
-function Nav({
-  close,
-  role,
-  prefix = '/app',
-  label,
-}: {
-  close?: () => void;
-  role: Role;
-  prefix?: string;
-  label: string;
-}) {
+const navigationGroups: NavigationGroup[] = ['daily', 'administration'];
+
+function Nav({ role, prefix = '/app', label }: { role: Role; prefix?: string; label: string }) {
   const { t } = useTranslation();
+  const items = primaryNavigation(role);
   return (
-    <nav aria-label={label} className="mt-5 space-y-1">
-      {visibleNavigation(role).map(({ key, to, icon: Icon }) => (
-        <NavLink
-          end
-          key={key}
-          to={prefix === '/ui-preview' ? previewDestination(key) : to}
-          onClick={close}
-          className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`}
-        >
-          <Icon className="size-5 shrink-0" aria-hidden />
-          <span>{t(`nav.${key}`)}</span>
-        </NavLink>
-      ))}
+    <nav aria-label={label} className="primary-nav">
+      {navigationGroups.map((group) => {
+        const grouped = items.filter((item) => item.group === group);
+        if (!grouped.length) return null;
+        return (
+          <div className="nav-group" key={group}>
+            <p className="nav-group-label">{t(`nav.${group}`)}</p>
+            <div className="nav-group-links">
+              {grouped.map(({ key, to, icon: Icon }) => (
+                <NavLink
+                  end
+                  key={key}
+                  to={prefix === '/ui-preview' ? previewDestination(key) : to}
+                  className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`}
+                >
+                  <Icon className="size-5 shrink-0" aria-hidden />
+                  <span>{t(`nav.${key}`)}</span>
+                </NavLink>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </nav>
   );
 }
+
 export function AppLayout({ preview = false }: { preview?: boolean }) {
   const { session, logout, switchOrganization } = useSession();
   const { t, i18n } = useTranslation();
-  const [mobile, setMobile] = useState(false);
   const [actionError, setActionError] = useState(false);
   const [previewOrganizationId, setPreviewOrganizationId] = useState('fictional-1');
-  const location = useLocation();
   if (!session && !preview) return null;
   const previewSession = {
     user: { id: 'fictional-user', email: 'preview.staff@example.test' },
@@ -68,7 +70,8 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
     displaySession.organizations.find(
       (organization) => organization.id === displaySession.activeOrganizationId,
     ) ?? displaySession.organizations[0];
-  const key = location.pathname.split('/').pop() || 'dashboard';
+  const userLabel = displaySession.user.email.split('@')[0] || displaySession.user.email;
+
   return (
     <div className="app-frame">
       <aside className="sidebar">
@@ -78,9 +81,33 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
           </span>
           QuranTrack
         </div>
-        <div className="mt-6">
-          <p className="eyebrow">{t('shell.organization')}</p>
-          <OrganizationIdentity name={current.name} />
+        <Nav
+          label={t('nav.primaryLabel')}
+          role={displaySession.role}
+          prefix={preview ? '/ui-preview' : '/app'}
+        />
+        <div className="sidebar-footer">
+          {preview && <p className="sidebar-note">{t('shell.previewNotice')}</p>}
+          <div className="account-summary">
+            <span className="account-avatar" aria-hidden>
+              {userLabel.slice(0, 2).toUpperCase()}
+            </span>
+            <span className="min-w-0">
+              <strong className="block truncate text-sm">{userLabel}</strong>
+              <span className="block truncate text-xs text-text-secondary">
+                {t(`roles.${current.role}`)}
+              </span>
+            </span>
+          </div>
+        </div>
+      </aside>
+
+      <div className="app-main">
+        <header className="topbar">
+          <div className="topbar-organization">
+            <OrganizationIdentity name={current.name} />
+            <p>{preview ? t('shell.preview') : t(`roles.${current.role}`)}</p>
+          </div>
           {displaySession.organizations.length > 1 && (
             <Select
               label={t('shell.switchOrg')}
@@ -93,39 +120,16 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
                 }
                 void switchOrganization(id).catch(() => setActionError(true));
               }}
-              items={displaySession.organizations.map((o) => ({ value: o.id, label: o.name }))}
+              items={displaySession.organizations.map((organization) => ({
+                value: organization.id,
+                label: organization.name,
+              }))}
             />
           )}
-          <p className="mt-1 text-xs text-text-secondary">{t(`roles.${current.role}`)}</p>
-        </div>
-        <Nav
-          label={t('nav.primaryLabel')}
-          role={displaySession.role}
-          prefix={preview ? '/ui-preview' : '/app'}
-        />
-        {preview && <p className="sidebar-note">{t('shell.previewNotice')}</p>}
-      </aside>
-      <div className="min-w-0">
-        <header className="topbar">
-          <Button
-            className="lg:hidden"
-            variant="ghost"
-            size="icon"
-            aria-label={t('nav.more')}
-            onClick={() => setMobile(true)}
-          >
-            <MenuIcon className="size-5" />
-          </Button>
-          <div className="min-w-0 flex-1">
-            <p className="eyebrow">{preview && t('shell.preview')}</p>
-            <h1 className="truncate text-xl font-bold">
-              {t(`nav.${key}`, { defaultValue: t('dashboard.title') })}
-            </h1>
-          </div>
           <Select
             label={t('common.language')}
             value={i18n.language}
-            onValueChange={(v) => void i18n.changeLanguage(v)}
+            onValueChange={(value) => void i18n.changeLanguage(value)}
             items={[
               { value: 'en', label: 'EN' },
               { value: 'tr', label: 'TR' },
@@ -168,15 +172,6 @@ export function AppLayout({ preview = false }: { preview?: boolean }) {
           <Outlet />
         </main>
       </div>
-      <Sheet open={mobile} onOpenChange={setMobile} title="QuranTrack" closeLabel={t('nav.close')}>
-        <OrganizationIdentity name={current.name} />
-        <Nav
-          label={t('nav.primaryLabel')}
-          role={displaySession.role}
-          prefix={preview ? '/ui-preview' : '/app'}
-          close={() => setMobile(false)}
-        />
-      </Sheet>
     </div>
   );
 }
