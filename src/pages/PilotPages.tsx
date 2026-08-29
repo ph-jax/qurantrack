@@ -779,6 +779,7 @@ export function FamiliesPage() {
   const { t } = useTranslation();
   const setup = useLoad('/api/v1/pilot/setup-options');
   const [editing, setEditing] = useState<Any | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [unlinking, setUnlinking] = useState('');
   const [unlinkResult, setUnlinkResult] = useState<
     'success' | 'deleteError' | 'verificationError' | ''
@@ -786,6 +787,7 @@ export function FamiliesPage() {
   const reload = async () => {
     await setup.reload();
     setEditing(null);
+    setEditorOpen(false);
   };
   if (setup.error && unlinkResult !== 'verificationError')
     return <Alert tone="error" title={t('pilot.loadError')} />;
@@ -811,8 +813,24 @@ export function FamiliesPage() {
     }
   };
   return (
-    <div className="space-y-5">
-      <Header title={t('pilot.guardians.title')} description={t('pilot.guardians.description')} />
+    <div className="workspace-page">
+      <Header
+        title={t('pilot.guardians.title')}
+        description={t('pilot.guardians.description')}
+        eyebrow={t('nav.manage')}
+        actions={
+          <Button
+            type="button"
+            onClick={() => {
+              setEditing(null);
+              setEditorOpen(true);
+            }}
+          >
+            <UserPlus className="size-4" aria-hidden />
+            {t('pilot.guardians.create')}
+          </Button>
+        }
+      />
       <Alert tone="info" title={t('pilot.guardians.linkHelp')} />
       {unlinkResult && (
         <Alert
@@ -826,28 +844,45 @@ export function FamiliesPage() {
           )}
         />
       )}
-      <Editor
-        key={editing?.id ?? 'create-guardian'}
+      <Sheet
+        open={editorOpen}
+        onOpenChange={(open) => {
+          setEditorOpen(open);
+          if (!open) setEditing(null);
+        }}
+        side="end"
         title={editing ? t('pilot.guardians.edit') : t('pilot.guardians.create')}
-        initial={editing ?? undefined}
-        fields={[
-          { key: 'name', label: t('pilot.name') },
-          { key: 'email', label: t('pilot.email'), type: 'email' },
-          { key: 'phone', label: t('pilot.phone') },
-          {
-            key: 'preferred_locale',
-            label: t('pilot.locale'),
-            options: [
-              { value: 'en', label: t('common.english') },
-              { value: 'tr', label: t('common.turkish') },
-            ],
-          },
-        ]}
-        onSave={(value) =>
-          api('/api/v1/guardians', { method: 'POST', body: JSON.stringify(value) }).then(reload)
-        }
-        onCancel={editing ? () => setEditing(null) : undefined}
-      />
+        closeLabel={t('pilot.close')}
+      >
+        <div className="sheet-form">
+          <Editor
+            key={editing?.id ?? 'create-guardian'}
+            title={editing ? t('pilot.guardians.edit') : t('pilot.guardians.create')}
+            initial={editing ?? undefined}
+            fields={[
+              { key: 'name', label: t('pilot.name') },
+              { key: 'email', label: t('pilot.email'), type: 'email' },
+              { key: 'phone', label: t('pilot.phone') },
+              {
+                key: 'preferred_locale',
+                label: t('pilot.locale'),
+                options: [
+                  { value: 'en', label: t('common.english') },
+                  { value: 'tr', label: t('common.turkish') },
+                ],
+              },
+            ]}
+            onSave={(value) =>
+              api('/api/v1/guardians', { method: 'POST', body: JSON.stringify(value) }).then(reload)
+            }
+            onCancel={() => {
+              setEditing(null);
+              setEditorOpen(false);
+            }}
+            plain
+          />
+        </div>
+      </Sheet>
       <div className="grid gap-3">
         {data.guardians.map((guardian: Any) => (
           <FamilyGuardianCard
@@ -856,12 +891,25 @@ export function FamiliesPage() {
             data={data}
             reload={reload}
             unlink={unlink}
-            edit={() => setEditing(guardian)}
+            edit={() => {
+              setEditing(guardian);
+              setEditorOpen(true);
+            }}
           />
         ))}
         {!data.guardians.length && (
-          <Card>
+          <Card className="empty-state compact-empty-state">
             <p>{t('pilot.guardians.empty')}</p>
+            <Button
+              className="mt-3"
+              type="button"
+              onClick={() => {
+                setEditing(null);
+                setEditorOpen(true);
+              }}
+            >
+              {t('pilot.guardians.create')}
+            </Button>
           </Card>
         )}
       </div>
@@ -872,6 +920,7 @@ export function FamiliesPage() {
 function FamilyGuardianCard({ guardian, data, reload, unlink, edit }: Any) {
   const { t } = useTranslation();
   const [studentId, setStudentId] = useState('');
+  const [relationshipEditor, setRelationshipEditor] = useState<Any | null>(null);
   const links = data.guardianLinks.filter((link: Any) => link.guardian_id === guardian.id);
   return (
     <Card>
@@ -898,48 +947,101 @@ function FamilyGuardianCard({ guardian, data, reload, unlink, edit }: Any) {
             {data.students.find((student: Any) => student.id === link.student_id)?.display_name} ·{' '}
             {t(link.receive_notifications ? 'pilot.enabled' : 'pilot.disabled')}
           </span>
-          <Link className="font-semibold text-brand" to={`/app/students/${link.student_id}`}>
-            {t('pilot.guardians.manageLink')}
-          </Link>
-          <RelationshipEditor
-            key={`${link.id}-${link.relationship ?? ''}-${link.primary_contact}-${link.receive_notifications}`}
-            studentId={link.student_id}
-            guardianId={guardian.id}
-            initial={link}
-            onSaved={reload}
-            onUnlink={() => unlink(link.id)}
-          />
+          <div className="flex flex-wrap gap-2">
+            <Link
+              className="app-button app-button-secondary"
+              to={`/app/students/${link.student_id}`}
+            >
+              {t('pilot.guardians.manageLink')}
+            </Link>
+            <Button type="button" variant="secondary" onClick={() => setRelationshipEditor(link)}>
+              {t('pilot.guardians.editRelationship')}
+            </Button>
+          </div>
         </div>
       ))}
       {!links.length && <p className="text-sm text-text-secondary">{t('pilot.empty')}</p>}
-      <SelectField
-        id={`guardian-student-${guardian.id}`}
-        label={t('pilot.students.title')}
-        value={studentId}
-        onChange={setStudentId}
+      <Button
+        className="mt-3"
+        type="button"
+        variant="secondary"
+        onClick={() => {
+          setStudentId('');
+          setRelationshipEditor({ new: true });
+        }}
       >
-        <option value="">{t('pilot.select')}</option>
-        {data.students
-          .filter(
-            (student: Any) =>
-              student.active && !links.some((link: Any) => link.student_id === student.id),
-          )
-          .map((student: Any) => (
-            <option key={student.id} value={student.id}>
-              {student.display_name}
-            </option>
-          ))}
-      </SelectField>
-      {studentId && (
-        <RelationshipEditor
-          studentId={studentId}
-          guardianId={guardian.id}
-          onSaved={async () => {
+        <Plus className="size-4" aria-hidden />
+        {t('pilot.guardians.linkStudent')}
+      </Button>
+      <Sheet
+        open={!!relationshipEditor}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRelationshipEditor(null);
             setStudentId('');
-            await reload();
-          }}
-        />
-      )}
+          }
+        }}
+        side="end"
+        title={t(
+          relationshipEditor?.new
+            ? 'pilot.guardians.linkStudent'
+            : 'pilot.guardians.editRelationship',
+        )}
+        closeLabel={t('pilot.close')}
+      >
+        <div className="sheet-form">
+          {relationshipEditor?.new ? (
+            <>
+              <SelectField
+                id={`guardian-student-${guardian.id}`}
+                label={t('pilot.students.title')}
+                value={studentId}
+                onChange={setStudentId}
+              >
+                <option value="">{t('pilot.select')}</option>
+                {data.students
+                  .filter(
+                    (student: Any) =>
+                      student.active && !links.some((link: Any) => link.student_id === student.id),
+                  )
+                  .map((student: Any) => (
+                    <option key={student.id} value={student.id}>
+                      {student.display_name}
+                    </option>
+                  ))}
+              </SelectField>
+              {studentId && (
+                <RelationshipEditor
+                  studentId={studentId}
+                  guardianId={guardian.id}
+                  onSaved={async () => {
+                    await reload();
+                    setStudentId('');
+                    setRelationshipEditor(null);
+                  }}
+                />
+              )}
+            </>
+          ) : (
+            relationshipEditor && (
+              <RelationshipEditor
+                key={`${relationshipEditor.id}-${relationshipEditor.relationship ?? ''}-${relationshipEditor.primary_contact}-${relationshipEditor.receive_notifications}`}
+                studentId={relationshipEditor.student_id}
+                guardianId={guardian.id}
+                initial={relationshipEditor}
+                onSaved={async () => {
+                  await reload();
+                  setRelationshipEditor(null);
+                }}
+                onUnlink={async () => {
+                  await unlink(relationshipEditor.id);
+                  setRelationshipEditor(null);
+                }}
+              />
+            )
+          )}
+        </div>
+      </Sheet>
     </Card>
   );
 }
@@ -949,6 +1051,7 @@ export function ProgramPage() {
   const program = useLoad('/api/v1/program');
   const [kind, setKind] = useState('track');
   const [editing, setEditing] = useState<Any | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   if (program.error) return <Alert tone="error" title={t('pilot.loadError')} />;
   if (!program.data) return <Spinner label={t('pilot.loading')} />;
   const tracks = program.data.tracks;
@@ -994,30 +1097,63 @@ export function ProgramPage() {
   const begin = (nextKind: string, value?: Any) => {
     setKind(nextKind);
     setEditing(value ?? null);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setEditorOpen(true);
   };
   return (
-    <div className="space-y-5">
-      <Header title={t('pilot.program.title')} description={t('pilot.program.description')} />
-      <div className="flex flex-wrap gap-2">
-        {['track', 'level', 'lesson'].map((value) => (
-          <Button key={value} type="button" variant="secondary" onClick={() => begin(value)}>
-            {t(`pilot.program.add.${value}`)}
-          </Button>
-        ))}
-      </div>
-      <Editor
-        key={`${kind}-${editing?.id ?? 'new'}`}
-        title={t(`pilot.program.${editing ? 'edit' : 'create'}.${kind}`)}
-        initial={editing ?? undefined}
-        fields={fields}
-        onSave={(value) =>
-          api(`/api/v1/program/${endpoint}`, { method: 'POST', body: JSON.stringify(value) })
-            .then(program.reload)
-            .then(() => setEditing(null))
+    <div className="workspace-page">
+      <Header
+        title={t('pilot.program.title')}
+        description={t('pilot.program.description')}
+        eyebrow={t('nav.manage')}
+        actions={
+          <>
+            {['track', 'level', 'lesson'].map((value, index) => (
+              <Button
+                key={value}
+                type="button"
+                variant={index ? 'secondary' : 'primary'}
+                onClick={() => begin(value)}
+              >
+                {index === 0 && <Plus className="size-4" aria-hidden />}
+                {t(`pilot.program.add.${value}`)}
+              </Button>
+            ))}
+          </>
         }
-        onCancel={editing ? () => setEditing(null) : undefined}
       />
+      <Sheet
+        open={editorOpen}
+        onOpenChange={(open) => {
+          setEditorOpen(open);
+          if (!open) setEditing(null);
+        }}
+        side="end"
+        title={t(`pilot.program.${editing ? 'edit' : 'create'}.${kind}`)}
+        closeLabel={t('pilot.close')}
+      >
+        <div className="sheet-form">
+          <Editor
+            key={`${kind}-${editing?.id ?? 'new'}`}
+            title={t(`pilot.program.${editing ? 'edit' : 'create'}.${kind}`)}
+            initial={editing ?? undefined}
+            fields={fields}
+            onSave={async (value) => {
+              await api(`/api/v1/program/${endpoint}`, {
+                method: 'POST',
+                body: JSON.stringify(value),
+              });
+              await program.reload();
+              setEditing(null);
+              setEditorOpen(false);
+            }}
+            onCancel={() => {
+              setEditing(null);
+              setEditorOpen(false);
+            }}
+            plain
+          />
+        </div>
+      </Sheet>
       <Card>
         <h3 className="font-bold">{t('pilot.program.curriculum')}</h3>
         {tracks.map((track: Any) => (

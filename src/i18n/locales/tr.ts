@@ -377,6 +377,8 @@ export default {
       linkHelp:
         'Öğrencileri buradan veya öğrenci sayfasından bağlayın. Her iki görünüm de aynı ilişki ve bildirim tercihlerini günceller.',
       manageLink: 'Öğrencide yönet',
+      linkStudent: 'Öğrenci bağla',
+      editRelationship: 'İlişkiyi düzenle',
       saveRelationship: 'İlişkiyi kaydet',
       unlinkSuccess: 'Veli bağlantısı kaldırıldı.',
       unlinkError: 'Veli bağlantısı kaldırılamadı. Yeniden deneyin.',

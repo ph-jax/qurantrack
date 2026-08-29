@@ -8,6 +8,7 @@ import {
   ClassesPage,
   FamiliesPage,
   ProgressForm,
+  ProgramPage,
   StudentProgressPage,
   StudentsPage,
   homeworkResultCode,
@@ -921,6 +922,62 @@ describe('Pilot first-use and Families workflows', () => {
     expect(screen.getByLabelText(field)).toHaveFocus();
   });
 
+  it('keeps program editors closed until a create or edit action is chosen', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          ok: true,
+          tracks: [{ id: 'track-a', code: 'READ', name: 'Reading', sort_order: 1, active: 1 }],
+          levels: [
+            {
+              id: 'level-a',
+              track_id: 'track-a',
+              code: 'ONE',
+              name: 'Level One',
+              sort_order: 1,
+              active: 1,
+            },
+          ],
+          lessons: [
+            {
+              id: 'lesson-a',
+              level_id: 'level-a',
+              code: 'LETTERS',
+              name: 'Letters',
+              sort_order: 1,
+              active: 1,
+            },
+          ],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <ProgramPage />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    expect(await screen.findByText('1. Reading')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Add track' }));
+    expect(screen.getByRole('dialog', { name: 'Create track' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Add level' }));
+    expect(screen.getByRole('dialog', { name: 'Create level' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Track')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
+    expect(screen.getByRole('dialog', { name: 'Edit track' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('Reading');
+  });
+
   it('shows Families loading and English and Turkish empty states', async () => {
     let resolve!: (response: Response) => void;
     vi.stubGlobal(
@@ -937,6 +994,7 @@ describe('Pilot first-use and Families workflows', () => {
     expect(screen.getByText('Loading…')).toBeInTheDocument();
     resolve(Response.json(emptySetup));
     expect(await screen.findByText(/No guardian contacts yet/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
     await i18n.changeLanguage('tr');
     expect(await screen.findByText(/Henüz veli iletişim bilgisi yok/)).toBeInTheDocument();
   });
@@ -993,6 +1051,8 @@ describe('Pilot first-use and Families workflows', () => {
       'href',
       '/app/students/student-a',
     );
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Create guardian' }));
     await user.type(screen.getByLabelText('Name'), 'New Guardian');
     await user.type(screen.getByLabelText('Email'), 'new.guardian@example.com');
     await user.selectOptions(screen.getByLabelText('Preferred language'), 'tr');
@@ -1040,6 +1100,7 @@ describe('Pilot first-use and Families workflows', () => {
         </MemoryRouter>
       </I18nextProvider>,
     );
+    await user.click(await screen.findByRole('button', { name: 'Link student' }));
     await user.selectOptions(await screen.findByLabelText('Students'), 'student-a');
     await user.type(screen.getByLabelText('Relationship'), 'Parent');
     await user.click(screen.getByLabelText('Primary contact'));
@@ -1102,6 +1163,7 @@ describe('Pilot first-use and Families workflows', () => {
           </MemoryRouter>
         </I18nextProvider>,
       );
+      await user.click(await screen.findByRole('button', { name: 'Edit relationship' }));
       const unlink = await screen.findByRole('button', { name: 'Unlink from student' });
       await user.click(unlink);
       await user.click(unlink);
@@ -1142,6 +1204,7 @@ describe('Pilot first-use and Families workflows', () => {
         </MemoryRouter>
       </I18nextProvider>,
     );
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit relationship' }));
     await user.click(await screen.findByRole('button', { name: 'Unlink from student' }));
     expect(
       fetchMock.mock.calls.filter(
@@ -1188,6 +1251,7 @@ describe('Pilot first-use and Families workflows', () => {
         </MemoryRouter>
       </I18nextProvider>,
     );
+    await user.click(await screen.findByRole('button', { name: 'Edit relationship' }));
     await user.click(await screen.findByRole('button', { name: 'Unlink from student' }));
     expect(
       await screen.findByText(

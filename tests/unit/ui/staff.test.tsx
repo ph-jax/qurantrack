@@ -84,6 +84,10 @@ const renderStaff = () =>
       <StaffPage />
     </I18nextProvider>,
   );
+const openInvite = async () =>
+  userEvent.click(await screen.findByRole('button', { name: 'Invite Staff' }));
+const openManualTeacher = async () =>
+  userEvent.click(await screen.findByRole('button', { name: 'Add Teacher Manually' }));
 describe('Staff administration UI', () => {
   beforeEach(async () => {
     sessionState.role = 'organization_admin';
@@ -130,6 +134,7 @@ describe('Staff administration UI', () => {
       .mockResolvedValueOnce(response(data));
     vi.stubGlobal('fetch', fetch);
     renderStaff();
+    await openInvite();
     const input = await screen.findByLabelText('Email address');
     await userEvent.type(input, 'new@example.test');
     await userEvent.click(screen.getByRole('button', { name: 'Send invitation' }));
@@ -137,6 +142,7 @@ describe('Staff administration UI', () => {
     expect(input).toHaveValue('new@example.test');
     expect(screen.getByText('pending@example.test')).toBeInTheDocument();
     expect(screen.getByText('Email submission: Failed — resend available')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(screen.getAllByRole('button', { name: 'Resend' }).length).toBeGreaterThan(0);
   });
   it('keeps manual teacher creation separate, fixed-role, and validates password matching locally', async () => {
@@ -144,9 +150,11 @@ describe('Staff administration UI', () => {
     vi.stubGlobal('fetch', fetch);
     renderStaff();
     await screen.findByText('Teacher');
-    expect(screen.getByRole('heading', { name: 'Invite Staff' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Display name')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument();
+    await openManualTeacher();
     expect(screen.getByRole('heading', { name: 'Add Teacher Manually' })).toBeInTheDocument();
-    expect(screen.getAllByLabelText('Role')).toHaveLength(1);
+    expect(screen.queryByLabelText('Role')).not.toBeInTheDocument();
     await userEvent.type(screen.getByLabelText('Display name'), 'New Teacher');
     await userEvent.type(screen.getByLabelText('Teacher email address'), 'new@example.test');
     await userEvent.type(screen.getByLabelText('Initial password'), 'password1');
@@ -180,6 +188,7 @@ describe('Staff administration UI', () => {
     vi.stubGlobal('fetch', fetch);
     renderStaff();
     await screen.findByText('Teacher');
+    await openManualTeacher();
     const name = screen.getByLabelText('Display name');
     const email = screen.getByLabelText('Teacher email address');
     const password = screen.getByLabelText('Initial password');
@@ -232,6 +241,7 @@ describe('Staff administration UI', () => {
     );
     renderStaff();
     await screen.findByText('Teacher');
+    await openManualTeacher();
     await userEvent.type(screen.getByLabelText('Display name'), 'New');
     await userEvent.type(screen.getByLabelText('Teacher email address'), 'new@example.test');
     await userEvent.type(screen.getByLabelText('Initial password'), 'password1');
@@ -252,6 +262,7 @@ describe('Staff administration UI', () => {
     vi.stubGlobal('fetch', fetch);
     renderStaff();
     await screen.findByText('Teacher');
+    await openManualTeacher();
     const fill = async () => {
       await userEvent.clear(screen.getByLabelText('Display name'));
       await userEvent.type(screen.getByLabelText('Display name'), 'New');
@@ -283,8 +294,10 @@ describe('Staff administration UI', () => {
     renderStaff();
     expect(await screen.findByText('No matching members.')).toBeInTheDocument();
     expect(screen.getByText('No matching invitations.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Send invitation' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Create Teacher' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Invite Staff' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add Teacher Manually' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Send invitation' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create Teacher' })).not.toBeInTheDocument();
     expect(fetch).toHaveBeenCalledOnce();
   });
   it('shows localized success after a completed membership mutation', async () => {
@@ -341,6 +354,7 @@ describe('Staff administration UI', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(data)));
     renderStaff();
     expect(await screen.findAllByText('Davet durumu: Bekliyor')).toHaveLength(2);
+    await userEvent.click(screen.getByRole('button', { name: 'Öğretmeni Manuel Olarak Ekle' }));
     expect(
       screen.getByRole('heading', { name: 'Öğretmeni Manuel Olarak Ekle' }),
     ).toBeInTheDocument();

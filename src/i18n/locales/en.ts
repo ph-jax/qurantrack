@@ -379,6 +379,8 @@ export default {
       linkHelp:
         'Link students here or from the student page. Both views update the same relationship and notification preferences.',
       manageLink: 'Manage on student',
+      linkStudent: 'Link student',
+      editRelationship: 'Edit relationship',
       saveRelationship: 'Save relationship',
       unlinkSuccess: 'Guardian link removed.',
       unlinkError: 'The guardian link could not be removed. Try again.',
