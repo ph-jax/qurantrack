@@ -810,6 +810,134 @@ a.workspace-row:hover strong,
   width: 100%;
   padding: clamp(2rem, 6vw, 4rem);
 }
+.program-curriculum-card {
+  overflow: hidden;
+  padding: 0;
+}
+.program-curriculum-heading {
+  display: flex;
+  min-height: 4.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+}
+.program-curriculum-heading h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+.program-curriculum-list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0 1rem 1rem;
+}
+.program-track,
+.program-level,
+.program-lessons {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.program-accordion-row,
+.program-lesson-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.75rem 1rem;
+}
+.program-track-row {
+  min-height: 5rem;
+}
+.program-level-row {
+  min-height: 4.65rem;
+}
+.program-accordion-toggle {
+  display: flex;
+  min-width: min(16rem, 100%);
+  min-height: 2.75rem;
+  flex: 1 1 18rem;
+  cursor: pointer;
+  align-items: center;
+  gap: 0.8rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  padding: 0.25rem;
+  color: var(--text);
+  text-align: start;
+}
+.program-accordion-toggle:hover strong {
+  color: var(--brand-strong);
+}
+.program-accordion-toggle:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--brand) 28%, transparent);
+  outline-offset: 2px;
+}
+.program-chevron {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+  transition: transform 160ms ease;
+}
+.program-accordion-toggle[aria-expanded='true'] .program-chevron {
+  transform: rotate(90deg);
+  color: var(--brand);
+}
+.program-row-copy,
+.program-lesson-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+}
+.program-row-copy strong,
+.program-lesson-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.program-kind,
+.program-lessons-heading {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.program-count {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.program-track-content {
+  display: grid;
+  gap: 0.75rem;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--muted) 42%, var(--surface));
+  padding: 0.75rem;
+}
+.program-lessons {
+  margin: 0 0.75rem 0.75rem;
+  margin-inline-start: 3.2rem;
+  border-radius: var(--radius-md);
+}
+.program-lessons-heading {
+  margin: 0;
+  padding: 0.75rem 1rem 0.35rem;
+}
+.program-lesson-row {
+  min-height: 4.25rem;
+  border-top: 1px solid var(--border);
+}
+.program-lesson-copy {
+  flex: 1;
+}
+.program-lesson-copy > span {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
 .workspace-back {
   display: inline-flex;
   width: fit-content;
@@ -1044,6 +1172,26 @@ a.workspace-row:hover strong,
   }
   .workspace-row .badge {
     display: none;
+  }
+  .program-accordion-toggle {
+    flex-basis: 100%;
+  }
+  .program-accordion-row {
+    flex-wrap: wrap;
+    gap: 0.55rem 0.75rem;
+  }
+  .program-count {
+    margin-inline-start: 2.2rem;
+    margin-inline-end: auto;
+  }
+  .program-lessons {
+    margin-inline-start: 1.25rem;
+  }
+  .program-lesson-row {
+    flex-wrap: wrap;
+  }
+  .program-lesson-copy {
+    flex-basis: 100%;
   }
   .student-identity {
     align-items: flex-start;
