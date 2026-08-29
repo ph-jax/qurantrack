@@ -1,5 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type FormEvent,
+  type ReactNode,
+  type SetStateAction,
+} from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -1052,6 +1061,8 @@ export function ProgramPage() {
   const [kind, setKind] = useState('track');
   const [editing, setEditing] = useState<Any | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [expandedTracks, setExpandedTracks] = useState<Set<string>>(() => new Set());
+  const [expandedLevels, setExpandedLevels] = useState<Set<string>>(() => new Set());
   if (program.error) return <Alert tone="error" title={t('pilot.loadError')} />;
   if (!program.data) return <Spinner label={t('pilot.loading')} />;
   const tracks = program.data.tracks;
@@ -1098,6 +1109,24 @@ export function ProgramPage() {
     setKind(nextKind);
     setEditing(value ?? null);
     setEditorOpen(true);
+  };
+  const toggleExpanded = (id: string, setter: Dispatch<SetStateAction<Set<string>>>) => {
+    setter((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const curriculumExpanded = expandedTracks.size > 0;
+  const toggleAll = () => {
+    if (curriculumExpanded) {
+      setExpandedTracks(new Set());
+      setExpandedLevels(new Set());
+      return;
+    }
+    setExpandedTracks(new Set(tracks.map((track: Any) => track.id)));
+    setExpandedLevels(new Set(levels.map((level: Any) => level.id)));
   };
   return (
     <div className="workspace-page">
@@ -1154,59 +1183,132 @@ export function ProgramPage() {
           />
         </div>
       </Sheet>
-      <Card>
-        <h3 className="font-bold">{t('pilot.program.curriculum')}</h3>
-        {tracks.map((track: Any) => (
-          <div key={track.id} className="mt-4 rounded border border-border p-3">
-            <EntityRow
-              entity={track}
-              label={`${track.sort_order}. ${track.name}`}
-              onEdit={() => begin('track', track)}
-            />
-            {levels
-              .filter((level: Any) => level.track_id === track.id)
-              .map((level: Any) => (
-                <div key={level.id} className="ms-3 mt-2">
-                  <EntityRow
-                    entity={level}
-                    label={`${level.sort_order}. ${level.name}`}
-                    onEdit={() => begin('level', level)}
-                  />
-                  {program
-                    .data!.lessons.filter((lesson: Any) => lesson.level_id === level.id)
-                    .map((lesson: Any) => (
-                      <div key={lesson.id} className="ms-3 mt-2">
-                        <EntityRow
-                          entity={lesson}
-                          label={`${lesson.sort_order}. ${lesson.name}`}
-                          onEdit={() => begin('lesson', lesson)}
-                        />
-                        <p className="text-sm text-text-secondary">{lesson.default_homework}</p>
-                      </div>
-                    ))}
+      <Card className="program-curriculum-card">
+        <div className="program-curriculum-heading">
+          <h3>{t('pilot.program.curriculum')}</h3>
+          {!!tracks.length && (
+            <Button type="button" variant="ghost" onClick={toggleAll}>
+              {t(`pilot.program.${curriculumExpanded ? 'collapseAll' : 'expandAll'}`)}
+            </Button>
+          )}
+        </div>
+        <div className="program-curriculum-list">
+          {tracks.map((track: Any) => {
+            const trackLevels = levels.filter((level: Any) => level.track_id === track.id);
+            const levelIds = new Set(trackLevels.map((level: Any) => level.id));
+            const trackLessonCount = program.data!.lessons.filter((lesson: Any) =>
+              levelIds.has(lesson.level_id),
+            ).length;
+            const trackOpen = expandedTracks.has(track.id);
+            const trackPanelId = `program-track-${track.id}`;
+            return (
+              <section key={track.id} className="program-track">
+                <div className="program-accordion-row program-track-row">
+                  <button
+                    type="button"
+                    className="program-accordion-toggle"
+                    aria-expanded={trackOpen}
+                    aria-controls={trackPanelId}
+                    aria-label={t(`pilot.program.${trackOpen ? 'collapseTrack' : 'expandTrack'}`, {
+                      name: track.name,
+                    })}
+                    onClick={() => toggleExpanded(track.id, setExpandedTracks)}
+                  >
+                    <ChevronRight className="program-chevron" aria-hidden />
+                    <span className="program-row-copy">
+                      <span className="program-kind">{t('pilot.program.trackLabel')}</span>
+                      <strong>{`${track.sort_order}. ${track.name}`}</strong>
+                    </span>
+                  </button>
+                  <Status value={!!track.active} />
+                  <span className="program-count">
+                    {t('pilot.program.levelCount', { count: trackLevels.length })} ·{' '}
+                    {t('pilot.program.lessonCount', { count: trackLessonCount })}
+                  </span>
+                  <Button type="button" variant="secondary" onClick={() => begin('track', track)}>
+                    {t('pilot.program.edit.track')}
+                  </Button>
                 </div>
-              ))}
-          </div>
-        ))}
+                {trackOpen && (
+                  <div id={trackPanelId} className="program-track-content">
+                    {trackLevels.map((level: Any) => {
+                      const lessons = program.data!.lessons.filter(
+                        (lesson: Any) => lesson.level_id === level.id,
+                      );
+                      const levelOpen = expandedLevels.has(level.id);
+                      const levelPanelId = `program-level-${level.id}`;
+                      return (
+                        <section key={level.id} className="program-level">
+                          <div className="program-accordion-row program-level-row">
+                            <button
+                              type="button"
+                              className="program-accordion-toggle"
+                              aria-expanded={levelOpen}
+                              aria-controls={levelPanelId}
+                              aria-label={t(
+                                `pilot.program.${levelOpen ? 'collapseLevel' : 'expandLevel'}`,
+                                { name: level.name },
+                              )}
+                              onClick={() => toggleExpanded(level.id, setExpandedLevels)}
+                            >
+                              <ChevronRight className="program-chevron" aria-hidden />
+                              <span className="program-row-copy">
+                                <span className="program-kind">
+                                  {t('pilot.program.levelLabel')}
+                                </span>
+                                <strong>{`${level.sort_order}. ${level.name}`}</strong>
+                              </span>
+                            </button>
+                            <span className="program-count">
+                              {t('pilot.program.lessonCount', { count: lessons.length })}
+                            </span>
+                            <Status value={!!level.active} />
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              onClick={() => begin('level', level)}
+                            >
+                              {t('pilot.program.edit.level')}
+                            </Button>
+                          </div>
+                          {levelOpen && (
+                            <div id={levelPanelId} className="program-lessons">
+                              <p className="program-lessons-heading">
+                                {t('pilot.program.lessonsLabel')}
+                              </p>
+                              {lessons.map((lesson: Any) => (
+                                <div key={lesson.id} className="program-lesson-row">
+                                  <span className="program-lesson-copy">
+                                    <strong>{`${lesson.sort_order}. ${lesson.name}`}</strong>
+                                    {lesson.default_homework && (
+                                      <span>{lesson.default_homework}</span>
+                                    )}
+                                  </span>
+                                  <Status value={!!lesson.active} />
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    onClick={() => begin('lesson', lesson)}
+                                  >
+                                    {t('pilot.program.edit.lesson')}
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </section>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
       </Card>
     </div>
   );
 }
-function EntityRow({ entity, label, onEdit }: { entity: Any; label: string; onEdit: () => void }) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <strong>{label}</strong>
-      <div className="flex gap-2">
-        <Status value={!!entity.active} />
-        <Button type="button" variant="secondary" onClick={onEdit}>
-          {t('pilot.edit')}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 export function RosterPage() {
   const { t } = useTranslation();
   const { id } = useParams();
